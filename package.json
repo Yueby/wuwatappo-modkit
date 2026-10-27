@@ -1,0 +1,21 @@
+{
+  "name": "wuwa-modkit",
+  "version": "0.1.0",
+  "description": "CDP-based mod loader for Wuwa Tappo (Tauri 2 / WebView2)",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "wuwa-modkit": "src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/cli.js --help",
+    "lab": "node src/cli.js lab",
+    "watch": "node src/cli.js watch",
+    "run": "node src/cli.js run",
+    "extract": "node scripts/extract-assets.js",
+    "commands": "node scripts/list-commands.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
