@@ -20,6 +20,7 @@ ${style.bold('Commands')}
   eval <js>           Evaluate JS in every app window
   state               Show which mods are live in each window
   stop                Stop every instance, elevating if one is running as admin
+  login-check         Is the real install signed in, and will a copy inherit it?
   extract-assets      Unpack the frontend (Vue/JS/CSS/images) from the exe
   commands            List backend commands found in the frontend
 

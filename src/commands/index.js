@@ -6,6 +6,7 @@ import watch from './watch.js';
 import evaluate from './eval.js';
 import state from './state.js';
 import stop from './stop.js';
+import loginCheck from './login-check.js';
 import extractAssets from './extract-assets.js';
 import commands from './commands.js';
 
@@ -16,6 +17,7 @@ export const COMMANDS = {
   eval: evaluate,
   state,
   stop,
+  'login-check': loginCheck,
   'extract-assets': extractAssets,
   commands,
 };

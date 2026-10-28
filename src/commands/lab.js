@@ -12,6 +12,7 @@ import path from 'node:path';
 
 import { buildLabCopy, ORIGINAL_EXE, describeEdits } from '../lib/patch.js';
 import { launchDetached, launchElevated, findDebugPortOwner, defaultWebViewDataDir } from '../lib/launch.js';
+import { cloneProfile, cloneProfileDir } from '../lib/profile.js';
 import { PROJECT_ROOT } from '../lib/mods.js';
 import { browserVersion } from '../lib/targets.js';
 import { runPS } from '../lib/ps.js';
@@ -126,12 +127,26 @@ async function startPatched(options, rebuild) {
   }
 
   section('Starting');
+
+  // Bring the real install's login along by cloning its WebView2 profile. A
+  // shared profile is not an option: it is locked while in use, and the app
+  // clears its auth cookies on logout, which would sign the real install out.
+  const profile = await cloneProfile({
+    log: msg => log(style.dim(msg)),
+  });
+  if (profile.cloned) {
+    field('profile', `cloned ${profile.files} file(s) -> ${profile.to}`);
+    if (profile.skipped) log(style.dim(`  (${profile.skipped} cache entries skipped)`));
+  } else {
+    field('profile', style.yellow(profile.reason));
+  }
+
   const child = launchDetached(LAB_EXE, {
     cwd: path.dirname(LAB_EXE),
     env: {
       ...process.env,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${options.port}`,
-      WEBVIEW2_USER_DATA_FOLDER: path.join(process.env.TEMP ?? '.', 'wuwa-modkit-webview2'),
+      WEBVIEW2_USER_DATA_FOLDER: cloneProfileDir(),
     },
   });
 

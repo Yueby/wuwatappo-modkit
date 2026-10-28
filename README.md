@@ -26,6 +26,7 @@ Ctrl+C. `node src/cli.js --help` lists everything.
 | `eval <js>` | Evaluate an expression in every window |
 | `state` | Which mods are live in which window |
 | `stop` | Stop every instance, elevating if needed |
+| `login-check` | Is the real install signed in, and will a copy inherit it? |
 | `extract-assets` | Unpack the frontend bundle out of the exe |
 | `commands` | List backend commands the frontend calls |
 
@@ -43,6 +44,7 @@ src/lib/inject.js       in-page mod runtime (compiled to source text)
 src/lib/injector.js     session management + re-injection on navigation
 src/lib/mods.js         mod discovery and change detection
 src/lib/patch.js        builds the patched copy of the exe
+src/lib/profile.js      clones the real WebView2 profile so the copy starts signed in
 src/lib/launch.js       launching: detached, and through UAC
 src/lib/ps.js           one-off PowerShell (elevation, process control)
 scripts/                standalone asset/command extraction tools

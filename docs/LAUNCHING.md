@@ -50,6 +50,39 @@ WEBVIEW2_USER_DATA_FOLDER=%TEMP%\wuwa-modkit-webview2
 The second variable keeps even our debug profile away from the real install's
 `localStorage`, where the login token lives.
 
+## Keeping the login
+
+The login is a cookie (`infoToken`) inside the WebView2 profile — not in
+`localStorage`. A copy that starts with a fresh profile therefore looks signed
+out, which is the usual reason "copying the exe loses my login".
+
+`lab` clones the real profile before each start:
+
+```
+from  %LOCALAPPDATA%\com.kuro.wuwatappo.cn\EBWebView
+to    %TEMP%\wuwa-modkit-webview2
+```
+
+Cache directories and files WebView2 holds open are skipped, so the clone is a
+few hundred files rather than the whole cache. The copy then starts signed in.
+
+Sharing the profile instead of cloning it does **not** work: the profile is locked
+while the real app runs, and the app clears its auth cookies on logout, which
+would sign the real install out as well.
+
+Check the state without launching anything:
+
+```sh
+node src/cli.js login-check
+```
+
+It reports whether the real install is currently signed in (from its own log) and
+whether a clone exists. The clone is refreshed on every `lab` run, so logging in
+to the real app and re-running `lab` is all that is needed.
+
+Note that the cookie has its own expiry. When it lapses inside the copy, either log
+in again in the copy or refresh the clone from a freshly signed-in real install.
+
 ## Why `--elevated` does not enable DevTools
 
 There is a second launch mode, `node src/cli.js lab --elevated`, which starts the
