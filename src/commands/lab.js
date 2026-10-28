@@ -11,8 +11,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { ensurePatched, restoreOriginal, readMarker } from '../lib/patch.js';
-import { APP_EXE, INSTALL_DIR } from '../lib/paths.js';
-import { launchDetached } from '../lib/launch.js';
+import { APP_EXE } from '../lib/paths.js';
+import { startApp } from '../lib/app.js';
 import { browserVersion } from '../lib/targets.js';
 import { countInstances } from '../lib/ps.js';
 import { parseOptions } from './options.js';
@@ -51,22 +51,9 @@ export default async function lab(argv) {
 
   section('Starting');
 
-  // Use the app's own profile. We are launching the installed binary itself
-  // (just without the admin requirement), so there is no second install to keep
-  // apart: the login, settings, and click counters are the real ones, and the
-  // updater keeps working normally.
-  const child = launchDetached(APP_EXE, {
-    cwd: INSTALL_DIR,
-    env: {
-      ...process.env,
-      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${options.port}`,
-    },
-  });
-
-  field('pid', child.pid);
+  const { pid, version } = await startApp({ port: options.port });
+  field('pid', pid);
   field('devtools', `http://127.0.0.1:${options.port}`);
-
-  const version = await waitForDevTools(options.port, 30_000);
   field('webview2', version.Browser);
   log(`\n${style.green('ready')}  next: ${style.bold('node src/cli.js watch')}`);
   return 0;
@@ -100,18 +87,3 @@ async function isRunning() {
   return (await countInstances()) > 0;
 }
 
-async function waitForDevTools(port, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      return await browserVersion({ port });
-    } catch {
-      await new Promise(r => setTimeout(r, 400));
-    }
-  }
-  throw new Error(
-    `DevTools endpoint did not come up on port ${port} within ${timeoutMs / 1000}s.\n` +
-    `  If Windows showed a UAC prompt, the patch did not take — run ` +
-    `${style.bold('node src/cli.js lab --rebuild')} and try again.`,
-  );
-}

@@ -10,6 +10,7 @@
 // command does, and stops with it.
 
 import { HostManager } from '../lib/host.js';
+import { acquireLock } from '../lib/lock.js';
 import { Injector } from '../lib/injector.js';
 import { discoverAll, modsSignature } from '../lib/mods.js';
 import { DebugPortUnavailable } from '../lib/targets.js';
@@ -19,8 +20,12 @@ import { log, statusWord, style } from '../lib/output.js';
 const MODS_POLL_MS = 1000;
 const INJECT_POLL_MS = 1500;
 
-export default async function watch(argv) {
-  const options = parseOptions(argv);
+export default function watch(argv) {
+  return resident(parseOptions(argv));
+}
+
+// `lock` is for a caller that took it already (start does, before it launches the app).
+export async function resident(options, { lock = acquireLock() } = {}) {
 
   const say = msg => log(style.dim(`  ${msg}`));
   const injector = new Injector({ port: options.port, log: say });
@@ -38,9 +43,12 @@ export default async function watch(argv) {
     log(`\n${style.dim(`${signal} — stopping`)}`);
     await hosts.close();         // their dispose hooks run before the process goes
     injector.close();
+    lock.release();
     process.exit(0);
   };
   process.on('SIGINT', () => stop('SIGINT'));
+  process.on('SIGTERM', () => stop('SIGTERM'));
+  process.on('SIGBREAK', () => stop('SIGBREAK'));       // Ctrl+Break, and a console being closed
 
   log(`${style.bold('watching')} ${options.modsDir}  ${style.dim(`(port ${options.port}, Ctrl+C to stop)`)}`);
 

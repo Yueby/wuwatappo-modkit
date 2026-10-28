@@ -1,17 +1,24 @@
 # Wuwa Tappo modkit
 
 CDP-based mod loader for **Wuwa Tappo** (Kuro's Tauri 2 / WebView2 desktop app).
-Mods are JavaScript injected into the app's webviews (and, if they want, a Node half that runs in
-the loader), each with a `package.json` that declares the
-switches and numbers it shows on the MOD page (remembered across restarts, one master switch per
-mod). The installed executable gets one length-preserving byte edit (it stops demanding
-administrator) and nothing else.
+Mods are JavaScript injected into the app's webviews, and, if they want, a Node half that runs as a
+process of its own (files, sockets, any npm package). Each is a folder with a `package.json` that
+declares the switches and numbers it shows on the MOD page (remembered across restarts, one master
+switch per mod), what it needs, and what it will do. The installed executable gets one
+length-preserving byte edit (it stops demanding administrator) and nothing else.
 
 ## Quick start
 
 ```sh
+node src/cli.js start        # patch if needed, start the app with DevTools, keep mods applied (stays running)
+node src/cli.js autostart install   # ...and do that by itself when you log on to Windows
+```
+
+or in two steps, which is what to use while writing a mod:
+
+```sh
 node src/cli.js lab          # patch the installed app, start it with DevTools on :9222
-node src/cli.js watch        # inject ./mods/*.js and keep them applied
+node src/cli.js watch        # inject ./mods and keep them applied
 ```
 
 Edit a file in `mods/` and it is re-injected within a couple of seconds. Stop with Ctrl+C.
@@ -25,8 +32,11 @@ To write a mod, copy `mods/_template/` (see [docs/MODDING.md](docs/MODDING.md)).
 | `lab` | Patch the installed app in place, then start it with DevTools |
 | `lab --rebuild` | Re-apply the patch from the stock backup |
 | `lab --restore` | Put the unpatched original back |
-| `run` | Inject once into all windows, then exit |
-| `watch` | Resident injector; survives reloads and mod edits |
+| `start` | Start the app with DevTools if it is not running, then stay resident (`--no-launch`, `--log-file`) |
+| `autostart install` / `remove` / `status` | Run `start` at logon, from a script in your Startup folder |
+| `mods list` / `install <source>` / `update [id]` / `remove <id>` | Install a mod from a folder, `.zip`/`.tgz`, git URL, npm package or `.js` file |
+| `run` | Inject once into all windows, then exit (a mod's Node part is not started) |
+| `watch` | Resident injector and host of the Node parts; survives reloads and mod edits |
 | `eval <js>` | Evaluate an expression in every window |
 | `state` | Which mods are live in which window |
 | `stop` | Stop every instance, elevating if needed |
@@ -48,8 +58,13 @@ src/
     cdp.js                Chrome DevTools Protocol client (no dependencies)
     targets.js            finding the app's windows over the DevTools HTTP endpoint
     injector.js           one live session per window; re-injects on navigation and edits
-    host.js               a mod's Node part: starting and stopping it, carrying messages to and from the pages
-    host-worker.js        what runs inside its worker thread (the `host` object a mod gets)
+    host.js               a mod's Node part: starting and stopping it, carrying messages between pages and mods
+    host-runner.js        what runs inside its child process (the `host` object a mod gets)
+    app.js                is the app up, with a DevTools port; starting it
+    lock.js               one loader at a time
+    autostart.js          the logon script in the Startup folder
+    install.js            installing, updating, removing and listing mods
+    semver.js             version ranges, for "requires" and "engines"
     page-scripts.js       generates the JavaScript that is evaluated *inside* the page
     manifest.js           a mod's package.json: parsing and validation
     mods.js               discovery of framework scripts and user mods (files and folders)
@@ -66,7 +81,7 @@ src/
     panel-tab.js          the MOD tab and page in the settings panel (panel window only)
 mods/                   your mods (auto-click, click-journal; _template* to copy): single files or folders with a package.json (_ = not loaded)
 scripts/                developer tools, not part of the CLI (icon preview)
-tests/                  `npm test` runs the offline ones; `npm run test:app` needs the app running
+tests/                  `npm test` runs the offline ones (no app needed); `npm run test:app` needs the app running
 docs/                   launching, modding, and what is known about the app
 work/                   generated and git-ignored: the unpacked frontend
 ```

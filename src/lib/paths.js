@@ -16,6 +16,7 @@ export const RUNTIME_DIR = path.join(PROJECT_ROOT, 'src', 'runtime');
 // version was last unpacked, so it is not worth keeping in version control.
 export const WORK_DIR = path.join(PROJECT_ROOT, 'work');
 export const ASSETS_DIR = path.join(WORK_DIR, 'assets');
+export const LOG_FILE = path.join(WORK_DIR, 'logs', 'modkit.log');
 
 // A mod's Node part gets a folder of its own to keep files in, one per mod.
 export const MOD_DATA_DIR = path.join(WORK_DIR, 'mod-data');

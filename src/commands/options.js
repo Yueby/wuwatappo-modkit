@@ -17,6 +17,11 @@ const OPTIONS = {
   '--force': ['force', false],
   '--rebuild': ['rebuild', false],
   '--restore': ['restore', false],
+  '--no-launch': ['noLaunch', false],
+  '--log-file': ['logFile', false],
+  '--no-deps': ['noDeps', false],
+  '--allow-scripts': ['allowScripts', false],
+  '--purge': ['purge', false],
 };
 
 export function parseOptions(argv) {
@@ -29,6 +34,11 @@ export function parseOptions(argv) {
     force: false,
     rebuild: false,
     restore: false,
+    noLaunch: false,
+    logFile: false,
+    noDeps: false,
+    allowScripts: false,
+    purge: false,
     positional: [],
   };
 

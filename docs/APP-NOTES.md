@@ -303,6 +303,13 @@ Measured on the running app, because the mod system's cross-window design rests 
 - The profile is the app's own, so `clear_all_browsing_data` (which wipes the login) wipes the
   stored settings with it.
 
+## Processes the loader starts
+
+Measured on Windows: a child process Node starts without `detached` is gone within 1.5 s of its parent
+exiting, whether the parent exits by itself or is killed (libuv puts non-detached children in a job
+object that closes with the parent). So a mod's Node part, started with `fork()`, ends when the loader
+does, and whatever it started (not detached) ends when it does; no cleanup code is needed or present.
+
 ## Calling out of a window
 
 The loader can be called by the pages, not only the other way round: `Runtime.addBinding` adds a

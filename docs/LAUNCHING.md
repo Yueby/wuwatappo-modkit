@@ -83,6 +83,32 @@ E:\Programs\WuwaTappo\
   .wuwa-modkit.json       what was patched, when, and the hash
 ```
 
+## Always on
+
+`start` is `lab` and `watch` in one: it patches the exe if that is needed, starts the app with the
+DevTools port if it is not running, and then stays resident. Run it again and nothing doubles: only one
+loader runs (it holds `work/loader.lock`; a lock left by a crashed loader is taken over), and an
+app that is already up with DevTools is simply attached to.
+
+```sh
+node src/cli.js start                 # now
+node src/cli.js autostart install     # at every logon, with no window; what it says goes to work/logs/modkit.log
+node src/cli.js autostart status
+node src/cli.js autostart remove
+```
+
+`autostart` writes one file, `wuwa-modkit.vbs`, in your own Startup folder (no administrator, nothing
+in the registry or the task scheduler); deleting it is removing it.
+
+- **The app has a logon task of its own** (`\WuwaTappo\ElevatedAutostart`, made while it still ran as
+  administrator). If it starts the app before the loader does, the app has no DevTools port and the
+  loader cannot attach; `start` says so and waits. `autostart status` tells you whether that task exists.
+  Deleting it needs an administrator: `schtasks /Delete /TN "\WuwaTappo\ElevatedAutostart" /F` in an
+  elevated terminal. (The app's "start with Windows" switch no longer works under the patch anyway.)
+- The loader launches the app **once**, when it starts. If you close the app, it does not start it again;
+  start it with `start` (the loader already running just carries on and attaches).
+- The log is kept to about 1 MB, plus the previous one as `modkit.log.1`.
+
 ## Caveats
 
 - **The patch removes the admin requirement** — for launches by hand. The app then

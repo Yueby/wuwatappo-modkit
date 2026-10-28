@@ -46,6 +46,10 @@ the window-to-file map is `modkit.windows`).
 | `modkit.defaultEnabled` | whether the master switch starts on; default `true` |
 | `modkit.windows` | which file runs in which window: `{ "main": "main.js", "panel": "ui.js" }`, or `"*"` for all of them. Default: `index.js` in every window, or none when there is a Node part |
 | `modkit.host` | the mod's Node part, an ES module in the folder: `"host.js"` (see [The Node part](#the-node-part)) |
+| `modkit.api` | the version of modkit's interface the mod was written for; default `1`. A mod that says more than this modkit has is listed as broken ("update modkit") instead of failing in ways nobody can read |
+| `modkit.requires` | other mods it needs, with the versions that will do: `{ "other-mod": "^1.2.0" }` (see [Mods using each other](#mods-using-each-other)) |
+| `modkit.permissions` | what it will do beyond showing a page, for whoever installs it to read: `["network", "files"]`. Declared, **not enforced** |
+| `engines.node` | the standard field: the Node versions it works with, e.g. `">=22"`. A mod needing a newer Node than runs the loader is listed as broken |
 | `modkit.settings` | what the MOD page shows under the mod, in order (below) |
 
 Other top-level fields (`author`, `license`, `private`, ...) are allowed and ignored. An
@@ -175,7 +179,7 @@ invents none.
 ## The Node part
 
 A page cannot write a file, open a socket without CORS, start a program, or use a package from
-npm. A mod that needs any of that has a second half that runs in Node, in the loader's process:
+npm. A mod that needs any of that has a second half that runs in Node, as a process of its own:
 
 ```json
 {
@@ -186,7 +190,7 @@ npm. A mod that needs any of that has a second half that runs in Node, in the lo
 ```
 
 ```js
-// host.js: runs in Node, in a worker thread of its own
+// host.js: runs in Node, in a process of its own
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -213,14 +217,23 @@ half keeps working without it; `mod.host.call` then rejects with a message that 
 a few seconds of the loader going: it tells the pages it is alive every 2 s, and a page does not
 wait for a loader it has not heard from).
 
-**When it runs.** While the mod's master switch is on. Switching the mod off stops it (its dispose
+**One process per mod.** Each Node part is a child process of the loader, not a thread and not an
+import. A native addon that crashes, or an npm package that assumes it owns the process (changes the
+directory, exits, installs signal handlers), takes down only that mod. Its working directory is the
+mod's own folder, so `node_modules` next to it and relative paths behave. What it prints with
+`console.log` / `console.error` goes to the loader's output and to the MOD page's log, and when it
+dies the last thing it printed, the error, is what the page shows as the reason. It cannot outlive
+the loader: if the loader goes, so does it. Stopping it ends every timer and socket it left behind,
+and, on Windows, every program it started without `detached: true` (a program it starts detached is
+the mod's own business).
+
+**When it runs.** While the mod's master switch is on, and every mod it requires is up. Switching the mod off stops it (its dispose
 hooks run first; one that does not finish within 2 s is killed), switching it on starts a fresh
 copy. Editing any source file of the mod's folder that the Node part could import (`.js`, `.mjs`,
 `.cjs`, `.json`, not `node_modules`, not the page scripts) restarts it with the new code, imported
 files included. A page script edit does not. If it throws on start or crashes later it is
 marked broken on the MOD page with the message, and stays stopped until its files change or the
-switch is turned off and on. It is a thread, so stopping it ends every timer, socket and child process
-it left behind. Settings with `"persist": false` are reset when it starts, as for a page script.
+switch is turned off and on. Settings with `"persist": false` are reset when it starts, as for a page script.
 
 ### `host` in host.js
 
@@ -229,6 +242,8 @@ host.id, host.dir, host.dataDir           // the mod's name, its folder, a folde
 host.log(...), host.warn(...), host.error(...)   // to the loader's output and to the MOD page's log
 host.live(key, value)                     // publish the text of a `value` row (what mod.live does); null clears it
 host.handle(name, (arg, { window }) => value)   // answers mod.host.call(name, arg); may be async
+host.provide(name, (arg, { from }) => value)    // a service other mods may call (below)
+host.call(mod, name, arg)                 // a service of a mod this one requires; rejects if it is not running
 host.emit(name, arg, { window? })         // to mod.host.on(name, fn): every window, or one
 host.evaluate(window, javascript)         // run JavaScript in a window ('main', 'panel', ...) and get the value back
 host.config.get(key)                      // the mod's settings, as the MOD page shows them; immediate
@@ -237,7 +252,7 @@ host.config.onChange(key, (next, previous) => ...)
 host.onDispose(fn)                        // runs when it stops
 ```
 
-Arguments, answers and events are copied between threads and windows as JSON-able data. A call that
+Arguments, answers and events are copied between processes and windows as JSON data. A call that
 the Node part does not answer within 30 s rejects. A call made while the part is still starting
 waits for it.
 
@@ -245,6 +260,57 @@ waits for it.
 That is the same standing a page script has (it can call any command the app has), but it is worth
 remembering when installing someone else's mod. The usual rule applies to it as to a page script:
 anything that acts on the account is behind a `"persist": false` switch.
+
+## Mods using each other
+
+A mod that builds on another says so, and may then use what the other offers:
+
+```json
+{ "name": "report", "modkit": { "host": "host.js", "requires": { "notes": "^1.0.0" } } }
+```
+
+```js
+// notes/host.js: offers a service
+host.provide('append', async ({ text }) => { await fs.appendFile(file, text + '\n'); return 'ok'; });
+
+// report/host.js, or from a page script with mod.call('notes', 'append', { text })
+await host.call('notes', 'append', { text: 'hello' });
+```
+
+- **Only what is listed in `requires`** can be called. Calling a mod that is not listed is refused
+  with a message that says to add it. The service is told who is calling (`{ from }`).
+- **What is required has to be there.** Missing, broken, a version outside the range (the standard
+  ranges: `1.2.3`, `^1.2.0`, `~1.2`, `>=1 <3`, `1.x`, `||`; a mod with no `version` satisfies only
+  `*`), or a loop of mods needing each other: the mod is listed as broken with that said, and so is
+  whatever required it.
+- **Order.** A Node part starts after the Node parts of the mods it requires are ready, waits (the MOD
+  page says `等待：…` and for whom) while any of them is off or not up, and is stopped when one stops and
+  started again when it is back. A required mod with no Node part counts once its switch is on.
+- A call to a service that is not running rejects with the reason; it does not wait.
+
+## Installing mods
+
+```sh
+node src/cli.js mods install <source>     # a folder, a .zip / .tgz, a git URL (add #branch), an npm package name, or a .js file
+node src/cli.js mods list                 # what is installed, where from, whether it loads
+node src/cli.js mods update [id]          # ask the same place again (every installed mod if no id)
+node src/cli.js mods remove <id> [--purge]
+```
+
+Install first shows what the mod declares — whether it has a Node part (which runs with the rights of
+your account), its `permissions`, the mods it needs, the npm packages it depends on — then puts it in
+`mods/<id>/` and remembers where it came from (`.modkit-source.json`) for `update`. A running
+`watch` / `start` picks it up by itself.
+
+- **npm dependencies** of the mod are installed with `npm install --omit=dev --ignore-scripts`, so a
+  dependency's install script does not run unless you say `--allow-scripts` (some native packages
+  need it). `--no-deps` skips them. This is what lets a mod's `host.js` `import` an npm package.
+- A mod that already exists needs `--force`, or `update`. An update that cannot be installed
+  (invalid manifest, a dependency that cannot be fetched) leaves the old version exactly as it was.
+- A mod that is renamed at its source is a new mod, not an update of the old one.
+- `remove` keeps what the mod's Node part wrote (`work/mod-data/<id>`) unless `--purge`. Its settings
+  are in the app's storage and are used again if it is installed again.
+- Mods are not signed or reviewed: install what you would run.
 
 ## Loading and unloading
 

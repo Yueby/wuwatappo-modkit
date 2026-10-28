@@ -11,6 +11,13 @@ ${style.bold('Usage')}
   node src/cli.js <command> [options]
 
 ${style.bold('Commands')}
+  start               Keep mods always on: start the app with DevTools if needed, then stay resident
+    --no-launch         do not start the app, wait for one
+    --log-file          also write to work/logs/modkit.log
+  autostart <action>  install | remove | status (run start at logon)
+  mods <action>       list | install <source> | update [id] | remove <id>
+                        a source is a folder, .zip/.tgz, git URL, npm name or .js file
+    --force --no-deps --allow-scripts --purge
   lab                 Patch the installed app, then start it with DevTools
     --rebuild           force the patch to be re-applied
     --restore           put the unpatched original back
