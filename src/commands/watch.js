@@ -12,6 +12,7 @@
 import { HostManager } from '../lib/host.js';
 import { acquireLock } from '../lib/lock.js';
 import { Injector } from '../lib/injector.js';
+import { ModManager } from '../lib/manager.js';
 import { discoverAll, modsSignature } from '../lib/mods.js';
 import { DebugPortUnavailable } from '../lib/targets.js';
 import { parseOptions } from './options.js';
@@ -31,7 +32,10 @@ export async function resident(options, { lock = acquireLock() } = {}) {
   const injector = new Injector({ port: options.port, log: say });
   const hosts = new HostManager({ log: say });
   hosts.connect(injector);
-  injector.onHostMessage = (window, text) => hosts.onPageMessage(window, text);
+  const manager = new ModManager({ modsDir: options.modsDir, app: injector, log: say });
+  injector.onHostMessage = (window, text) => {
+    if (!manager.onPageMessage(window, text)) hosts.onPageMessage(window, text);
+  };
 
   let signature = '';
   let stopped = false;

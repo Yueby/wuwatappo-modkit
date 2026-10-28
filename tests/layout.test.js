@@ -40,6 +40,9 @@ test('the app folder: the environment wins, a packaged loader is in it, otherwis
   assert.equal(resolveInstallDir({ env: { WUWA_INSTALL_DIR: 'D:\\Games\\Tappo' }, packaged: true, execPath: 'C:\\x\\modkit.exe' }), 'D:\\Games\\Tappo');
   assert.equal(resolveInstallDir({ env: {}, packaged: true, execPath: 'E:\\Programs\\WuwaTappo\\modkit.exe' }), 'E:\\Programs\\WuwaTappo');
   assert.equal(resolveInstallDir({ env: {}, packaged: false, execPath: 'C:\\node\\node.exe' }), 'E:\\Programs\\WuwaTappo');
+  // The loader runs from a copy of the exe inside the app folder, and still means the app folder.
+  assert.equal(resolveInstallDir({ env: {}, packaged: true, execPath: 'E:\\Programs\\WuwaTappo\\moddata\\.modkit\\modkit-loader.exe' }), 'E:\\Programs\\WuwaTappo');
+  assert.equal(resolveInstallDir({ env: {}, packaged: true, execPath: 'D:\\x\\.modkit\\modkit.exe' }), 'D:\\x\\.modkit', 'a folder that is only called .modkit is not the loader\'s');
 });
 
 // --- the folders ---------------------------------------------------------

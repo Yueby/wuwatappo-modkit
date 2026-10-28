@@ -15,12 +15,19 @@ import { fileURLToPath } from 'node:url';
 
 const DEFAULT_INSTALL_DIR = 'E:\\Programs\\WuwaTappo';
 
-// Which folder that is. WUWA_INSTALL_DIR wins (another machine, a test). A packaged loader is an exe
-// that is put in the app folder, so it is the folder it runs from. Run from the repository, it is
-// where the app is on this machine.
+// Which folder that is. WUWA_INSTALL_DIR wins (another machine, a test). A packaged program is an exe
+// that is put in the app folder, so it is the folder it runs from, except for the loader's copy of it:
+// that runs from <app folder>\moddata\.modkit (see installLoaderCopy in layout.js), and the app folder is
+// two up from there. (Taking the copy's own folder for it put the lock, the log and the mods folder of
+// the loader somewhere of its own, where it found no mods.) Run from the repository, it is where the
+// app is on this machine.
 export function resolveInstallDir({ env = process.env, packaged = sea.isSea(), execPath = process.execPath } = {}) {
   if (env.WUWA_INSTALL_DIR) return path.resolve(env.WUWA_INSTALL_DIR);
-  if (packaged) return path.dirname(execPath);
+  if (packaged) {
+    const dir = path.dirname(execPath);
+    const parent = path.dirname(dir);
+    return path.basename(dir) === '.modkit' && path.basename(parent).toLowerCase() === 'moddata' ? path.dirname(parent) : dir;
+  }
   return DEFAULT_INSTALL_DIR;
 }
 
