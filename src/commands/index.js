@@ -7,6 +7,7 @@ import run from './run.js';
 import selftest from './selftest.js';
 import setup, { uninstall } from './setup.js';
 import start from './start.js';
+import update from './update.js';
 import watch from './watch.js';
 import window from './window.js';
 import evaluate from './eval.js';
@@ -18,6 +19,7 @@ import backendCommands from './backend-commands.js';
 export const COMMANDS = {
   selftest,
   window,
+  update,
   setup,
   uninstall,
   start,

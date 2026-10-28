@@ -5,15 +5,17 @@ import { COMMANDS } from './commands/index.js';
 import openWindow from './commands/window.js';
 import { isPackaged } from './lib/bundle.js';
 import { fail, log, style } from './lib/output.js';
+import { VERSION } from './lib/version.js';
 
 const USAGE = `
-${style.bold('wuwa-modkit')} — mod loader for Wuwa Tappo (Tauri 2 / WebView2)
+${style.bold('wuwatappo-modkit')} ${VERSION} — mod loader for Wuwa Tappo (Tauri 2 / WebView2)
 
 ${style.bold('Usage')}
   node src/cli.js <command> [options]
 
 ${style.bold('Commands')}
   window              Open the window with the install / uninstall buttons (what a double-click on the exe does)
+  update              Look on GitHub for a newer version and take it (--check only asks, --json)
   setup [status]      One-time install: after it, just run WuwaTappo.exe and the mods start with it
   uninstall           Take setup away again (--restore-exe also puts the original exe back)
   start               Keep mods always on: start the app with DevTools if needed, then stay resident
@@ -39,6 +41,7 @@ ${style.bold('Options')}
   --port <n>          DevTools port (default 9222)
   --mods-dir <path>   Mod directory (default: mods in the app folder)
   --help              Show this help
+  --version           Print the version
 
 ${style.dim('Docs: docs/LAUNCHING.md, docs/MODDING.md, docs/PACKAGING.md')}
 `;
@@ -49,6 +52,11 @@ export async function main(argv) {
   const [name, ...rest] = argv;
 
   if (!name && isPackaged()) return openWindow();
+
+  if (name === '--version' || name === '-v' || name === 'version') {
+    log(VERSION);
+    return 0;
+  }
 
   if (!name || name === '--help' || name === '-h' || name === 'help') {
     log(USAGE);

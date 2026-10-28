@@ -17,6 +17,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isPackaged, windowScript } from '../lib/bundle.js';
 import { MODS_DIR } from '../lib/paths.js';
+import { removeLeftovers } from '../lib/release.js';
+import { VERSION } from '../lib/version.js';
 
 // Windows PowerShell reads a script as ANSI unless it starts with a byte order mark.
 const BOM = String.fromCharCode(0xFEFF);
@@ -32,8 +34,11 @@ export default async function openWindow() {
   const file = path.join(dir, 'window.ps1');
   await fs.writeFile(file, BOM + await windowScript());
 
+  // What an update left beside the program (the old exe, once nothing runs from it).
+  if (isPackaged()) await removeLeftovers(process.execPath);
+
   // Packaged, the buttons run this exe. From the repository they run node on cli.js.
-  const params = [`-Exe "${process.execPath}"`, `-ModsDir "${MODS_DIR}"`];
+  const params = [`-Exe "${process.execPath}"`, `-ModsDir "${MODS_DIR}"`, `-Version "${VERSION}"`];
   if (!isPackaged()) params.push(`-Script "${fileURLToPath(new URL('../cli.js', import.meta.url))}"`);
   const argumentList = `-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File "${file}" ${params.join(' ')}`;
 

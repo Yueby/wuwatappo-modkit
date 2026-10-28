@@ -134,5 +134,6 @@ exe, `dist/modkit.exe` (see [docs/PACKAGING.md](docs/PACKAGING.md)); that needs 
 
 - [docs/LAUNCHING.md](docs/LAUNCHING.md) — why the exe needs patching, what it changes
 - [docs/MODDING.md](docs/MODDING.md) — mod API, backend command reference, gotchas
-- [docs/PACKAGING.md](docs/PACKAGING.md) — the plan for one exe, what was checked for it, what is left
+- [docs/PACKAGING.md](docs/PACKAGING.md) — the one exe: how it is built, what was checked for it
+- [docs/RELEASING.md](docs/RELEASING.md) — making a release, and how the exe updates itself from it
 - [docs/APP-NOTES.md](docs/APP-NOTES.md) — what the app does, where its state lives

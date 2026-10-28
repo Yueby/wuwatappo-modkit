@@ -12,6 +12,7 @@
 // exe needs nothing.
 
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +33,9 @@ function run(command, args, options = {}) {
 await fs.rm(dist, { recursive: true, force: true });
 await fs.mkdir(dist, { recursive: true });
 
-console.log('bundle');
+const { version } = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+
+console.log(`bundle ${version}`);
 await build({
   entryPoints: [path.join(root, 'src', 'entry.js')],
   outfile: path.join(dist, 'modkit.cjs'),
@@ -42,7 +45,10 @@ await build({
   target: 'node22',
   // `import.meta.url` does not exist in a CommonJS script. The few places that use it only compute
   // where the repository is, and a packaged program does not look there (see PROJECT_ROOT in paths.js).
-  define: { 'import.meta.url': '"file:///C:/packaged/"' },
+  define: {
+    'import.meta.url': '"file:///C:/packaged/"',
+    __MODKIT_VERSION__: JSON.stringify(version),
+  },
   logLevel: 'warning',
 });
 
@@ -75,5 +81,13 @@ run(process.execPath, [path.join(root, 'node_modules', 'postject', 'dist', 'cli.
 const { size } = await fs.stat(exe);
 console.log(`built ${exe} (${(size / 1024 / 1024).toFixed(1)} MB)`);
 
+// What the update check compares the download with (docs/RELEASING.md): upload both files.
+const sum = createHash('sha256').update(await fs.readFile(exe)).digest('hex');
+await fs.writeFile(`${exe}.sha256`, `${sum}  modkit.exe\n`);
+console.log(`sha256 ${sum}`);
+
 console.log('selftest');
 run(exe, ['selftest'], { cwd: dist });
+
+const said = spawnSync(exe, ['--version'], { encoding: 'utf8' }).stdout.trim();
+if (said !== version) throw new Error(`the exe says it is ${said}, not ${version}`);
