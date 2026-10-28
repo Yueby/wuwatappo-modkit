@@ -22,6 +22,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { ManifestError, parseManifest } from './manifest.js';
 import { checkRequirements, discoverMods } from './mods.js';
+import { parse } from './semver.js';
 import { MOD_DATA_DIR } from './paths.js';
 
 const exec = promisify(execFile);
@@ -177,10 +178,19 @@ async function withTemp(work) {
 
 const defaults = tools => ({ run, ...tools });
 
+// Raised when `confirm` said no: nothing was changed.
+export class InstallDeclined extends Error {}
+
 // Install `spec` into modsDir. `replace`: it is an update, the old copy goes and the new takes its
 // place (and is put back if the new one cannot be installed).
+//
+// `confirm(info)` is asked once what the mod is and what it declares is known, and before anything is put
+// in place: an answer that is not true (it may be a promise) stops the install with InstallDeclined.
+// `source` is what is remembered of where it came from, when that is not the file it was unpacked from
+// (a plugin fetched through the registry is remembered by its name there).
 export async function installMod(spec, {
   modsDir, force = false, allowScripts = false, noDeps = false, replace = null, tools, report = () => {},
+  confirm = null, source = null,
 }) {
   tools = defaults(tools);
 
@@ -211,6 +221,8 @@ export async function installMod(spec, {
       if (verdict.loadError) info.warning = verdict.loadError;
     }
 
+    if (confirm && !(await confirm(info))) throw new InstallDeclined('not installed: declined');
+
     // Swap: stage next to the target, move the old aside, move the new in, then drop the old.
     await fs.mkdir(modsDir, { recursive: true });
     const incoming = `${target}.new-${process.pid}`;
@@ -223,8 +235,8 @@ export async function installMod(spec, {
     try {
       if (!fetched.single) {
         await fs.writeFile(path.join(incoming, SOURCE_FILE), JSON.stringify({
-          type: fetched.type,
-          spec: fetched.type === 'folder' || fetched.type === 'archive' ? path.resolve(spec) : spec,
+          type: source?.type ?? fetched.type,
+          spec: source?.spec ?? (fetched.type === 'folder' || fetched.type === 'archive' ? path.resolve(spec) : spec),
           version: info.version,
           installedAt: new Date().toISOString(),
         }, null, 2));
@@ -247,6 +259,39 @@ export async function installMod(spec, {
     await fs.rm(outgoing, { recursive: true, force: true });
     return { ...info, target, replaced: hadOld, source: fetched.type };
   });
+}
+
+// For a mod's author, and for the registry's automation: is this folder a mod that can be loaded, and what
+// does it declare. `registry` adds what the registry needs to tell versions apart and to show a plugin.
+export async function checkMod(folder, { registry = false } = {}) {
+  const id = path.basename(path.resolve(folder));
+  let raw;
+  try {
+    raw = JSON.parse(await fs.readFile(path.join(folder, 'package.json'), 'utf8'));
+  } catch (err) {
+    return { ok: false, id, problems: [`package.json: ${err.code === 'ENOENT' ? 'there is none' : err.message}`] };
+  }
+
+  let manifest;
+  try {
+    manifest = parseManifest(raw, id);
+  } catch (err) {
+    if (!(err instanceof ManifestError)) throw err;
+    return { ok: false, id, problems: err.problems };
+  }
+
+  const problems = [];
+  for (const file of [...Object.values(manifest.windows), ...(manifest.host ? [manifest.host] : [])]) {
+    if (!(await exists(path.join(folder, file)))) problems.push(`${file} is named in package.json but is not in the folder`);
+  }
+  if (manifest.host && raw.type !== 'module') problems.push('a mod with a Node part needs "type": "module" in package.json');
+  if (registry) {
+    if (!manifest.manifest.version || !parse(manifest.manifest.version)) problems.push('version must be a version number like 1.0.0: the registry tells releases apart by it');
+    if (!manifest.manifest.description) problems.push('description is empty: it is what the list shows');
+    if (await exists(path.join(folder, 'node_modules'))) problems.push('node_modules is in the folder: list dependencies in package.json instead, they are fetched when it is installed');
+  }
+
+  return { ok: problems.length === 0, id, problems, ...describe({ id, raw, manifest }) };
 }
 
 export async function readSource(folder) {

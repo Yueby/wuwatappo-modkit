@@ -55,43 +55,47 @@ export function parseChecksum(text) {
   return hash.toLowerCase();
 }
 
-// Get the release's exe into `file`, and only keep it if it matches its checksum. Resolves with the hash.
-export async function downloadRelease(tag, file, { repo = REPO, fetch = globalThis.fetch } = {}) {
-  const url = `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}/${ASSET}`;
-  const get = async address => {
-    const response = await fetch(address, { headers: { 'user-agent': USER_AGENT } });
-    if (!response.ok) throw new Error(`${address} answered ${response.status}`);
-    return response;
-  };
-
-  const expected = parseChecksum(await (await get(`${url}.sha256`)).text());
+// Fetch `url` into `file`, and only keep it if it is what it should be: its SHA-256 is `expected`, it is
+// `size` bytes if that is known, and it did not stop short. Nothing is left behind otherwise. Resolves
+// with the hash.
+export async function downloadVerified(url, file, { expected, size = null, fetch = globalThis.fetch }) {
+  const response = await fetch(url, { headers: { 'user-agent': USER_AGENT } });
+  if (!response.ok) throw new Error(`${url} answered ${response.status}`);
 
   const part = `${file}.part`;
-  const response = await get(url);
   const hash = createHash('sha256');
-  let size = 0;
+  let received = 0;
   try {
     await pipeline(
       Readable.fromWeb(response.body),
       async function* (chunks) {
         for await (const chunk of chunks) {
           hash.update(chunk);
-          size += chunk.length;
+          received += chunk.length;
           yield chunk;
         }
       },
       fs.createWriteStream(part),
     );
-    const expectedSize = Number(response.headers.get('content-length'));
-    if (expectedSize && size !== expectedSize) throw new Error(`the download stopped at ${size} of ${expectedSize} bytes`);
+    const announced = Number(response.headers.get('content-length'));
+    if (announced && received !== announced) throw new Error(`the download stopped at ${received} of ${announced} bytes`);
+    if (size !== null && received !== size) throw new Error(`the download is ${received} bytes, not the ${size} it should be: it was not used`);
     const actual = hash.digest('hex');
-    if (actual !== expected) throw new Error(`the download does not match its checksum (${actual.slice(0, 12)}… instead of ${expected.slice(0, 12)}…): it was not used`);
+    if (actual !== expected.toLowerCase()) throw new Error(`the download does not match its checksum (${actual.slice(0, 12)}… instead of ${expected.slice(0, 12)}…): it was not used`);
     await fsp.rename(part, file);
     return actual;
   } catch (err) {
     await fsp.rm(part, { force: true });
     throw err;
   }
+}
+
+// Get the release's exe into `file`, and only keep it if it matches its checksum. Resolves with the hash.
+export async function downloadRelease(tag, file, { repo = REPO, fetch = globalThis.fetch } = {}) {
+  const url = `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}/${ASSET}`;
+  const response = await fetch(`${url}.sha256`, { headers: { 'user-agent': USER_AGENT } });
+  if (!response.ok) throw new Error(`${url}.sha256 answered ${response.status}`);
+  return downloadVerified(url, file, { expected: parseChecksum(await response.text()), fetch });
 }
 
 // Put `fresh` where `target` is. A running exe cannot be overwritten on Windows but it can be renamed,

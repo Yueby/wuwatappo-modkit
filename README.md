@@ -113,7 +113,7 @@ src/
     modkit-registry.js    window.modkit: mod lifecycle, settings, master switch, state shared
                           between windows (every window)
     panel-tab.js          the MOD tab and page in the settings panel (panel window only)
-examples/               example mods (auto-click, click-journal) and the _template* to copy. Not part of the program
+examples/               example mods (auto-click) and the _template* to copy. Not part of the program
                           and never installed by it: <app folder>\mods starts empty
 scripts/                developer tools, not part of the CLI (icon preview)
 tests/                  `npm test` runs the offline ones (no app needed); `npm run test:app` needs the app running
