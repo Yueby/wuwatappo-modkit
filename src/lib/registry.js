@@ -29,6 +29,16 @@ const FORMAT_VERSION = 1;
 
 const strings = value => Array.isArray(value) && value.every(item => typeof item === 'string');
 
+// What a plugin declares, in one comparable string: whether it has a Node part, what it says it uses, what it needs.
+function declaration({ nodePart, permissions, requires, dependencies }) {
+  return JSON.stringify([
+    Boolean(nodePart),
+    [...permissions].sort(),
+    Object.keys(requires).sort(),
+    [...dependencies].sort(),
+  ]);
+}
+
 // What is wrong with one entry, or null.
 function problemWith(entry, repo) {
   if (entry === null || typeof entry !== 'object') return 'is not an object';
@@ -128,6 +138,11 @@ export async function getFromRegistry(id, { modsDir, repo = REGISTRY_REPO, fetch
         // The index is a claim, the package is the fact: the two have to agree on who it is.
         if (info.id !== entry.id) throw new Error(`the package is called "${info.id}", not "${entry.id}" as the index says: it was not installed`);
         if (info.version !== entry.version) throw new Error(`the package is version ${info.version}, not ${entry.version} as the index says: it was not installed`);
+        // What the list showed, and what a window asked the person about, came from the index. The package
+        // has to say the same, or what was agreed to is not what is installed.
+        const declared = declaration(info);
+        const listed = declaration(entry);
+        if (declared !== listed) throw new Error(`the package declares something other than the index says (${declared} instead of ${listed}): it was not installed`);
         return confirm ? confirm({ ...info, entry }) : true;
       },
     });

@@ -21,11 +21,25 @@ let dir;
 let script;
 let modsDir;
 
+// What the registry lists: one not installed (with a Node part), one installed with a newer version out,
+// one installed and current, one installed from somewhere else.
+const PLUGINS = [
+  { id: 'alpha', name: 'Alpha', version: '1.0.0', description: 'does alpha', author: 'someone', nodePart: true, permissions: ['files', 'network'], requires: { beta: '^1.0.0' }, dependencies: ['left-pad'], installed: false, installedVersion: null, fromRegistry: false, update: false },
+  { id: 'beta', name: 'Beta', version: '1.1.0', description: 'does beta', author: null, nodePart: false, permissions: [], requires: {}, dependencies: [], installed: true, installedVersion: '1.0.0', fromRegistry: true, update: true },
+  { id: 'gamma', name: 'Gamma', version: '2.0.0', description: 'does gamma', author: null, nodePart: false, permissions: [], requires: {}, dependencies: [], installed: true, installedVersion: '2.0.0', fromRegistry: true, update: false },
+  { id: 'delta', name: 'Delta', version: '3.0.0', description: 'does delta', author: null, nodePart: false, permissions: [], requires: {}, dependencies: [], installed: true, installedVersion: '2.5.0', fromRegistry: false, update: false },
+];
+
 // What the program would print for each command: its own arguments, so a test can see what a button asked.
 const FAKE = `
 const fs = require('fs');
 const args = process.argv.slice(2);
 if (process.env.FAKE_CALLS) fs.appendFileSync(process.env.FAKE_CALLS, args.join(' ') + '\\n');
+if (args[0] === 'mods' && args[1] === 'browse') {
+  if (process.env.FAKE_BROWSE_FAIL) { console.error('registry unreachable'); process.exit(1); }
+  console.log(JSON.stringify({ mods: JSON.parse(process.env.FAKE_PLUGINS ?? process.env.FAKE_DEFAULT_PLUGINS), problems: [] }));
+  process.exit(0);
+}
 if (args[0] === 'update' && args.includes('--check')) {
   if (process.env.FAKE_CHECK_ERROR) console.log(JSON.stringify({ current: '1.0.0', error: process.env.FAKE_CHECK_ERROR }));
   else {
@@ -69,6 +83,10 @@ $form.Show()
 $report = [ordered]@{}
 # Not a real Explorer: what it would have been asked to open is written down.
 function Start-Process { $script:launched = ($args -join ' ') }
+# Not a real dialog: what the person would have been asked is written down, and the answer is the test's.
+$script:questions = @()
+$script:answer = $true
+function Confirm-Action([string]$Text) { $script:questions += $Text; return $script:answer }
 function Wait-Idle {
   $deadline = (Get-Date).AddSeconds(20)
   do { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 40 }
@@ -88,7 +106,7 @@ try { $form.Close() } catch { }
   await exec('powershell.exe', [
     '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', file,
     '-Exe', process.execPath, '-Script', path.join(dir, 'fake cli.js'), '-ModsDir', modsDir, '-Version', '1.0.0',
-  ], { env: { ...process.env, MODKIT_TEST_OUT: out, FAKE_CALLS: calls, ...env }, windowsHide: true, timeout: 60_000 });
+  ], { env: { ...process.env, MODKIT_TEST_OUT: out, FAKE_CALLS: calls, FAKE_DEFAULT_PLUGINS: JSON.stringify(PLUGINS), ...env }, windowsHide: true, timeout: 60_000 });
   const report = JSON.parse((await fs.readFile(out, 'utf8')).replace(/^\uFEFF/, ''));
   report.calls = (await fs.readFile(calls, 'utf8').catch(() => '')).split('\n').filter(Boolean);
   return report;
@@ -187,4 +205,71 @@ test('刷新 asks again, and takes a newer version the same way', { skip }, asyn
   const report = await drive(`$refresh.PerformClick(); Wait-Idle; $report.closed = $form.IsDisposed`, { FAKE_LATEST: '3.0.0' });
   assert.deepEqual(report.calls, ['setup status', 'update --check --json', 'update --reopen']);
   assert.equal(report.closed, true);
+});
+
+// --- plugins ---------------------------------------------------------------------------------------------
+
+// Open the plugins window (not modal, so that the test can drive it), and load its list.
+const OPEN = `
+  $w = New-PluginsWindow; Connect-PluginsWindow $w; $w.Form.Show(); Update-PluginList $w
+  function Pick([string]$name) { foreach ($item in $w.List.Items) { if ($item.Text -eq $name) { $item.Selected = $true } } }
+`;
+
+test('the plugins window lists what the registry has, with where each stands', { skip }, async () => {
+  const report = await drive(`${OPEN}
+    $report.rows = @($w.List.Items | ForEach-Object { ($_.Text, $_.SubItems[1].Text, $_.SubItems[2].Text) -join '|' })
+    $report.act = $w.Act.Enabled; $report.remove = $w.Remove.Enabled`);
+  assert.deepEqual(report.rows, ['Alpha|1.0.0|未安装', 'Beta|1.1.0|可更新 1.0.0 → 1.1.0', 'Gamma|2.0.0|已安装 2.0.0', 'Delta|3.0.0|已安装（不是从这里装的）']);
+  assert.deepEqual([report.act, report.remove], [false, false], 'nothing is selected, so nothing can be pressed');
+  assert.deepEqual(report.calls, ['mods browse --json']);
+});
+
+test('what is selected decides the buttons: 安装, 更新, or nothing to do, and 卸载 only for what is installed', { skip }, async () => {
+  const report = await drive(`${OPEN}
+    $report.states = [ordered]@{}
+    foreach ($name in 'Alpha', 'Beta', 'Gamma', 'Delta') { Pick $name; $report.states[$name] = "$($w.Act.Text)|$($w.Act.Enabled)|$($w.Remove.Enabled)" }`);
+  assert.deepEqual(report.states, { Alpha: '安装|True|False', Beta: '更新|True|True', Gamma: '已是最新|False|True', Delta: '已是最新|False|True' });
+});
+
+test('安装 says what the plugin declares first, and installs only on a yes; then the list is read again', { skip }, async () => {
+  const report = await drive(`${OPEN}
+    Pick 'Alpha'; $w.Act.PerformClick()
+    $report.question = $script:questions[0]; $report.asked = $script:questions.Count`);
+  assert.equal(report.asked, 1);
+  for (const part of ['安装「Alpha」1.0.0？', 'does alpha', 'Node 部分：有', '没有沙盒', 'files、network', 'beta ^1.0.0', 'left-pad', '网页脚本会在软件的窗口里运行']) {
+    assert.ok(report.question.includes(part), `the question has "${part}":\n${report.question}`);
+  }
+  assert.deepEqual(report.calls, ['mods browse --json', 'mods get alpha --yes', 'mods browse --json']);
+});
+
+test('a plugin without a Node part says so, and a no runs nothing', { skip }, async () => {
+  const said = await drive(`${OPEN}
+    $script:answer = $false
+    Pick 'Beta'; $w.Act.PerformClick(); $w.Act.PerformClick()
+    $report.questions = $script:questions`);
+  assert.equal(said.questions.length, 2, 'asked each time it was pressed');
+  assert.ok(said.questions[0].startsWith('更新「Beta」1.1.0？'));
+  assert.ok(said.questions[0].includes('Node 部分：没有') && said.questions[0].includes('它声明要用：没写'));
+  assert.deepEqual(said.calls, ['mods browse --json'], 'nothing but the list');
+});
+
+test('更新 updates the one that has a newer version, and 卸载 removes after asking', { skip }, async () => {
+  const report = await drive(`${OPEN}
+    Pick 'Beta'; $w.Act.PerformClick()
+    Pick 'Gamma'; $w.Remove.PerformClick()
+    $report.questions = $script:questions`);
+  assert.deepEqual(report.calls, ['mods browse --json', 'mods update beta --yes', 'mods browse --json', 'mods remove gamma', 'mods browse --json']);
+  assert.ok(report.questions[1].startsWith('卸载「Gamma」？'));
+});
+
+test('a list that cannot be read is said in the window, and nothing can be pressed', { skip }, async () => {
+  const report = await drive(`${OPEN}
+    $report.details = $w.Details.Text; $report.count = $w.List.Items.Count; $report.act = $w.Act.Enabled`, { FAKE_BROWSE_FAIL: '1' });
+  assert.match(report.details, /读不到插件列表：registry unreachable/);
+  assert.deepEqual([report.count, report.act], [0, false]);
+});
+
+test('the main window has the 插件… button, kept off while a command runs like the others', { skip }, async () => {
+  const report = await drive(`$report.text = $pluginsButton.Text; $install.PerformClick(); $report.whileRunning = $pluginsButton.Enabled; Wait-Idle; $report.after = $pluginsButton.Enabled`);
+  assert.deepEqual([report.text, report.whileRunning, report.after], ['插件…', false, true]);
 });

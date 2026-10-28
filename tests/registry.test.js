@@ -12,7 +12,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { InstallDeclined, checkMod, installMod, readSource } from '../src/lib/install.js';
+import { InstallDeclined, checkMod, installMod, readSource, run } from '../src/lib/install.js';
 import { REGISTRY_REPO, browse, fetchIndex, getFromRegistry, indexUrl, parseIndex, updateFromRegistry } from '../src/lib/registry.js';
 import { write } from './app-helpers.js';
 
@@ -185,6 +185,31 @@ test('a package that is not the plugin the index says is refused, and is never s
   const newer = { entry: { ...old.entry, version: '2.0.0' }, bytes: old.bytes };
   await assert.rejects(getFromRegistry('gamma', { modsDir: mods, fetch: github([newer]).fetch }), /is version 1\.0\.0, not 2\.0\.0/);
   assert.deepEqual(await ids(mods), []);
+});
+
+test('a package that declares more than the index says (a Node part, permissions, dependencies) is refused', async () => {
+  const { dir, mods } = await fresh();
+  const folder = await plugin(dir, 'alpha', '1.0.0', { host: 'host.js', permissions: ['files'] });
+  await write(path.join(folder, 'host.js'), 'export default () => {};');
+  const raw = JSON.parse(await fs.readFile(path.join(folder, 'package.json'), 'utf8'));
+  await write(path.join(folder, 'package.json'), JSON.stringify({ ...raw, type: 'module', dependencies: { left: '1.0.0' } }));
+  const honest = await release(dir, folder, { nodePart: true, permissions: ['files'], dependencies: ['left'] });
+  let asked = 0;
+  const confirm = async () => { asked += 1; return true; };
+
+  // The index leaves things out, as a compromised one would to make a plugin look harmless.
+  for (const lie of [{ nodePart: false }, { permissions: [] }, { dependencies: [] }]) {
+    const rel = { entry: { ...honest.entry, ...lie }, bytes: honest.bytes };
+    await assert.rejects(getFromRegistry('alpha', { modsDir: mods, fetch: github([rel]).fetch, confirm }), /declares something other than the index says/, JSON.stringify(lie));
+  }
+  assert.equal(asked, 0, 'nobody was asked about it');
+  assert.deepEqual(await ids(mods), []);
+
+  // Said as it is, it goes through. (npm is stood in for: nothing is fetched for the dependency.)
+  const tools = { npmCli: process.execPath, run: (command, args, options) => (command === process.execPath ? '' : run(command, args, options)) };
+  await getFromRegistry('alpha', { modsDir: mods, fetch: github([honest]).fetch, confirm, tools });
+  assert.equal(asked, 1, 'and then it is asked about');
+  assert.deepEqual(await ids(mods), ['alpha']);
 });
 
 test('a name the registry does not have is said, and a plugin already installed needs --force or an update', async () => {
