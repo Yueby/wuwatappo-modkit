@@ -12,47 +12,24 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { openAppSessions } from '../src/lib/cdp.js';
 import { Injector } from '../src/lib/injector.js';
 import { discoverAll, discoverMods } from '../src/lib/mods.js';
 import { windowLabel } from '../src/lib/targets.js';
+import { json, openWindows, until, write } from './app-helpers.js';
 
 const GOOD = 'zz-modkit-test';
 const SYNTAX = 'zz-modkit-syntax';
 const THROWS = 'zz-modkit-throws';
 
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const json = value => JSON.stringify(value);
-
 let tmpDir;
 let injector;
+let app;                       // openWindows()
 let windows;
-
-const inWindow = (label, expression) => {
-  const found = windows.find(w => windowLabel(w.target) === label);
-  if (!found) throw new Error(`no ${label} window`);
-  return found.session.evaluate(expression);
-};
-
-async function until(label, check, timeoutMs = 4000) {
-  const deadline = Date.now() + timeoutMs;
-  let last;
-  while (Date.now() < deadline) {
-    last = await check();
-    if (last) return last;
-    await sleep(50);
-  }
-  assert.fail(`timed out waiting for: ${label} (last value: ${json(last)})`);
-}
-
-async function write(file, text) {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, text);
-}
+const inWindow = (label, expression) => app.inWindow(label, expression);
 
 before(async () => {
-  windows = await openAppSessions({ log: () => {} });
-  assert.ok(windows.length, 'no app windows: start the app with `node src/cli.js lab`');
+  app = await openWindows();
+  windows = app.windows;
 
   // Precondition, read-only: never run this while the real auto-click is clicking.
   const running = await inWindow('main', `window.modkit?.mods.has('auto-click') ? modkit.getConfig('auto-click', 'running') : false`);
@@ -103,7 +80,7 @@ after(async () => {
       for (const key of Object.keys(localStorage)) if (/^modkit:[a-z]+:zz-modkit-/.test(key)) localStorage.removeItem(key);
       delete window.__zzTest;
     })()`).catch(() => {});
-    for (const { session } of windows) session.close();
+    app.close();
   }
   if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
 });

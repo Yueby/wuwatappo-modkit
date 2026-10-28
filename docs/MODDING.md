@@ -71,7 +71,8 @@ cannot give the mod a string where it expects a number.
 
 Every mod gets a switch on its own row of the MOD page, remembered across restarts. Off means
 the mod's code is not running at all: its timers, styles and rows are torn down (everything
-registered with `mod.onDispose`), and its settings are hidden. Switching it on starts it again.
+registered with `mod.onDispose`). Its settings can still be edited while it is off. Switching
+it on starts it again.
 It is separate from a feature switch such as "开始点击": the master switch is whether the mod is
 loaded, the setting is what it is doing.
 
@@ -116,8 +117,8 @@ Pick one control: `toggle: { value, onChange(next) }`, `button: { label, onClick
 `number: { value, min?, max?, step?, onChange(next) }`, `value: 'text'`, or
 `render: () => HTMLElement` (the app's classes `setting-btn`, `setting-input`, `setting-range`,
 `setting-value` are available). Any field may be a value or a function returning one; call
-`window.modkit.changed()` after the state changes to redraw. Rows appear under their mod's own
-row while it is on, and go away when it stops. A row is invisible when the mod runs only in
+`window.modkit.changed()` after the state changes to redraw. Rows appear in their mod's settings
+dialog, after the manifest's settings, and go away when the mod stops. A row is invisible when the mod runs only in
 another window, which is why settings are declared in the manifest instead.
 
 ## The MOD page
@@ -126,13 +127,20 @@ The settings panel has a **MOD** entry in its left navigation. It is part of the
 (`src/runtime/panel-tab.js`), not a mod: it is injected into every window before any mod runs,
 and it cannot be removed by deleting something from `mods/`.
 
-The page opens with the same header the 联机 page has, the one place the app puts a title beside
-a count: `MOD（3）` (3 mods loaded), and under it the overall state — `全部正常`, or `1 个出错`.
-Below it, for each mod: its own row (name, description or the error, and the master switch), then
-— while it is on — its settings in the order the manifest lists them. Mods are told apart by
-spacing only: the app has no section headings, no red and no green, and the page invents none.
+The page is a list. It opens with the same header the 联机 page has, the one place the app puts a
+title beside a count: `MOD（3）` (3 mods loaded), and under it the overall state — `全部正常`, or
+`1 个出错`. Below it is one row per mod: its name, its description (or the error, if it failed),
+a **设置** button when it has anything to set, and the master switch.
+
+The button opens the mod's settings in a dialog: the same layer the 合成 page uses for the
+atlas — dimmed over the content with the tab strip left visible, a card with the app's close
+button — headed by the mod's name and description, then its settings in the order the manifest
+lists them. It closes with the close button, Escape, or a click on the dimmed part, and when the
+user leaves the MOD page. Values a running mod publishes with `mod.live` update in place.
+
 Everything uses the app's own classes, so fonts, colours and scrollbar match without a mod
-writing any HTML or CSS.
+writing any HTML or CSS. The app has no section headings, no red and no green, and the page
+invents none.
 
 ## Loading and unloading
 

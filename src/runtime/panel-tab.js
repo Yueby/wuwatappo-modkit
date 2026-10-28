@@ -117,7 +117,8 @@ function buildView() {
 
 // --- rows --------------------------------------------------------------------
 
-// A row in the app's own layout: title (+ subtitle) on the left, `control` on the right.
+// A row in the app's own layout: title (+ subtitle) on the left, `control` on the right
+// (one element, or several: the app spaces them with the gap its .setting-content has).
 function row({ title, description, control }) {
   const item = el('div', 'setting-item');
 
@@ -127,7 +128,11 @@ function row({ title, description, control }) {
   item.appendChild(label);
 
   const content = el('div', 'setting-content');
-  if (control) content.appendChild(control);
+  content.append(...[control].flat().filter(Boolean));
+  // The panel starts dragging the window on any mousedown inside it (module-panel's
+  // onMousedown), which is why the app's own controls all stop the event. Without this a
+  // number box cannot be clicked into.
+  content.addEventListener('mousedown', event => event.stopPropagation());
   item.appendChild(content);
   return item;
 }
@@ -213,32 +218,113 @@ function renderHeader(body, mods) {
   body.appendChild(head);
 }
 
-// A mod is a group of rows: its own row first — name, what it does, and the master switch on
-// the right — then, while it is switched on, the settings it declares and any rows it added
-// from code. A failure replaces the subtitle with its message; it is said in words, not
-// colour, because the app's palette has no red or green to borrow.
-//
-// The groups are told apart by spacing alone (the 28px the room page puts under its header),
-// since the app has no section headings and the page does not invent them.
-const GROUP_GAP = '28px';
-
+// The page is a list: one row per mod — name, what it does (or the error), a 设置 button when
+// the mod has anything to set, and the master switch. The settings themselves open in a
+// dialog (below), so the list stays one line per mod however many settings there are.
+// A failure replaces the subtitle with its message; it is said in words, not colour,
+// because the app's palette has no red or green to borrow.
 function renderMod(body, id, manifest) {
   const state = kit.stateOf(id);
-  const enabled = kit.isEnabled(id);
+  const controlsOfRow = [];
 
-  const rows = [row({
+  if (hasSettings(id, manifest)) {
+    const open = el('button', 'setting-btn', '设置');
+    open.type = 'button';
+    open.addEventListener('click', () => openSettings(id));
+    controlsOfRow.push(open);
+  }
+  controlsOfRow.push(controls.toggle({ value: kit.isEnabled(id), onChange: on => kit.setEnabled(id, on) }));
+
+  body.appendChild(row({
     title: manifest.name,
     description: state.status === 'error' ? `出错：${state.error}` : manifest.description,
-    control: controls.toggle({ value: enabled, onChange: on => kit.setEnabled(id, on) }),
-  })];
+    control: controlsOfRow,
+  }));
+}
 
-  if (enabled) {
-    for (const def of manifest.settings) rows.push(settingRow(id, def));
-    for (const entry of kit.entries.filter(e => e.owner === id)) rows.push(entryRow(entry));
+// --- the settings dialog -------------------------------------------------------
+//
+// The panel already has a dialog: the one the 合成 page opens for the atlas. It is a layer
+// over the whole panel, dimmed, leaving the tab strip visible (the left padding is
+// --synthesis-atlas-pop-left), with a card in the middle and the app's own close button,
+// and a click on the dimmed part closes it. Those classes are global, so this one is built
+// from them and looks like the app's.
+
+const POPUP_ID = 'modkit-popup';
+const POPUP_BODY_ID = 'modkit-popup-body';
+
+// The mod whose settings are showing, or null.
+let settingsOf = null;
+
+const entriesOf = id => kit.entries.filter(e => e.owner === id);
+const hasSettings = (id, manifest) => manifest.settings.length > 0 || entriesOf(id).length > 0;
+
+function buildPopup() {
+  const layer = el('div', 'synthesis-atlas-pop');
+  layer.id = POPUP_ID;
+  // The app stops mousedown here for the same reason as above, and closes on a click.
+  layer.addEventListener('mousedown', event => event.stopPropagation());
+  layer.addEventListener('click', closeSettings);
+
+  const card = el('div', 'synthesis-atlas-pop-content');
+  card.addEventListener('click', event => event.stopPropagation());
+
+  const close = el('button', 'popup-close');
+  close.type = 'button';
+  close.addEventListener('click', closeSettings);
+
+  // The card has a fixed size and its own padding; the list inside it scrolls, with the
+  // app's thin scrollbar (the one .settings-module gives the settings page).
+  const scroller = el('div', 'panel-content common-scrollbar2');
+  scroller.id = POPUP_BODY_ID;
+  scroller.style.height = '100%';
+  scroller.style.overflowY = 'auto';
+
+  card.append(close, scroller);
+  layer.appendChild(card);
+  return layer;
+}
+
+function onSettingsKey(event) {
+  if (event.key === 'Escape') closeSettings();
+}
+
+function openSettings(id) {
+  const host = document.querySelector('.module-panel');   // the popup's variables live there
+  if (!host) return;
+  settingsOf = id;
+  if (!document.getElementById(POPUP_ID)) {
+    host.appendChild(buildPopup());
+    document.addEventListener('keydown', onSettingsKey);
   }
+  renderPopup();
+}
 
-  rows[rows.length - 1].style.marginBottom = GROUP_GAP;
-  body.append(...rows);
+function closeSettings() {
+  settingsOf = null;
+  document.getElementById(POPUP_ID)?.remove();
+  document.removeEventListener('keydown', onSettingsKey);
+}
+
+// Same header as the MOD page (name, and what it does under it), then the rows.
+function renderPopup() {
+  const body = document.getElementById(POPUP_BODY_ID);
+  if (!body) return;
+  const manifest = kit.mods.get(settingsOf);
+  if (!manifest) return closeSettings();   // the mod was unloaded while its settings were open
+
+  const scrolled = body.scrollTop;
+  body.textContent = '';
+
+  const head = el('div', 'room-info');
+  head.appendChild(el('div', 'room-qty', manifest.name));
+  if (manifest.description) head.appendChild(el('div', 'room-number', manifest.description));
+  head.style.marginBottom = '28px';
+  body.appendChild(head);
+
+  for (const def of manifest.settings) body.appendChild(settingRow(settingsOf, def));
+  for (const entry of entriesOf(settingsOf)) body.appendChild(entryRow(entry));
+  body.scrollTop = scrolled;
 }
 
 // A row for something the mod declared in mod.json. Values are read and written through the
@@ -272,7 +358,7 @@ kit.onLive = (id, key) => {
   const manifest = kit.mods.get(id);
   const def = manifest?.settings.find(s => s.key === key);
   if (!def) return;
-  for (const node of document.querySelectorAll('#' + BODY_ID + ' [data-modkit-id]')) {
+  for (const node of document.querySelectorAll('#' + POPUP_BODY_ID + ' [data-modkit-id]')) {
     if (node.dataset.modkitId === id && node.dataset.modkitKey === key) node.textContent = liveText(id, def);
   }
 };
@@ -297,6 +383,7 @@ function renderView() {
   const view = document.getElementById(VIEW_ID);
   const body = document.getElementById(BODY_ID);
   if (!view || !body || view.style.display === 'none') return; // nothing to update while hidden
+  renderPopup();   // no-op unless a mod's settings are open
 
   // Redrawing replaces the rows, so remember where the user had scrolled to.
   const scrolled = body.scrollTop;
@@ -341,6 +428,7 @@ function showModView() {
 }
 
 function hideModView() {
+  closeSettings();
   document.getElementById(VIEW_ID)?.style.setProperty('display', 'none');
 
   const host = moduleHost();
@@ -499,6 +587,7 @@ mod.onDispose(() => classWatcher.disconnect());
 mod.onDispose(() => { for (const [btn, handler] of boundTabs) btn.removeEventListener('click', handler); boundTabs.clear(); });
 mod.onDispose(() => clearInterval(retry));
 mod.onDispose(() => { kit.onChange = null; kit.onLive = null; });
+mod.onDispose(closeSettings);
 mod.onDispose(() => document.getElementById(TAB_ID)?.remove());
 mod.onDispose(() => document.getElementById(VIEW_ID)?.remove());
 mod.onDispose(() => document.getElementById(STYLE_ID)?.remove());
