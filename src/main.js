@@ -2,7 +2,7 @@
 // the repository, and the packaged exe (src/entry.js).
 
 import { COMMANDS } from './commands/index.js';
-import { installAndWait } from './commands/setup.js';
+import openWindow from './commands/window.js';
 import { isPackaged } from './lib/bundle.js';
 import { fail, log, style } from './lib/output.js';
 
@@ -13,6 +13,7 @@ ${style.bold('Usage')}
   node src/cli.js <command> [options]
 
 ${style.bold('Commands')}
+  window              Open the window with the install / uninstall buttons (what a double-click on the exe does)
   setup [status]      One-time install: after it, just run WuwaTappo.exe and the mods start with it
   uninstall           Take setup away again (--restore-exe also puts the original exe back)
   start               Keep mods always on: start the app with DevTools if needed, then stay resident
@@ -42,12 +43,12 @@ ${style.bold('Options')}
 ${style.dim('Docs: docs/LAUNCHING.md, docs/MODDING.md, docs/PACKAGING.md')}
 `;
 
-// With no command, the packaged exe does what it is for: unpack this version's mods into the app folder
-// and set everything up (a double-click on it). Run from the repository it shows the help, as before.
+// With no command, the packaged exe opens its window (a double-click on it). Run from the repository it
+// shows the help, as before.
 export async function main(argv) {
   const [name, ...rest] = argv;
 
-  if (!name && isPackaged() && process.stdin.isTTY) return installAndWait();
+  if (!name && isPackaged()) return openWindow();
 
   if (!name || name === '--help' || name === '-h' || name === 'help') {
     log(USAGE);

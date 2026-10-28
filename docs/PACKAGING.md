@@ -1,13 +1,21 @@
 # Packaging as one exe
 
-The plan: a single `.exe` put in the app folder (next to `WuwaTappo.exe`). Run it to install (`setup`) or take
-away (`uninstall`); run it again after an app update. It is also what the logon script starts, and what runs a
+A single `.exe` put in the app folder (next to `WuwaTappo.exe`). Double-click it: a window opens with 安装 (`setup`)
+and 卸载 (`uninstall`) buttons, and the output of `setup status`. Run 安装 again after an app update. It is also what the logon script starts, and what runs a
 mod's Node part, so the machine needs no Node installed.
 
 `npm run build` makes it: `dist/modkit.exe`, about 88 MB. The build runs the exe's own `selftest` (it reads what it
 carries, makes the folders, loads a mod, starts a mod's Node part that imports a package from its own
 `node_modules`) and fails if that does. The exe carries the framework scripts and **no mods**: mods come from
 elsewhere and are installed into `<app folder>\mods`, which `setup` makes empty.
+
+The window is a Windows PowerShell form (`src/window.ps1`, embedded in the exe and written to a temp file when
+opened): Windows has the forms library built in, so the exe stays one file and gains no dependency. Each button runs
+this same exe with a command and shows what it printed. Two things were measured when starting it: a child of the exe
+that is not detached is killed when the exe exits, and a *detached* `powershell.exe` exits at once without running its
+script; so a non-detached PowerShell starts the window with `Start-Process` (what that starts is outside the job). The
+console a double-click opens closes as soon as the window is up. `tests/window.test.js` drives the real form against a
+stand-in program.
 
 postject warns that "the signature seems corrupted": the copy of `node.exe` was signed by the Node project and no
 longer is. It runs; nothing here is signed.

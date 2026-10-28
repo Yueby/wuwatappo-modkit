@@ -69,6 +69,8 @@ async function exists(file) {
 }
 
 export async function classify(spec) {
+  // Never an option for the program it is handed to (git clone --upload-pack=..., npm pack --...).
+  if (/^\s*-/.test(spec)) throw new Error(`"${spec}" is not a source: it starts with a dash`);
   if (await exists(spec)) {
     const stat = await fs.stat(spec);
     if (stat.isDirectory()) return { type: 'folder' };
@@ -102,7 +104,7 @@ async function fetchInto(spec, dest, tools) {
 
   if (type === 'git') {
     const [url, ref] = spec.replace(/^git\+/, '').split('#');
-    await tools.run('git', ['clone', '--depth', '1', ...(ref ? ['--branch', ref] : []), url, dest]);
+    await tools.run('git', ['clone', '--depth', '1', ...(ref ? ['--branch', ref] : []), '--', url, dest]);
     await fs.rm(path.join(dest, '.git'), { recursive: true, force: true });
     return { type, root: dest, hint: path.basename(url).replace(/\.git$/, '') };
   }

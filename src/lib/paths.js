@@ -47,6 +47,7 @@ export const LOADER_EXE = path.join(LOADER_DIR, 'modkit-loader.exe');
 // (Packaged, there is no repository: the app folder stands in, and nothing is read from it.)
 export const PROJECT_ROOT = sea.isSea() ? INSTALL_DIR : path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 export const RUNTIME_DIR = path.join(PROJECT_ROOT, 'src', 'runtime');
+export const WINDOW_SCRIPT = path.join(PROJECT_ROOT, 'src', 'window.ps1');
 
 // Example mods and templates to copy from. They are not part of the program and are never installed
 // by it: mods starts empty.

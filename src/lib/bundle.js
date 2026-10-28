@@ -1,6 +1,6 @@
 // The files a packaged program carries inside itself, and the same files read from the repository when
-// it is not packaged. Only one kind is carried: the framework scripts that are sent into every window
-// (src/runtime/), because they are read from disk at run time. The program carries no mods: mods
+// it is not packaged. Two kinds are carried: the framework scripts that are sent into every window
+// (src/runtime/), and the script of the exe's own window (src/window.ps1), because they are read from disk at run time. The program carries no mods: mods
 // come from the community and are installed into the app folder (see install.js).
 //
 // scripts/build.js lists every embedded file in an asset called index.json.
@@ -8,12 +8,17 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import * as sea from 'node:sea';
-import { RUNTIME_DIR } from './paths.js';
+import { RUNTIME_DIR, WINDOW_SCRIPT } from './paths.js';
 
 export const isPackaged = () => sea.isSea();
 
 let index = null;
 const keys = () => (index ??= JSON.parse(sea.getAsset('index.json', 'utf8')));
+
+// The script of the window the exe opens when it is double-clicked (src/window.ps1).
+export async function windowScript() {
+  return isPackaged() ? sea.getAsset('window.ps1', 'utf8') : fs.readFile(WINDOW_SCRIPT, 'utf8');
+}
 
 // The framework scripts, as { name, code }, in name order.
 export async function runtimeScripts() {

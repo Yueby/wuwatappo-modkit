@@ -13,7 +13,6 @@
 // administrator is needed to set it up or to take it away again.
 
 import { spawn } from 'node:child_process';
-import readline from 'node:readline/promises';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { appState } from '../lib/app.js';
@@ -155,21 +154,4 @@ export async function uninstall(argv) {
   log(`\n${style.green('done')}  the app keeps its DevTools port until it is restarted.`);
   log(style.dim(`  Your mods (${MODS_DIR}) and what they keep (${MOD_DATA_DIR}) are left where they are.`));
   return 0;
-}
-
-// What running the packaged exe with nothing else typed does (a double-click): everything setup does,
-// and then the console is held open so that what it said can be read.
-export async function installAndWait() {
-  let code = 0;
-  try {
-    code = (await setup([])) ?? 0;
-  } catch (err) {
-    fail(err.message);
-    code = 1;
-  }
-  log(style.dim('\nTo take it away: run this program with the word uninstall.   卸载:带 uninstall 参数运行本程序。'));
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  await rl.question('\nPress Enter to close.   按回车键关闭。');
-  rl.close();
-  return code;
 }

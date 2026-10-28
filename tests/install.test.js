@@ -279,7 +279,7 @@ test('git is cloned shallowly, with the branch if one is given, and its history 
   await installMod('https://example.com/someone/fromgit.git#v1.0', { modsDir: mods, tools });
 
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0][1].slice(0, 6), ['clone', '--depth', '1', '--branch', 'v1.0', 'https://example.com/someone/fromgit.git']);
+  assert.deepEqual(calls[0][1].slice(0, 7), ['clone', '--depth', '1', '--branch', 'v1.0', '--', 'https://example.com/someone/fromgit.git'], 'after "--", so the address is never taken for an option');
   assert.equal(calls[0][0], 'git');
   assert.deepEqual(await ids(mods), ['fromgit']);
   await assert.rejects(fs.stat(path.join(mods, 'fromgit', '.git')));
@@ -331,4 +331,10 @@ test('what a source is: folder, archive, script, git, npm; and a path that does 
   for (const name of ['some-mod', '@who/some-mod', 'some-mod@^1.2.0']) assert.equal((await classify(name)).type, 'npm', name);
   await assert.rejects(classify('.\\nowhere\\mod'), /does not exist/);
   await assert.rejects(classify(path.join(dir, 'missing.zip')), /does not exist|npm/);
+});
+
+test('a source that starts with a dash is refused: it would be an option for git or npm, not a source', async () => {
+  for (const spec of ['--upload-pack=calc', '-x', ' --registry=http://evil']) {
+    await assert.rejects(classify(spec), /starts with a dash/, spec);
+  }
 });

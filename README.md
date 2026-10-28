@@ -9,6 +9,13 @@ length-preserving byte edit (it stops demanding administrator) and nothing else.
 
 ## Quick start
 
+With the single exe (`npm run build` makes `dist/modkit.exe`): put it in the app folder and double-click it. A
+window opens with **安装** and **卸载** buttons, and what is in place. Install once; after that just run
+`WuwaTappo.exe`. Mods are folders: unpack one into the `mods` folder beside the app (the window has a button that
+opens it). Nothing is installed *into* the exe, and nothing is shipped with it.
+
+From the repository, the same by command:
+
 ```sh
 node src/cli.js setup        # once (one UAC prompt). From then on just run WuwaTappo.exe: the mods start with it
 node src/cli.js uninstall    # takes that away again

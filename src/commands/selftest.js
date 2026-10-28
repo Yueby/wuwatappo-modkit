@@ -8,7 +8,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
-import { isPackaged, runtimeScripts } from '../lib/bundle.js';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { isPackaged, runtimeScripts, windowScript } from '../lib/bundle.js';
 import { HostManager } from '../lib/host.js';
 import { ensureFolders } from '../lib/layout.js';
 import { discoverCore, discoverMods } from '../lib/mods.js';
@@ -49,6 +51,17 @@ export default async function selftest() {
       const core = await discoverCore();
       for (const script of core) new vm.Script(compileCore(script), { filename: script.name });
       return `${core.length} scripts`;
+    });
+
+    await check('the script of the window can be read, and is valid PowerShell', async () => {
+      const text = await windowScript();
+      if (!/ShowDialog/.test(text)) throw new Error('it is not the window script');
+      if (process.platform !== 'win32') return 'not checked: not Windows';
+      const file = path.join(dir, 'window.ps1');
+      await fs.writeFile(file, '\uFEFF' + text);
+      const { stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-Command',
+        `$e = $null; $t = $null; [void][System.Management.Automation.Language.Parser]::ParseFile('${file}', [ref]$t, [ref]$e); $e | ForEach-Object { $_.Message }`], { windowsHide: true });
+      if (stdout.trim()) throw new Error(stdout.trim());
     });
 
     await check('the folders are made empty, and a mod put in the mods folder is read and loads', async () => {

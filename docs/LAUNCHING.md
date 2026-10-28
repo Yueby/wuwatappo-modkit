@@ -85,6 +85,8 @@ E:\Programs\WuwaTappo\
 
 ## Install once, then just run the app
 
+The packaged exe does this from its window (double-click it: 安装, 卸载). The commands below are what the buttons run.
+
 ```sh
 node src/cli.js setup            # one UAC prompt, once
 node src/cli.js setup status     # what is in place

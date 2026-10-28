@@ -2,8 +2,9 @@
 //
 //   1. esbuild turns src/entry.js and everything it imports into one CommonJS script (a single
 //      executable application must start from one file).
-//   2. The framework scripts (src/runtime/) are embedded beside it as assets. No mods are: the exe
-//      carries none, they are installed into the app folder by whoever wants them.
+//   2. The framework scripts (src/runtime/) and the script of the exe's window (src/window.ps1) are
+//      embedded beside it as assets. No mods are: the exe carries none, they are put in the app
+//      folder's mods folder by whoever wants them.
 //   3. node --experimental-sea-config makes the blob, and postject puts it into a copy of node.exe.
 //   4. The result runs its own `selftest`, and the build fails if that does.
 //
@@ -53,6 +54,7 @@ for (const name of (await fs.readdir(path.join(root, 'src', 'runtime'))).filter(
 const indexFile = path.join(dist, 'index.json');
 await fs.writeFile(indexFile, JSON.stringify(Object.keys(assets)));
 assets['index.json'] = indexFile;
+assets['window.ps1'] = path.join(root, 'src', 'window.ps1');
 
 const seaConfig = path.join(dist, 'sea-config.json');
 const blob = path.join(dist, 'sea-prep.blob');
