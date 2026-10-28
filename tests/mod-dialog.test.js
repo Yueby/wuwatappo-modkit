@@ -193,12 +193,21 @@ test('the 设置 button opens the app\'s own dialog, with the mod\'s settings in
   await until('the dialog is open', popupOpen);
 
   const shape = JSON.parse(await panel(`JSON.stringify({
-    insidePanel: !!document.querySelector('.module-panel > #modkit-popup.synthesis-atlas-pop'),
-    card: !!document.querySelector('#modkit-popup > .synthesis-atlas-pop-content'),
+    insidePanel: !!document.querySelector('.module-panel > #modkit-popup.role-switch-emote-overlay'),
+    card: !!document.querySelector('#modkit-popup > .role-switch-emote-overlay__panel'),
     close: !!document.querySelector('#modkit-popup .popup-close'),
     heading: document.querySelector('#modkit-popup .room-qty')?.textContent,
   })`));
   assert.deepEqual(shape, { insidePanel: true, card: true, close: true, heading: NAME });
+
+  // The app's own confirm dialog is the look: its corners, and the middle of the window (not beside the tab strip).
+  const look = JSON.parse(await panel(`JSON.stringify((() => {
+    const card = document.querySelector('#modkit-popup .role-switch-emote-overlay__panel');
+    const r = card.getBoundingClientRect();
+    return { radius: getComputedStyle(card).borderRadius, border: getComputedStyle(card).borderTopWidth, left: Math.round(r.left), right: Math.round(innerWidth - r.right), top: Math.round(r.top), bottom: Math.round(innerHeight - r.bottom) };
+  })())`));
+  assert.deepEqual([look.radius, look.border], ['48px', '3px']);
+  assert.ok(Math.abs(look.left - look.right) <= 2 && Math.abs(look.top - look.bottom) <= 2, `in the middle of the window: ${JSON.stringify(look)}`);
   assert.deepEqual(await titles(), ['Flag', 'Number', 'Shown']);
   assert.equal(await panel(`document.querySelector('#modkit-popup-body .setting-value').textContent`), 'first');
 });
@@ -274,7 +283,7 @@ test('the dialog closes with Escape, with the close button, and with a click on 
   await until('reopened again', popupOpen);
   await click('#modkit-popup-body .room-qty');                 // on the card: stays open
   assert.equal(await popupOpen(), true, 'a click on the card does not close it');
-  const card = JSON.parse(await panel(`(() => { const r = document.querySelector('#modkit-popup .synthesis-atlas-pop-content').getBoundingClientRect(); return JSON.stringify({ right: r.right, mid: r.top + r.height / 2 }) })()`));
+  const card = JSON.parse(await panel(`(() => { const r = document.querySelector('#modkit-popup .role-switch-emote-overlay__panel').getBoundingClientRect(); return JSON.stringify({ right: r.right, mid: r.top + r.height / 2 }) })()`));
   await clickAt(card.right + 20, card.mid);                    // on the dimmed part
   await until('closed by the dimmed part', async () => !(await popupOpen()));
 });

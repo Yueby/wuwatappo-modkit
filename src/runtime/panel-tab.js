@@ -271,45 +271,90 @@ function renderMod(body, id, manifest) {
 
 // --- the dialog ----------------------------------------------------------------
 //
-// The panel already has a dialog: the one the 合成 page opens for the atlas. It is a layer
-// over the whole panel, dimmed, leaving the tab strip visible (the left padding is
-// --synthesis-atlas-pop-left), with a card in the middle and the app's own close button,
-// and a click on the dimmed part closes it. Those classes are global, so this one is built
-// from them and looks like the app's.
+// Every dialog here has one look, the app's own confirm dialog (.role-switch-emote-overlay: a layer over the
+// whole window, dimmed, and a panel with the parchment background, a brown border and 48px corners), and
+// one place, the middle of the window, which is where the About dialog opens. The settings page's
+// card (.synthesis-atlas-pop-content: cream, 30px corners, beside the tab strip) is not used: one app
+// should not have two sizes of corner. They come in and go with a fade and a slight zoom, 0.2 s, the
+// length of the app's own .fade-enter-active / .fade-leave-active.
+//
+// These classes are global (no data-v scoping), so using them is enough.
 
 const POPUP_ID = 'modkit-popup';
 const POPUP_BODY_ID = 'modkit-popup-body';
+const FADE_MS = 200;
 
-// What the dialog is showing: { kind: 'settings', id } for one mod's settings, { kind: 'log' }
-// for the log, or null while it is closed.
+// What the dialog is showing: { kind: 'settings', id } for one mod's settings, { kind: 'log' } for the log,
+// { kind: 'plugins' } for the registry's list, or null while it is closed.
 let dialog = null;
 
 const entriesOf = id => kit.entries.filter(e => e.owner === id);
 const hasSettings = (id, manifest) => manifest.settings.length > 0 || entriesOf(id).length > 0;
 
-function buildPopup() {
-  const layer = el('div', 'synthesis-atlas-pop');
-  layer.id = POPUP_ID;
-  // The app stops mousedown here for the same reason as above, and closes on a click.
+// The layer and the panel every dialog is made of. `wide`: a panel for a list, which scrolls, not for a
+// question. (A timer, not a frame, in what follows: a hidden window draws no frames.)
+function frame({ id, wide = false }) {
+  const layer = el('div', 'role-switch-emote-overlay');
+  layer.id = id;
+  // The class leaves room for the tab strip on the left, as the atlas dialog does. These are in the middle.
+  layer.style.padding = '24px';
+  // The app starts dragging the window on any mousedown in the panel, which is why its own dialogs stop it.
   layer.addEventListener('mousedown', event => event.stopPropagation());
-  layer.addEventListener('click', closeDialog);
 
-  const card = el('div', 'synthesis-atlas-pop-content');
-  card.addEventListener('click', event => event.stopPropagation());
+  const panel = el('div', 'role-switch-emote-overlay__panel');
+  if (wide) {
+    panel.style.width = 'min(780px, 100%)';
+    panel.style.height = 'min(560px, 100%)';
+    panel.style.padding = '32px 14px 32px 36px';
+    panel.style.display = 'flex';
+  }
+  layer.appendChild(panel);
+  return { layer, panel };
+}
 
-  const close = el('button', 'popup-close');
+// In: from invisible and a little small to as it is. Out: the other way, and then gone.
+function appear(layer) {
+  const panel = layer.firstElementChild;
+  layer.classList.add('fade-enter', 'fade-enter-active');
+  panel.style.transform = 'scale(0.94)';
+  panel.style.transition = `transform ${FADE_MS}ms ease-out`;
+  setTimeout(() => {
+    layer.classList.remove('fade-enter');
+    panel.style.transform = '';
+    setTimeout(() => {
+      layer.classList.remove('fade-enter-active');
+      panel.style.transition = '';
+    }, FADE_MS);
+  }, 30);
+}
+
+function disappear(layer) {
+  if (!layer) return;
+  layer.removeAttribute('id');                       // it is on its way out: nothing should find it now
+  layer.style.pointerEvents = 'none';
+  layer.firstElementChild.style.transition = `transform ${FADE_MS}ms ease-in`;
+  layer.firstElementChild.style.transform = 'scale(0.94)';
+  layer.classList.add('fade-leave-active', 'fade-leave-to');
+  setTimeout(() => layer.remove(), FADE_MS);
+}
+
+function buildPopup() {
+  const { layer, panel } = frame({ id: POPUP_ID, wide: true });
+  layer.addEventListener('click', closeDialog);       // a click on the dimmed part closes it
+  panel.addEventListener('click', event => event.stopPropagation());
+
+  const close = el('button', 'popup-close');          // the app's own: the star that turns round when pointed at
   close.type = 'button';
   close.addEventListener('click', closeDialog);
 
-  // The card has a fixed size and its own padding; the list inside it scrolls, with the
-  // app's thin scrollbar (the one .settings-module gives the settings page).
+  // The list scrolls inside the panel, with the app's thin scrollbar.
   const scroller = el('div', 'panel-content common-scrollbar2');
   scroller.id = POPUP_BODY_ID;
-  scroller.style.height = '100%';
+  scroller.style.flex = '1';
+  scroller.style.minWidth = '0';
   scroller.style.overflowY = 'auto';
 
-  card.append(close, scroller);
-  layer.appendChild(card);
+  panel.append(close, scroller);
   return layer;
 }
 
@@ -322,7 +367,9 @@ function openDialog(next) {
   if (!host) return;
   dialog = next;
   if (!document.getElementById(POPUP_ID)) {
-    host.appendChild(buildPopup());
+    const layer = buildPopup();
+    host.appendChild(layer);
+    appear(layer);
     document.addEventListener('keydown', onDialogKey);
   }
   renderPopup();
@@ -343,8 +390,8 @@ function closeDialog() {
   // An install waiting for its yes is a no, not something left hanging in the loader.
   if (dialog?.kind === 'plugins' && dialog.op?.type === 'confirm') kit.manageAnswer(dialog.requestId, false);
   dialog = null;
-  document.getElementById(OVERLAY_ID)?.remove();
-  document.getElementById(POPUP_ID)?.remove();
+  disappear(document.getElementById(OVERLAY_ID));
+  disappear(document.getElementById(POPUP_ID));
   document.removeEventListener('keydown', onDialogKey);
 }
 
@@ -470,20 +517,16 @@ function syncOverlay() {
   const op = dialog?.kind === 'plugins' ? dialog.op : null;
   const existing = document.getElementById(OVERLAY_ID);
   if (!op) {
-    existing?.remove();
+    disappear(existing);
     return;
   }
   const key = JSON.stringify([op.type, op.text, op.message, op.info?.id, op.plugin?.id]);
   if (existing?.dataset.key === key) return;
-  existing?.remove();
+  existing?.remove();                                // replaced in place: it does not fade out and in again
 
   const prompt = promptFor(op);
-  const layer = el('div', 'role-switch-emote-overlay');
-  layer.id = OVERLAY_ID;
+  const { layer, panel: card } = frame({ id: OVERLAY_ID });
   layer.dataset.key = key;
-  layer.addEventListener('mousedown', event => event.stopPropagation());   // the panel drags the window on mousedown
-
-  const card = el('div', 'role-switch-emote-overlay__panel');
   const [title, ...rest] = prompt.lines;                                    // the first line says what it is about, apart from the rest
   const message = el('p', 'role-switch-emote-overlay__message', rest.length ? `${title}\n\n${rest.join('\n')}` : title);
   message.style.whiteSpace = 'pre-line';                                    // the lines are lines
@@ -510,8 +553,8 @@ function syncOverlay() {
     card.appendChild(actions);
   }
 
-  layer.appendChild(card);
   (document.querySelector('.module-panel') ?? document.body).appendChild(layer);
+  if (!existing) appear(layer);                      // one that was not there before comes in; the next one just replaces it
 }
 
 // Set what is being asked, and draw it.
@@ -605,13 +648,12 @@ function loadPlugins() {
 
 // What a plugin's row says about where it stands, and the buttons that go with it.
 function pluginRow(plugin) {
-  const flags = [plugin.author ? `作者 ${plugin.author}` : null, plugin.nodePart ? '带后台程序' : null].filter(Boolean).join(' · ');
-  const state = plugin.dev ? '开发中：用的是本地文件夹'
-    : !plugin.installed ? null
-    : !plugin.fromRegistry ? '已有同名插件（不是从这里安装的）'
-      : plugin.update ? `已安装 ${plugin.installedVersion ?? '?'}，有新版本`
-        : `已安装 ${plugin.installedVersion ?? ''}`.trim();
-  const description = [plugin.description, flags, state].filter(Boolean).join(' · ');
+  // Version and author are in the title, and whether it is installed is what the buttons say: the
+  // description is what it does, and what could surprise (a background program), and why there are no buttons.
+  const note = plugin.dev ? '开发中：用的是本地文件夹'
+    : plugin.installed && !plugin.fromRegistry ? '已有同名插件（不是从这里安装的）'
+      : null;
+  const description = [plugin.description, plugin.nodePart ? '带后台程序' : null, note].filter(Boolean).join(' · ');
 
   const buttons = [];
   if (plugin.dev) {
@@ -622,7 +664,7 @@ function pluginRow(plugin) {
     if (plugin.update) buttons.push(controls.button({ label: '更新', onClick: () => pluginRequest('update', plugin) }));
     buttons.push(controls.button({ label: '卸载', onClick: () => setOp(dialog, { type: 'confirm-remove', plugin, purge: false }) }));
   }
-  return row({ title: `${plugin.name}  ${plugin.version}`, description, control: buttons });
+  return row({ title: `${plugin.name}  ${plugin.version}${plugin.author ? ` · ${plugin.author}` : ''}`, description, control: buttons });
 }
 
 function renderPluginsDialog() {

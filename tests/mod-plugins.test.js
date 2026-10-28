@@ -161,6 +161,27 @@ test('安装 opens the dialog with the registry\'s plugins, and the plugin has a
   assert.equal(await panel(`!!document.querySelector('#modkit-popup-body .setting-btn')`), true);
 });
 
+test('the list and a question over it are the same kind of dialog: the same corners, both in the middle of the window, and a row says who wrote it and which version in its title only', async () => {
+  const rows = JSON.parse(await panel(`JSON.stringify([...document.querySelectorAll('#modkit-popup-body .setting-item')].map(r => ({ title: r.querySelector('.setting-title').textContent, sub: r.querySelector('.setting-sub')?.textContent ?? '' })))`));
+  const mine = rows.find(r => r.title.includes('zz-plugin'));
+  assert.match(mine.title, /1\.0\.0/, 'the version is in the title');
+  assert.doesNotMatch(mine.sub, /1\.0\.0|已安装|作者/, 'and not in the description');
+
+  await click('.setting-btn', 'zz-plugin');
+  await until('the question is shown', overlayOpen);
+  await sleep(400);                                                       // let it finish coming in
+  const shapes = JSON.parse(await panel(`JSON.stringify(['#modkit-popup', '#modkit-overlay'].map(id => {
+    const card = document.querySelector(id + ' .role-switch-emote-overlay__panel');
+    const r = card.getBoundingClientRect();
+    return { id, radius: getComputedStyle(card).borderRadius, border: getComputedStyle(card).borderTopWidth, off: Math.abs(Math.round(r.left - (innerWidth - r.right))) + Math.abs(Math.round(r.top - (innerHeight - r.bottom))) };
+  }))`));
+  assert.equal(shapes[0].radius, shapes[1].radius, 'the corners are the same size');
+  assert.equal(shapes[0].border, shapes[1].border);
+  for (const shape of shapes) assert.ok(shape.off <= 4, `${shape.id} is in the middle: ${JSON.stringify(shape)}`);
+  await click('#modkit-overlay .role-switch-emote-overlay__cancel');
+  await until('the prompt is gone', async () => !(await overlayOpen()));
+});
+
 test('pressing 安装 on a plugin asks first, over the list: what it declares, nothing on disk until yes', async () => {
   await click('.setting-btn', 'zz-plugin');
   await until('the question is shown', overlayOpen);
@@ -193,7 +214,7 @@ test('安装 then yes installs it, a bubble says so and goes by itself, and the 
   await until('it is installed', async () => (await fs.readdir(modsDir)).includes('zz-plugin'), 8000);
   await until('the bubble says so', async () => /已安装「/.test((await toastText()) ?? ''));
   await until('the prompt is gone', async () => !(await overlayOpen()));
-  assert.equal(await panel(`document.querySelector('#modkit-popup-body').textContent.includes('已装 1.0.0')`), true, 'the row says it is installed');
+  assert.equal(await panel(`[...document.querySelectorAll('#modkit-popup-body .setting-item')].some(r => r.textContent.includes('zz-plugin') && [...r.querySelectorAll('.setting-btn')].some(b => b.textContent === '卸载'))`), true, 'its row now offers 卸载 (the buttons say it is installed, the description does not)');
   await until('the bubble has gone by itself', async () => (await toastText()) === null, 6000);
 });
 
