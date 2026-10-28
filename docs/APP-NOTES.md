@@ -231,3 +231,10 @@ Font family is the app's bundled `975MaruSC`. Spacing between rows is each row's
 `margin-bottom: 10px`, not a gap on the container. An earlier version of the MOD page used
 hand-picked 12-14px system-font cards, which is why it looked out of place.
 
+The text styles on the real settings page, by (size, colour): 18px `#8e5e43` (titles, buttons,
+inputs), 18px `#8e7b6a` (values), 14px `#8e7b6a` (subtitles); copyright block 13px. The
+stylesheet's whole palette is browns, creams and oranges — **no red and no green anywhere** —
+and the page has **no section headings**. Check a new page the same way: collect the
+computed (size, colour, family) of every text-bearing element and diff the set against the
+settings page; anything extra is out of place.
+

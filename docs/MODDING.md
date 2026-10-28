@@ -27,10 +27,12 @@ framework (`src/runtime/panel-tab.js`), not a mod: it is injected into every win
 before any mod runs, so `mod.entry` is always available, and it cannot be removed by
 deleting something from `mods/`.
 
-The page lists the mods that are loaded (with the error message under one that failed)
-and, below that, every row added through `mod.entry`. Rows use the app's own settings
-markup, so they look like the rest of the settings page — same fonts, colours, spacing and
-scrollbar — without the mod writing any HTML or CSS.
+The page is a list of rows, like the settings page: first one row per loaded mod (its
+name, and "正常" / "出错" on the right; a failed mod shows its error as the subtitle), then
+every row added through `mod.entry`. Rows use the app's own settings markup, so they look
+like the rest of the settings page — same fonts, colours, spacing and scrollbar — without
+the mod writing any HTML or CSS. There are no section headings and no red or green: the
+app has neither, and the page does not invent them.
 
 ```js
 let enabled = false;

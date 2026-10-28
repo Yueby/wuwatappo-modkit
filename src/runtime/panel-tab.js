@@ -78,15 +78,9 @@ function installStyle() {
     .tab-bar--collapsed #${TAB_ID} .tab-btn__label {
       display: none;
     }
-    /* The page itself uses the app's own classes (module-block, setting-item, ...), so
-       fonts, colours, spacing and the scrollbar come from the app. Only what the app has
-       no class for is styled here. */
-    #${VIEW_ID} .mk-group { margin: 22px 0 8px; font-size: 14px; color: #8e7b6a; }
-    #${VIEW_ID} .mk-group:first-child { margin-top: 0; }
-    #${VIEW_ID} .setting-value.mk-ok   { color: #5b8a4a; }
-    #${VIEW_ID} .setting-value.mk-bad  { color: #b4533c; }
-    #${VIEW_ID} .setting-sub.mk-bad    { color: #b4533c; word-break: break-all; }
-    #${VIEW_ID} .mk-empty { font-size: 14px; color: #8e7b6a; }`;
+    /* Nothing here: the page is built entirely from the app's own classes, so fonts,
+       sizes and colours all come from the app (its palette has no red or green, and its
+       settings page has no section headings, so neither is invented here). */`;
   document.head.appendChild(style);
 }
 
@@ -146,12 +140,12 @@ function buildView() {
 // --- rows --------------------------------------------------------------------
 
 // A row in the app's own layout: title (+ subtitle) on the left, `control` on the right.
-function row({ title, description, control, descriptionClass }) {
+function row({ title, description, control }) {
   const item = el('div', 'setting-item');
 
   const label = el('div', 'setting-label');
   label.appendChild(el('div', 'setting-title', title ?? '(未命名)'));
-  if (description) label.appendChild(el('div', `setting-sub${descriptionClass ? ' ' + descriptionClass : ''}`, description));
+  if (description) label.appendChild(el('div', 'setting-sub', description));
   item.appendChild(label);
 
   const content = el('div', 'setting-content');
@@ -219,8 +213,6 @@ function controlFor(entry) {
 
 // --- sections ----------------------------------------------------------------
 
-const group = text => el('div', 'mk-group', text);
-
 // User mods only: framework scripts are not something the user installed.
 function loadedMods() {
   return Object.entries(window.__wuwaMods ?? {})
@@ -228,33 +220,32 @@ function loadedMods() {
     .sort(([a], [b]) => a.localeCompare(b));
 }
 
+// One row per loaded mod: its name, and on the right whether it is working. A failure
+// shows its message as the row's subtitle. State is said in words, not colour — the app's
+// palette has no red or green to borrow.
 function renderMods(body) {
   const mods = loadedMods();
-  body.appendChild(group(`已加载的 mod（${mods.length}）`));
 
   if (!mods.length) {
-    body.appendChild(el('div', 'mk-empty', 'mods/ 里还没有 mod。'));
+    body.appendChild(row({
+      title: 'mods/ 里还没有 mod',
+      description: '把脚本放进 mods/ 文件夹，保存后会自动加载。',
+    }));
     return;
   }
 
   for (const [name, state] of mods) {
     const status = state?.status ?? 'unknown';
     const failed = status === 'error';
-    const value = el('span', `setting-value ${status === 'ok' ? 'mk-ok' : failed ? 'mk-bad' : ''}`,
-      status === 'ok' ? '正常' : failed ? '出错' : '加载中');
     body.appendChild(row({
       title: name,
       description: failed ? state.error : null,
-      descriptionClass: 'mk-bad',
-      control: value,
+      control: controls.value(status === 'ok' ? '正常' : failed ? '出错' : '加载中'),
     }));
   }
 }
 
 function renderEntries(body) {
-  if (!kit.entries.length) return;
-  body.appendChild(group('功能'));
-
   for (const entry of kit.entries) {
     let control = null;
     let failure = null;
@@ -267,7 +258,6 @@ function renderEntries(body) {
     body.appendChild(row({
       title: resolve(entry.title),
       description: failure ?? resolve(entry.description),
-      descriptionClass: failure ? 'mk-bad' : null,
       control,
     }));
   }
