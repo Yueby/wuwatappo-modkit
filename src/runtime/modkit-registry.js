@@ -188,6 +188,8 @@ kit.stateOf = id => {
   const failed = reports.find(r => r.status === 'error');
   if (failed) return { status: 'error', error: failed.error };
   if (reports.some(r => r.status === 'loading')) return { status: 'loading' };
+  const waiting = reports.find(r => r.status === 'waiting');      // its Node part is held back by a mod it requires
+  if (waiting) return { status: 'waiting', error: waiting.error };
   if (reports.some(r => r.status === 'ok')) return { status: 'ok' };
   return { status: reports.length ? 'off' : 'idle' };
 };
@@ -351,7 +353,8 @@ kit.toHost = message => {
 };
 
 // mod.host.call(): resolves with what the handler returned, rejects with its message.
-kit.hostCall = (id, name, arg, label) => new Promise((resolve, reject) => {
+// With `target`, a service of another mod (mod.call) rather than this mod's own part.
+kit.hostCall = (id, name, arg, label, target) => new Promise((resolve, reject) => {
   const callId = `${id}#${++kit.callSeq}`;
   const timer = setTimeout(() => {
     kit.hostCalls.delete(callId);
@@ -359,7 +362,7 @@ kit.hostCall = (id, name, arg, label) => new Promise((resolve, reject) => {
   }, HOST_CALL_TIMEOUT_MS);
   kit.hostCalls.set(callId, { resolve, reject, timer });
 
-  if (!kit.hostAlive() || !kit.toHost({ t: 'call', mod: id, window: label, name, arg, callId })) {
+  if (!kit.hostAlive() || !kit.toHost({ t: 'call', mod: id, window: label, target, name, arg, callId })) {
     clearTimeout(timer);
     kit.hostCalls.delete(callId);
     reject(new Error('the Node part is not running (the loader only runs it while "watch" is running)'));
@@ -451,10 +454,10 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
     kit.post({ type: 'status', id, window: label, status: record.status, error: record.error });
   }
 
-  // Tell the mod's Node part where it stands: the master switch and the settings (hello, which
-  // every window sends and the loader sorts out), or only the switch.
+  // Tell the loader where this mod stands: the master switch and the settings (hello, which every
+  // window sends and the loader sorts out), or only the switch. Every mod does, not only those with
+  // a Node part: a mod that another requires is waited for until its switch is known.
   function tellHost(kind) {
-    if (!manifest.host) return;
     if (kind === 'enabled') {
       kit.toHost({ t: 'enabled', mod: id, enabled: kit.isEnabled(id) });
       return;
@@ -554,6 +557,9 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
       // The mod's Node part ("modkit.host" in package.json), which runs in the loader's process.
       //   call(name, arg)  asks it something; resolves with its answer, rejects with its error
       //   on(name, fn)     hears what it sends with host.emit(name, arg)
+      // A service another mod offers with host.provide (this mod must list it in "modkit.requires").
+      call: (target, name, arg) => kit.hostCall(id, name, arg, label, target),
+
       host: {
         call(name, arg) {
           if (!manifest.host) return Promise.reject(new Error(`${id} has no Node part (set "modkit.host" in package.json)`));

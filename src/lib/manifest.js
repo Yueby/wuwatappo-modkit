@@ -23,12 +23,21 @@
 // an error on the MOD page, not a row that silently does nothing. Other top-level fields
 // (author, license, ...) are left alone; unknown keys inside "modkit" are an error.
 
+import { validRange } from './semver.js';
+
+// The version of the interface a mod is written against (what the loader and the page runtime give
+// it). A mod that says a higher number than this one was written for a newer modkit and is listed
+// as broken with that said, instead of failing in some way nobody can read. Raise it when something
+// a mod could rely on changes in a way that breaks it.
+export const LOADER_API = 1;
+
 export const WINDOWS = ['main', 'panel', 'login', 'update', 'toast', 'about', 'oss-notice'];
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const KEY = /^[A-Za-z][A-Za-z0-9_]*$/;
 const SETTING_TYPES = ['toggle', 'number', 'value'];
-const MODKIT_KEYS = ['defaultEnabled', 'windows', 'host', 'settings'];
+const MODKIT_KEYS = ['api', 'defaultEnabled', 'windows', 'host', 'requires', 'permissions', 'settings'];
+const PERMISSION = /^[a-z][a-z0-9-]*$/;
 
 export class ManifestError extends Error {
   constructor(problems) {
@@ -38,10 +47,10 @@ export class ManifestError extends Error {
   }
 }
 
-// Returns { manifest, windows, host }: `manifest` is what the page gets (no file names),
-// `windows` maps a window label (or '*' for all of them) to a path relative to the mod's
-// folder, and `host` is the path of its Node part, or null. `folder` is the directory name,
-// which is the mod's id.
+// Returns { manifest, windows, host, api, requires, permissions, engines }: `manifest` is what the
+// page gets (no file names), `windows` maps a window label (or '*' for all of them) to a path
+// relative to the mod's folder, and `host` is the path of its Node part, or null; the rest is for
+// the loader. `folder` is the directory name, which is the mod's id.
 export function parseManifest(raw, folder) {
   const problems = [];
   const bad = message => problems.push(message);
@@ -50,9 +59,11 @@ export function parseManifest(raw, folder) {
     throw new ManifestError(['package.json must be a JSON object']);
   }
 
-  const id = raw.name ?? folder;
-  if (typeof id !== 'string' || !ID.test(id)) bad(`name "${id}" must be letters, digits, ".", "_" or "-"`);
-  else if (id !== folder) bad(`name "${id}" must match the folder name "${folder}"`);
+  // An npm scope ("@who/thing") is allowed and is not part of the id.
+  const given = raw.name ?? folder;
+  const id = typeof given === 'string' ? given.replace(/^@[^/]+\//, '') : given;
+  if (typeof id !== 'string' || !ID.test(id)) bad(`name "${given}" must be letters, digits, ".", "_" or "-"`);
+  else if (id !== folder) bad(`name "${given}" must match the folder name "${folder}"`);
 
   const displayName = raw.displayName ?? id;
   if (typeof displayName !== 'string' || !displayName.trim()) bad('displayName must be a non-empty string');
@@ -70,6 +81,15 @@ export function parseManifest(raw, folder) {
     if (!MODKIT_KEYS.includes(key)) bad(`modkit.${key}: unknown (it has: ${MODKIT_KEYS.join(', ')})`);
   }
   if (kit.defaultEnabled != null && typeof kit.defaultEnabled !== 'boolean') bad('modkit.defaultEnabled must be true or false');
+
+  const api = kit.api ?? 1;
+  if (!Number.isInteger(api) || api < 1) bad('modkit.api must be a whole number from 1');
+  else if (api > LOADER_API) bad(`written for modkit API ${api}; this modkit is API ${LOADER_API}: update it`);
+
+  const requires = parseRequires(kit.requires, id, bad);
+  const permissions = parsePermissions(kit.permissions, bad);
+  const engines = raw.engines?.node ?? null;
+  if (engines !== null && (typeof engines !== 'string' || !validRange(engines))) bad(`engines.node "${engines}" is not a version range`);
 
   const host = parseHost(kit.host, bad);
   const windows = parseWindows(kit.windows, bad, host !== null);
@@ -89,7 +109,39 @@ export function parseManifest(raw, folder) {
     },
     windows,
     host,
+    api,
+    requires,
+    permissions,
+    engines,
   };
+}
+
+// { "other-mod": "^1.2.0" }: mods that have to be there, and which versions of them will do.
+function parseRequires(raw, self, bad) {
+  if (raw == null) return {};
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    bad('modkit.requires must map a mod name to a version range, e.g. { "other-mod": "^1.0.0" }');
+    return {};
+  }
+  const requires = {};
+  for (const [name, range] of Object.entries(raw)) {
+    if (!ID.test(name)) bad(`modkit.requires: "${name}" is not a mod name`);
+    else if (name === self) bad('modkit.requires: a mod cannot require itself');
+    else if (typeof range !== 'string' || !validRange(range)) bad(`modkit.requires.${name}: "${range}" is not a version range (try "*" for any)`);
+    else requires[name] = range;
+  }
+  return requires;
+}
+
+// What the mod says it will do beyond showing a page, for whoever installs it to read. Not
+// enforced: a Node part is not sandboxed. Free words, lower case: "network", "files", "account".
+function parsePermissions(raw, bad) {
+  if (raw == null) return [];
+  if (!Array.isArray(raw) || raw.some(p => typeof p !== 'string' || !PERMISSION.test(p))) {
+    bad('modkit.permissions must be a list of lower-case words, e.g. ["network", "files"]');
+    return [];
+  }
+  return [...new Set(raw)];
 }
 
 const outsideFolder = file => /^([\\/]|[A-Za-z]:)|(^|[\\/])\.\.([\\/]|$)/.test(file);

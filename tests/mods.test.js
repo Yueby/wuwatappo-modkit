@@ -8,8 +8,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import vm from 'node:vm';
-import { ManifestError, parseManifest } from '../src/lib/manifest.js';
-import { discoverCore, discoverMods, unitFor } from '../src/lib/mods.js';
+import { LOADER_API, ManifestError, parseManifest } from '../src/lib/manifest.js';
+import { checkRequirements, discoverCore, discoverMods, unitFor } from '../src/lib/mods.js';
 import { compileCore, compileMod } from '../src/lib/page-scripts.js';
 import { MODS_DIR } from '../src/lib/paths.js';
 
@@ -74,6 +74,14 @@ test('the manifest of a mod is rejected for the mistakes that would otherwise go
     [{ modkit: { host: '../outside.js' } }, /modkit\.host.*inside the mod's folder/],
     [{ modkit: { host: 3 } }, /modkit\.host/],
     [{ modkit: { defaultEnabled: 'no' } }, /defaultEnabled/],
+    [{ modkit: { api: LOADER_API + 1 } }, /written for modkit API \d+; this modkit is API \d+: update it/],
+    [{ modkit: { api: 0 } }, /modkit\.api must be a whole number/],
+    [{ modkit: { requires: [] } }, /modkit\.requires must map/],
+    [{ modkit: { requires: { other: 'banana' } } }, /modkit\.requires\.other: "banana" is not a version range/],
+    [{ modkit: { requires: { demo: '*' } } }, /cannot require itself/],
+    [{ modkit: { requires: { 'bad name': '*' } } }, /is not a mod name/],
+    [{ modkit: { permissions: ['Network'] } }, /modkit\.permissions must be a list of lower-case words/],
+    [{ engines: { node: 'banana' } }, /engines\.node "banana" is not a version range/],
     ...[
       [[{ key: 'a', type: 'toggle', title: 'A' }, { key: 'a', type: 'toggle', title: 'A' }], /used twice/],
       [[{ key: 'a', type: 'slider', title: 'A' }], /type must be one of/],
@@ -144,6 +152,22 @@ test('mods are found as single files and as folders; helpers and plain folders a
   }
 });
 
+test('what a mod says about its needs: API, other mods, Node, permissions', () => {
+  const parsed = parseManifest({
+    name: '@someone/demo',
+    engines: { node: '>=22' },
+    modkit: { api: 1, requires: { other: '^1.2.0' }, permissions: ['network', 'files', 'network'] },
+  }, 'demo');
+  assert.equal(parsed.manifest.id, 'demo', 'an npm scope is not part of the id');
+  assert.deepEqual(parsed.requires, { other: '^1.2.0' });
+  assert.deepEqual(parsed.permissions, ['network', 'files'], 'repeats dropped');
+  assert.equal(parsed.engines, '>=22');
+  assert.equal(parsed.api, 1);
+  // None of it is sent to the page, so a mod without any of it keeps the manifest it had.
+  assert.deepEqual(Object.keys(parsed.manifest), ['id', 'name', 'version', 'description', 'defaultEnabled', 'settings']);
+  assert.deepEqual(problemsOf({ name: '@someone/other' }), ['name "@someone/other" must match the folder name "demo"']);
+});
+
 test('a Node part: only the page is told, a mod may have no page script, and one without it is unchanged', () => {
   const withHost = parseManifest({ modkit: { host: 'host.js' } }, 'demo');
   assert.equal(withHost.host, 'host.js');
@@ -195,6 +219,65 @@ test('the Node part of a package: found, fingerprinted by what it can import, an
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
+});
+
+async function packages(spec) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'modkit-requires-'));
+  for (const [id, manifest] of Object.entries(spec)) {
+    await fs.mkdir(path.join(dir, id), { recursive: true });
+    await fs.writeFile(path.join(dir, id, 'package.json'), JSON.stringify({ name: id, ...manifest.package, modkit: { ...manifest.modkit } }));
+    await fs.writeFile(path.join(dir, id, 'index.js'), 'return 1;');
+  }
+  return dir;
+}
+
+test('what a mod requires has to be there, in a version that will do; if not it is broken and says why', async () => {
+  const dir = await packages({
+    base: { package: { version: '1.4.0' } },
+    fine: { modkit: { requires: { base: '^1.2.0' } } },
+    missing: { modkit: { requires: { nowhere: '*' } } },
+    tooold: { modkit: { requires: { base: '>=2.0.0' } } },
+    needsnode: { package: { engines: { node: '>=99' } } },
+  });
+  try {
+    const by = Object.fromEntries((await discoverMods(dir)).map(m => [m.name, m]));
+    assert.equal(by.fine.loadError, null);
+    assert.deepEqual(Object.keys(by.fine.requires), ['base']);
+    assert.match(by.missing.loadError, /需要 mod「nowhere」，但没有安装/);
+    assert.match(by.tooold.loadError, /需要 mod「base」>=2\.0\.0，装的是 1\.4\.0/);
+    assert.match(by.needsnode.loadError, new RegExp(`需要 Node >=99，现在是 ${process.versions.node.replace(/\./g, '\\.')}`));
+    assert.equal(by.base.loadError, null, 'a mod others fail on is not itself broken');
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a mod that needs a broken mod is broken too, all the way down; a loop breaks every mod in it', async () => {
+  const dir = await packages({
+    root: { modkit: { requires: { gone: '*' } } },
+    middle: { modkit: { requires: { root: '*' } } },
+    leaf: { modkit: { requires: { middle: '*' } } },
+    ping: { modkit: { requires: { pong: '*' } } },
+    pong: { modkit: { requires: { ping: '*' } } },
+    bystander: {},
+  });
+  try {
+    const by = Object.fromEntries((await discoverMods(dir)).map(m => [m.name, m]));
+    assert.match(by.root.loadError, /没有安装/);
+    assert.match(by.middle.loadError, /需要的 mod「root」没有装好/);
+    assert.match(by.leaf.loadError, /需要的 mod「middle」没有装好/);
+    assert.match(by.ping.loadError, /依赖成环/);
+    assert.match(by.pong.loadError, /依赖成环/);
+    assert.equal(by.bystander.loadError, null);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('the Node version is checked against the one given, so this can be tested for any', () => {
+  const mod = { name: 'x', file: 'x', loadError: null, engines: '>=22', requires: {}, manifest: { version: null } };
+  assert.equal(checkRequirements([mod], '22.1.0')[0].loadError, null);
+  assert.match(checkRequirements([mod], '20.9.0')[0].loadError, /需要 Node >=22，现在是 20\.9\.0/);
 });
 
 test('every mod in mods/ loads cleanly, and the page code generated for it parses', async () => {

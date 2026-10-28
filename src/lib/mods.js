@@ -11,6 +11,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { iconDataUrls } from './icon.js';
 import { ManifestError, parseManifest } from './manifest.js';
+import { satisfies } from './semver.js';
 import { MODS_DIR, RUNTIME_DIR } from './paths.js';
 
 // Framework scripts are registered under this prefix so they can never collide with a
@@ -84,7 +85,7 @@ export async function discoverMods(dir = MODS_DIR) {
       if (mod) mods.push(mod);
     }
   }
-  return mods;
+  return checkRequirements(mods);
 }
 
 async function readSingleFile(file) {
@@ -141,7 +142,17 @@ async function readPackage(folder) {
     if (!await exists(hostFile)) return brokenMod(id, manifestFile, `modkit.host: cannot read ${parsed.host}`);
     hostVersion = await fingerprint(folder, new Set(Object.values(parsed.windows).map(f => path.normalize(f))));
   }
-  return makeMod({ name: id, file: manifestFile, manifest: parsed.manifest, scripts, hostFile, hostVersion });
+  return makeMod({
+    name: id,
+    file: manifestFile,
+    manifest: parsed.manifest,
+    scripts,
+    hostFile,
+    hostVersion,
+    requires: parsed.requires,
+    permissions: parsed.permissions,
+    engines: parsed.engines,
+  });
 }
 
 // Changes whenever a source file under `folder` is added, removed or modified. Size and
@@ -176,9 +187,70 @@ function brokenMod(id, file, loadError) {
 }
 
 // `hostFile` / `hostVersion`: the Node part's entry (absolute) and what decides a restart of it.
-function makeMod({ name, file, manifest, scripts, loadError = null, hostFile = null, hostVersion = null }) {
+// `requires` { mod: range }, `permissions` [word], `engines` the Node range it needs: what the loader
+// reads (the page is not sent them).
+function makeMod({
+  name, file, manifest, scripts, loadError = null, hostFile = null, hostVersion = null,
+  requires = {}, permissions = [], engines = null,
+}) {
   const digest = hash(JSON.stringify([manifest, scripts, loadError, hostVersion]));
-  return { name, file, core: false, manifest, scripts, loadError, hostFile, hostVersion, version: digest, signature: digest };
+  return {
+    name, file, core: false, manifest, scripts, loadError, hostFile, hostVersion, requires, permissions, engines,
+    version: digest, signature: digest,
+  };
+}
+
+// What can only be checked once every mod is known: the Node it needs, and the mods it requires
+// (there, in a version that will do, and not in a loop). A mod that fails any of it is returned as
+// broken, with the reason, and so is whatever required it, in turn.
+export function checkRequirements(mods, nodeVersion = process.versions.node) {
+  const result = [...mods];
+  const byName = () => new Map(result.map(m => [m.name, m]));
+  const fail = (mod, message) => {
+    result[result.indexOf(mod)] = brokenMod(mod.name, mod.file, message);
+    return true;
+  };
+
+  for (let changed = true; changed;) {
+    changed = false;
+    const known = byName();
+
+    for (const mod of result) {
+      if (mod.loadError) continue;
+      if (mod.engines && !satisfies(nodeVersion, mod.engines)) {
+        changed = fail(mod, `需要 Node ${mod.engines}，现在是 ${nodeVersion}`);
+        continue;
+      }
+      for (const [dependency, range] of Object.entries(mod.requires)) {
+        const found = known.get(dependency);
+        if (!found) changed = fail(mod, `需要 mod「${dependency}」，但没有安装`);
+        else if (found.loadError) changed = fail(mod, `需要的 mod「${dependency}」没有装好：${found.loadError}`);
+        else if (!satisfies(found.manifest.version, range)) {
+          changed = fail(mod, `需要 mod「${dependency}」${range}，装的是 ${found.manifest.version ?? '没有版本号'}`);
+        }
+        if (changed) break;
+      }
+    }
+
+    // A loop: following "requires" from a mod leads back to it.
+    const looping = new Set();
+    for (const mod of result) {
+      if (mod.loadError) continue;
+      const stack = [[mod.name, [mod.name]]];
+      const seen = new Set();
+      while (stack.length) {
+        const [name, trail] = stack.pop();
+        for (const next of Object.keys(byName().get(name)?.requires ?? {})) {
+          if (next === mod.name) { trail.forEach(n => looping.add(n)); continue; }
+          if (!seen.has(next)) { seen.add(next); stack.push([next, [...trail, next]]); }
+        }
+      }
+    }
+    for (const mod of result) {
+      if (looping.has(mod.name) && !mod.loadError) changed = fail(mod, `依赖成环：${[...looping].join('、')} 互相需要`);
+    }
+  }
+  return result;
 }
 
 async function exists(file) {

@@ -79,6 +79,21 @@ before(async () => {
 
   await write(path.join(root, 'mods', 'plain.js'), `window.__plain = () => mod.host.call('x');`);
 
+  // A mod with only a page script that uses another mod's service, and the mod that offers it.
+  await write(path.join(root, 'mods', 'lib', 'package.json'), JSON.stringify({
+    type: 'module', version: '1.2.0', modkit: { host: 'host.js' },
+  }));
+  await write(path.join(root, 'mods', 'lib', 'host.js'), `export default function (host) {
+    host.provide('add', ({ a, b }) => a + b);
+  }`);
+  await write(path.join(root, 'mods', 'caller', 'package.json'), JSON.stringify({
+    modkit: { windows: { main: 'main.js' }, requires: { lib: '^1.0.0' } },
+  }));
+  await write(path.join(root, 'mods', 'caller', 'main.js'), `
+    window.__sum = (a, b) => mod.call('lib', 'add', { a, b });
+    window.__stranger = () => mod.call('chat', 'double', 1);
+  `);
+
   page = makeWindow();
   manager = new HostManager({ dataDir: path.join(root, 'data') });
   manager.connect({
@@ -107,7 +122,7 @@ after(async () => {
 
 test('a page script can call its Node part while it is still starting, and gets the answer', async () => {
   assert.equal(run('window.__doubled'), 42);
-  assert.deepEqual(manager.states(), { chat: 'ready' });
+  assert.equal(manager.states().chat, 'ready');
 });
 
 test('the MOD page is told how the Node part is doing, like any window', async () => {
@@ -133,13 +148,29 @@ test('an error in a handler comes back as a rejection with its message', async (
   await assert.rejects(run(`window.__call('nope')`), /no handler "nope"/);
 });
 
+test('a page script calls a service of a mod it requires; one it does not require is refused', async () => {
+  await until('the service is up', () => manager.states().lib === 'ready');
+  assert.equal(await run('window.__sum(20, 22)'), 42);
+  await assert.rejects(run('window.__stranger()'), /caller does not list chat in "modkit.requires"/);
+});
+
+test('a part held back by what it requires is shown as waiting, with what for', () => {
+  run(`modkit.hostReport('caller', 'waiting', '等待：lib 还没运行')`);
+  assert.deepEqual(plain(run(`modkit.stateOf('caller')`)), { status: 'waiting', error: '等待：lib 还没运行' });
+  run(`modkit.hostReport('caller', 'error', 'boom')`);
+  assert.equal(plain(run(`modkit.stateOf('caller')`)).status, 'error', 'an error outranks waiting');
+  run(`modkit.hostReport('caller', null)`);
+  assert.equal(plain(run(`modkit.stateOf('caller')`)).status, 'ok', 'and with it gone, what its page script reported is what is left');
+});
+
 test('a mod that declared no Node part cannot call one, and says so', async () => {
   await assert.rejects(run(`window.__plain()`), /has no Node part/);
 });
 
 test('switching the mod off stops its Node part, and a call then fails with the reason', async () => {
   run(`modkit.setEnabled('chat', false)`);
-  await until('stopped', () => Object.keys(manager.states()).length === 0);
+  await until('stopped', () => manager.states().chat === undefined);
+  assert.equal(manager.states().lib, 'ready', 'another mod is not affected');
   await assert.rejects(run(`modkit.hostCall('chat', 'double', 1, 'main')`), /not running/);
 
   assert.equal(run(`modkit.live.get('chat')?.get('shown') ?? null`), null, 'what it published is withdrawn with it');

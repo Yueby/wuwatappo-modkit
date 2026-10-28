@@ -1,4 +1,4 @@
-// A mod's Node part, against a stand-in for the app: real worker threads, real files, no
+// A mod's Node part, against a stand-in for the app: real child processes, real files, no
 // windows. What the pages would send is fed in as messages, and what would be evaluated in a
 // window is recorded.   node --test tests/host.test.js
 
@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { HostManager } from '../src/lib/host.js';
 import { discoverMods } from '../src/lib/mods.js';
 import { sleep, until, write } from './app-helpers.js';
@@ -34,14 +36,16 @@ const page = {
   call: (mod, name, arg, callId, window = 'main') => JSON.stringify({ t: 'call', mod, window, name, arg, callId }),
 };
 
-// A mod folder with a Node part. `host` is the source of host.js; `extra` other files in it.
-async function makeMod(id, host, extra = {}) {
+// A mod folder with a Node part. `host` is the source of host.js; `extra` other files in it;
+// `modkit` more of the package.json's "modkit" section (requires, ...).
+async function makeMod(id, host, extra = {}, modkit = {}) {
   const dir = path.join(root, 'mods', id);
   await write(path.join(dir, 'package.json'), JSON.stringify({
     type: 'module',                       // host.js is an ES module; without this Node warns on every start
     modkit: {
       host: 'host.js',
       settings: [{ key: 'n', type: 'number', title: 'N', default: 5, min: 0, max: 99 }],
+      ...modkit,
     },
   }));
   await write(path.join(dir, 'host.js'), host);
@@ -336,4 +340,196 @@ test('messages about mods it does not know, and garbage, are ignored', async () 
   assert.equal(reply.ok, false);
   assert.match(reply.value, /not running/);
   assert.deepEqual(manager.states(), { known: 'ready' });
+});
+
+// --- one process each ---------------------------------------------------------------
+
+const alive = pid => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === 'EPERM';
+  }
+};
+
+// Several mods under one manager, switched on together.
+async function startAll(sources) {
+  for (const [id, [source, extra, modkit]] of Object.entries(sources)) await makeMod(id, source, extra, modkit);
+  app = new FakeApp();
+  manager = new HostManager({ dataDir: path.join(root, 'data') });
+  manager.connect(app);
+  manager.setMods(await load());
+  for (const id of Object.keys(sources)) manager.onPageMessage('main', page.hello(id));
+}
+
+test('a mod that crashes hard takes down only itself', async () => {
+  await startAll({
+    victim: [`export default function (host) { host.handle('die', () => { setTimeout(() => process.abort(), 10); return 'bye'; }); }`],
+    bystander: [`export default function (host) { host.handle('ping', () => 'still here'); }`],
+  });
+  await until('both up', () => manager.states().victim === 'ready' && manager.states().bystander === 'ready');
+
+  await call('victim', 'die', null, 'k1');
+  await until('the victim is marked failed', () => manager.states().victim === 'failed');
+  assert.match(app.find('hostReport?.("victim", "error"')[0].expression, /exited by itself/);
+
+  assert.equal(manager.states().bystander, 'ready', 'the other mod did not notice');
+  assert.equal((await call('bystander', 'ping', null, 'k2')).value, 'still here');
+});
+
+test('what a mod prints is its log, and where it runs is its own folder', async () => {
+  const dir = await makeMod('printer', `export default function (host) {
+    console.log('plain print');
+    console.error('to stderr');
+    host.handle('cwd', () => process.cwd());
+  }`);
+  app = new FakeApp();
+  manager = new HostManager({ dataDir: path.join(root, 'data') });
+  manager.connect(app);
+  manager.setMods(await load());
+  manager.onPageMessage('main', page.hello('printer'));
+  await until('ready', () => manager.states().printer === 'ready');
+
+  await until('stdout forwarded', () => app.find('logFromHost?.("printer", "log", "plain print")').length === 1);
+  await until('stderr forwarded as a warning', () => app.find('logFromHost?.("printer", "warn", "to stderr")').length === 1);
+  assert.equal(await fs.realpath((await call('printer', 'cwd', null, 'w1')).value), await fs.realpath(dir), 'the working directory is the mod\'s folder');
+});
+
+// Not a test of this project's code so much as of what it relies on: on Windows a child that is not
+// detached ends with its parent, which is what makes "stopping a mod stops its processes" true.
+// It is here so that a change in that (a Node upgrade, a different platform) shows up as a failure.
+test('stopping a mod stops what it started, not just itself', async () => {
+  await start('parent', `import { spawn } from 'node:child_process';
+    export default function (host) {
+      host.handle('spawn', () => spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' }).pid);
+    }`);
+  const pid = (await call('parent', 'spawn', null, 'sp1')).value;
+  assert.ok(alive(pid), 'the grandchild is running');
+
+  manager.onPageMessage('main', page.enabled('parent', false));
+  await until('the grandchild is gone', () => !alive(pid), 6000);
+});
+
+// Likewise: the OS ends the child with the loader; runner's own "disconnect" handler covers the rest.
+test('when the loader itself dies, the Node parts do not stay behind', async () => {
+  await makeMod('orphan', `export default function (host) { host.handle('pid', () => process.pid); }`);
+  const src = pathToFileURL(path.resolve('src/lib')).href;
+  await write(path.join(root, 'parent.mjs'), `
+    import { HostManager } from '${src}/host.js';
+    import { discoverMods } from '${src}/mods.js';
+    const manager = new HostManager({ dataDir: ${JSON.stringify(path.join(root, 'data'))} });
+    manager.connect({
+      evaluate: async (w, e) => { const m = e.match(/hostReply\\?\\.\\("c1", true, (\\d+)\\)/); if (m) console.log('PID ' + m[1]); },
+      evaluateAll: async () => {},
+    });
+    manager.setMods(await discoverMods(${JSON.stringify(path.join(root, 'mods'))}));
+    manager.onPageMessage('main', JSON.stringify({ t: 'hello', mod: 'orphan', window: 'main', enabled: true, config: {} }));
+    await new Promise(r => setTimeout(r, 1500));
+    manager.onPageMessage('main', JSON.stringify({ t: 'call', mod: 'orphan', window: 'main', name: 'pid', arg: null, callId: 'c1' }));
+    setInterval(() => {}, 1000);
+  `);
+
+  const parent = spawn(process.execPath, [path.join(root, 'parent.mjs')], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = '';
+  parent.stdout.on('data', d => { output += d; });
+  parent.stderr.on('data', d => { output += d; });
+  try {
+    await until('the child reported its pid', () => /PID \d+/.test(output), 10000);
+    const pid = Number(output.match(/PID (\d+)/)[1]);
+    assert.ok(alive(pid));
+
+    parent.kill();                                       // no chance to clean up
+    await until('the child went too', () => !alive(pid), 6000);
+  } finally {
+    parent.kill();
+  }
+});
+
+// --- mods using each other ----------------------------------------------------------
+
+test('a mod offers a service, and another that requires it calls it: from its Node part and from its page', async () => {
+  await startAll({
+    lib: [`export default function (host) {
+      host.provide('add', ({ a, b }) => a + b);
+      host.provide('who', (_, { from }) => from);
+    }`],
+    user: [`export default function (host) {
+      host.handle('sum', () => host.call('lib', 'add', { a: 1, b: 2 }));
+      host.handle('whoami', () => host.call('lib', 'who'));
+      host.handle('stranger', () => host.call('lib-2', 'add', {}));
+      host.handle('nothing', () => host.call('lib', 'nope'));
+    }`, {}, { requires: { lib: '*' } }],
+  });
+  await until('both up', () => manager.states().user === 'ready');
+
+  assert.equal((await call('user', 'sum', null, 's1')).value, 3);
+  assert.equal((await call('user', 'whoami', null, 's2')).value, 'user', 'the service is told who is calling');
+
+  const stranger = await call('user', 'stranger', null, 's3');
+  assert.match(stranger.value, /does not list lib-2 in "modkit.requires"/);
+  assert.match((await call('user', 'nothing', null, 's4')).value, /lib offers no service "nope"/);
+
+  manager.onPageMessage('main', JSON.stringify({ t: 'call', mod: 'user', window: 'main', target: 'lib', name: 'add', arg: { a: 5, b: 6 }, callId: 'pg1' }));
+  const fromPage = await until('page reply', () => app.find('hostReply?.("pg1"')[0]);
+  assert.match(fromPage.expression, /true, 11\)$/);
+
+  manager.onPageMessage('main', JSON.stringify({ t: 'call', mod: 'lib', window: 'main', target: 'user', name: 'x', arg: null, callId: 'pg2' }));
+  const refused = await until('refused', () => app.find('hostReply?.("pg2"')[0]);
+  assert.match(refused.expression, /false, .*lib does not list user/);
+});
+
+test('a mod waits for what it requires, stops when that stops, and starts again when it is back', async () => {
+  await makeMod('base', `export default function (host) { host.handle('v', () => 1); }`);
+  await makeMod('top', `export default function (host) { host.handle('v', () => 2); }`, {}, { requires: { base: '*' } });
+  app = new FakeApp();
+  manager = new HostManager({ dataDir: path.join(root, 'data') });
+  manager.connect(app);
+  manager.setMods(await load());
+
+  manager.onPageMessage('main', page.hello('top'));
+  await until('told it is waiting, and for what', () => app.find('hostReport?.("top", "waiting", "等待：base 还没运行")').length > 0);
+  assert.equal(manager.states().top, undefined, 'it is not started');
+
+  manager.onPageMessage('main', page.hello('base'));
+  await until('both up, the one it needed first', () => manager.states().base === 'ready' && manager.states().top === 'ready');
+
+  manager.onPageMessage('main', page.enabled('base', false));
+  await until('it went with its dependency', () => Object.keys(manager.states()).length === 0);
+  assert.ok(app.find('hostReport?.("top", "waiting", "等待：base 已关闭")').length, 'and says why');
+
+  manager.onPageMessage('main', page.enabled('base', true));
+  await until('back, both', () => manager.states().base === 'ready' && manager.states().top === 'ready');
+  assert.equal((await call('top', 'v', null, 'd1')).value, 2);
+});
+
+test('what it requires may be a mod with no Node part: it waits until that mod has been seen switched on', async () => {
+  await makeMod('needs-page', `export default function () {}`, {}, { requires: { 'only-page': '*' } });
+  await write(path.join(root, 'mods', 'only-page', 'package.json'), JSON.stringify({ name: 'only-page' }));
+  await write(path.join(root, 'mods', 'only-page', 'index.js'), 'return 1;');
+  app = new FakeApp();
+  manager = new HostManager({ dataDir: path.join(root, 'data') });
+  manager.connect(app);
+  manager.setMods(await load());
+
+  manager.onPageMessage('main', page.hello('needs-page'));
+  await until('waiting for it to be heard of', () => app.find('"等待：only-page 还没有加载"').length > 0);
+
+  manager.onPageMessage('main', page.hello('only-page', {}, false));
+  await until('now it is known to be off', () => app.find('"等待：only-page 已关闭"').length > 0);
+  assert.deepEqual(manager.states(), {});
+
+  manager.onPageMessage('main', page.enabled('only-page', true));
+  await until('and now it runs', () => manager.states()['needs-page'] === 'ready');
+});
+
+test('a mod whose requirement cannot be met is not started, and the loader says nothing more about it', async () => {
+  await makeMod('orphaned', `export default function () {}`, {}, { requires: { nowhere: '*' } });
+  app = new FakeApp();
+  manager = new HostManager({ dataDir: path.join(root, 'data') });
+  manager.connect(app);
+  manager.setMods(await load());                         // discovery marks it broken; the manager skips it
+  manager.onPageMessage('main', page.hello('orphaned'));
+  await sleep(300);
+  assert.deepEqual(manager.states(), {});
 });

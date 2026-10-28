@@ -253,7 +253,9 @@ function renderMod(body, id, manifest) {
 
   body.appendChild(row({
     title: manifest.name,
-    description: state.status === 'error' ? `出错：${state.error}` : manifest.description,
+    description: state.status === 'error' ? `出错：${state.error}`
+      : state.status === 'waiting' ? state.error
+        : manifest.description,
     control: controlsOfRow,
   }));
 }
