@@ -50,6 +50,39 @@ WEBVIEW2_USER_DATA_FOLDER=%TEMP%\wuwa-modkit-webview2
 The second variable keeps even our debug profile away from the real install's
 `localStorage`, where the login token lives.
 
+## Why `--elevated` does not enable DevTools
+
+There is a second launch mode, `node src/cli.js lab --elevated`, which starts the
+*real* executable through UAC so it can share that install's profile and login.
+It works as a launcher, but **the DevTools port never opens**, and that is not a
+bug in the tooling.
+
+The evidence, read from the live webview child process:
+
+```
+--user-data-dir="...\com.kuro.wuwatappo.cn\EBWebView\EBWebView"
+```
+
+Two things in one line. The profile is pinned explicitly, and it has an extra
+`EBWebView` level compared to the default. That means the app (or wry on its
+behalf) passes its own `--user-data-dir`. WebView2 gives an explicit
+`--user-data-dir` priority over `WEBVIEW2_USER_DATA_FOLDER`, and
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` loses out in the same way — the flag is
+simply absent from the child's command line.
+
+So the debug port can only be enabled on a launch path where that pinning does not
+apply, which in practice means the patched copy. `--elevated` is still kept: it is
+the way to run the real install with a working login, just not with a debugger
+attached.
+
+## Stopping instances
+
+`node src/cli.js stop` ends every instance. It tries a normal kill first; if an
+instance is still alive it is elevated (typically started by the autostart task),
+and the kill is retried inside a UAC-elevated session. This matters because an
+unelevated `Stop-Process` reports success while doing nothing to an elevated
+process.
+
 ## Caveats
 
 - **The real install is untouched.** `E:\Programs\WuwaTappo` is only read.
@@ -59,4 +92,6 @@ The second variable keeps even our debug profile away from the real install's
   trigger + 5 s delay) when autostart is enabled in its settings. Currently it is
   enabled on this machine, so the real app starts as administrator at login.
 - **Port conflict.** Only one debug instance can own 9222. If `lab` reports the port
-  is in use, an earlier copy is probably still running.
+  is in use, an earlier copy is probably still running — `stop` clears it.
+- **One UAC prompt at a time.** Windows queues elevation requests. A dialog left
+  open from an earlier attempt blocks every later one, which looks like a hang.

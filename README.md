@@ -18,11 +18,14 @@ Ctrl+C. `node src/cli.js --help` lists everything.
 
 | command | does |
 |---|---|
-| `lab` | Build the, and start the debug copy of the app |
+| `lab` | Start a debuggable instance (patched copy by default) |
+| `lab --elevated` | Start the real exe through UAC — shares its login, **no DevTools** (see docs) |
+| `lab --rebuild` | Force a fresh patched copy |
 | `run` | Inject once into all windows, then exit |
 | `watch` | Resident injector; survives reloads and mod edits |
 | `eval <js>` | Evaluate an expression in every window |
 | `state` | Which mods are live in which window |
+| `stop` | Stop every instance, elevating if needed |
 | `extract-assets` | Unpack the frontend bundle out of the exe |
 | `commands` | List backend commands the frontend calls |
 
@@ -39,11 +42,13 @@ src/lib/targets.js      window discovery over the DevTools HTTP endpoint
 src/lib/inject.js       in-page mod runtime (compiled to source text)
 src/lib/injector.js     session management + re-injection on navigation
 src/lib/mods.js         mod discovery and change detection
-src/lib/patch.js        builds the test copy of the exe
+src/lib/patch.js        builds the patched copy of the exe
+src/lib/launch.js       launching: detached, and through UAC
+src/lib/ps.js           one-off PowerShell (elevation, process control)
 scripts/                standalone asset/command extraction tools
 mods/                   your mods (files starting with _ are not loaded)
 docs/                   launch and modding notes
-work/                   generated: lab copy, extracted assets (git-ignored)
+work/                   generated: patched copy, extracted assets (git-ignored)
 ```
 
 ## Requirements

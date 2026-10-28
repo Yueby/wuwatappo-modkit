@@ -11,11 +11,15 @@ ${style.bold('Usage')}
   node src/cli.js <command> [options]
 
 ${style.bold('Commands')}
-  lab                 Build and start a test copy of the app with CDP enabled
+  lab                 Start a debuggable instance (default: patched test copy)
+    --elevated          run the real exe through UAC instead — shares its login,
+                        but this launch path cannot enable DevTools
+    --rebuild           force a fresh test copy
   run                 Inject mods into all open windows, then exit
   watch               Stay resident: keep mods applied across reloads and edits
   eval <js>           Evaluate JS in every app window
   state               Show which mods are live in each window
+  stop                Stop every instance, elevating if one is running as admin
   extract-assets      Unpack the frontend (Vue/JS/CSS/images) from the exe
   commands            List backend commands found in the frontend
 
