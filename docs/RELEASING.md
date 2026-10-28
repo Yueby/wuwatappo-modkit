@@ -38,7 +38,11 @@ a release cannot be used to move people back.
 
 ## How it takes it
 
-1. Download `modkit.exe.sha256` and `modkit.exe` to `modkit.exe.new` beside the running exe. If the SHA-256 differs, or
+1. Download `modkit.exe.sha256` and `modkit.exe` to `modkit.exe.new` beside the running exe. While it comes, the program
+   says how far it is: `update --progress` prints `progress <bytes> <of>` about five times a second, which the window
+   draws as a bar and `45.3 / 90.1 MB（50%）`; in a terminal the line is rewritten in place. (A window's own script is
+   part of the exe, so the window that does an update is the old one: the first update to a version that has this shows
+   no bar, the ones after it do.) If the SHA-256 differs, or
    the download stops short, it is deleted and nothing else happens.
 2. Run the downloaded exe with `--version` and compare with the tag. (This runs it, after the hash matched.)
 3. Rename the running exe to `modkit.exe.old` and the new one to `modkit.exe`. A running exe cannot be overwritten on

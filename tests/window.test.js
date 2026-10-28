@@ -49,8 +49,14 @@ if (args[0] === 'update' && args.includes('--check')) {
   process.exit(0);
 }
 if (args[0] === 'update') {
-  console.log('FAKE ran: ' + args.join(' '));
-  setTimeout(() => process.exit(Number(process.env.FAKE_UPDATE_CODE ?? 10)), 300);
+  // A download that takes a while, as the program reports it: 25 of 100 MB, then all of it.
+  if (args.includes('--progress') && process.env.FAKE_PROGRESS) console.log('progress 26214400 104857600');
+  const finish = () => {
+    if (args.includes('--progress') && process.env.FAKE_PROGRESS) console.log('progress 104857600 104857600');
+    console.log('FAKE ran: ' + args.join(' '));
+    process.exit(Number(process.env.FAKE_UPDATE_CODE ?? 10));
+  };
+  setTimeout(finish, process.env.FAKE_PROGRESS ? 1500 : 300);
   return;
 }
 if (process.env.FAKE_FAIL && args[0] === 'setup' && args[1] !== 'status') { console.error('boom: ' + args.join(' ')); process.exit(1); }
@@ -180,7 +186,7 @@ test('the launcher\'s version is shown, and when it is the latest the window say
 
 test('a newer version is taken at once: the window asks the program to update and reopen, and closes when it says it has', { skip }, async () => {
   const report = await drive(`Start-Up; Wait-Idle; $report.closed = $form.IsDisposed`, { FAKE_LATEST: '2.0.0' });
-  assert.deepEqual(report.calls, ['setup status', 'update --check --json', 'update --reopen']);
+  assert.deepEqual(report.calls, ['setup status', 'update --check --json', 'update --reopen --progress']);
   assert.equal(report.closed, true, 'exit code 10 means the new window is up, so this one goes');
 });
 
@@ -189,7 +195,7 @@ test('an update that did not finish keeps the window, says so, and shows what th
     { FAKE_LATEST: '2.0.0', FAKE_UPDATE_CODE: '1' });
   assert.equal(report.closed, false);
   assert.match(report.label, /更新到 v2\.0\.0 没有完成/);
-  assert.deepEqual(lines(report.box), ['FAKE ran: update --reopen', '---', 'FAKE ran: setup status']);
+  assert.deepEqual(lines(report.box), ['FAKE ran: update --reopen --progress', '---', 'FAKE ran: setup status']);
 });
 
 test('not being able to ask, and there being nothing to take yet, are said and nothing is updated', { skip }, async () => {
@@ -203,7 +209,7 @@ test('not being able to ask, and there being nothing to take yet, are said and n
 
 test('刷新 asks again, and takes a newer version the same way', { skip }, async () => {
   const report = await drive(`$refresh.PerformClick(); Wait-Idle; $report.closed = $form.IsDisposed`, { FAKE_LATEST: '3.0.0' });
-  assert.deepEqual(report.calls, ['setup status', 'update --check --json', 'update --reopen']);
+  assert.deepEqual(report.calls, ['setup status', 'update --check --json', 'update --reopen --progress']);
   assert.equal(report.closed, true);
 });
 
@@ -272,4 +278,33 @@ test('a list that cannot be read is said in the window, and nothing can be press
 test('the main window has the 插件… button, kept off while a command runs like the others', { skip }, async () => {
   const report = await drive(`$report.text = $pluginsButton.Text; $install.PerformClick(); $report.whileRunning = $pluginsButton.Enabled; Wait-Idle; $report.after = $pluginsButton.Enabled`);
   assert.deepEqual([report.text, report.whileRunning, report.after], ['插件…', false, true]);
+});
+
+// --- progress --------------------------------------------------------------------------------------------
+
+test('a download shows how far it is: the bar, the figures in the box, the percentage next to the version; the lines are not kept as output', { skip }, async () => {
+  const report = await drive(`
+    $script:updatingTo = '9.9.9'
+    Start-Command 'update --reopen --progress' '正在下载新版本' { Show-Status }
+    $deadline = (Get-Date).AddSeconds(8)
+    while (($box.Text -notmatch 'MB') -and (Get-Date) -lt $deadline) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 40 }
+    $report.during = [ordered]@{ box = $box.Text; value = $bar.Value; visible = $bar.Visible; label = $versionLabel.Text }
+    Wait-Idle
+    $report.after = [ordered]@{ box = $box.Text; visible = $bar.Visible }`, { FAKE_PROGRESS: '1' });
+
+  assert.deepEqual(lines(report.during.box), ['正在下载新版本', '25.0 / 100.0 MB（25%）']);
+  assert.deepEqual([report.during.value, report.during.visible], [25, true]);
+  assert.match(report.during.label, /（正在下载 v9.9.9，25%）/);
+  assert.equal(report.after.visible, false, 'the bar goes when it is done');
+  assert.doesNotMatch(report.after.box, /^progress \d+/m, 'the progress lines are not left in what it printed');
+  assert.match(report.after.box, /FAKE ran: update --reopen --progress/, 'but what else it said is');
+});
+
+test('a program that says nothing of progress shows the title alone, and the bar stays hidden', { skip }, async () => {
+  const report = await drive(`
+    Start-Command 'update --reopen --progress' '正在下载新版本' { Show-Status }
+    [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 150; [System.Windows.Forms.Application]::DoEvents()
+    $report.box = $box.Text; $report.visible = $bar.Visible; Wait-Idle`);
+  assert.deepEqual(lines(report.box), ['正在下载新版本']);
+  assert.equal(report.visible, false);
 });

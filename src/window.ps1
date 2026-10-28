@@ -38,6 +38,15 @@ $versionLabel.Location = New-Object System.Drawing.Point(14, 12)
 $versionLabel.AutoSize = $true
 $form.Controls.Add($versionLabel)
 
+# Shown while something is being downloaded, to the right of the version (the label stays short then).
+$bar = New-Object System.Windows.Forms.ProgressBar
+$bar.Location = New-Object System.Drawing.Point(400, 14)
+$bar.Size = New-Object System.Drawing.Size(168, 14)
+$bar.Minimum = 0
+$bar.Maximum = 100
+$bar.Visible = $false
+$form.Controls.Add($bar)
+
 $box = New-Object System.Windows.Forms.TextBox
 $box.Multiline = $true
 $box.ReadOnly = $true
@@ -74,7 +83,9 @@ $form.ClientSize = New-Object System.Drawing.Size(580, 396)
 
 $buttons = @($install, $uninstall, $refresh, $pluginsButton)
 $script:process = $null
-$script:output = $null
+$script:lines = $null        # what the program has said so far, but for progress
+$script:lineTask = $null     # the line being waited for; $null once there are no more
+$script:title = ''
 $script:errors = $null
 $script:then = $null
 $script:after = $null
@@ -110,18 +121,47 @@ function Start-Command([string]$Arguments, [string]$Title, $Then = $null, $After
     foreach ($button in $buttons) { $button.Enabled = $true }
     return
   }
-  $script:output = $script:process.StandardOutput.ReadToEndAsync()
+  $script:lines = New-Object System.Collections.ArrayList
+  $script:lineTask = $script:process.StandardOutput.ReadLineAsync()
   $script:errors = $script:process.StandardError.ReadToEndAsync()
+  $script:title = $Title
   $script:then = $Then
   $script:after = $After
   $script:quiet = [bool]$Quiet
   $timer.Start()
 }
 
+# A line that says how far a download is moves the bar; the others are kept for when it is done.
+function Show-Progress([double]$Received, [double]$Total) {
+  $done = '{0:N1}' -f ($Received / 1MB)
+  if ($Total -gt 0) {
+    $percent = [int][Math]::Min(100, [Math]::Floor($Received * 100 / $Total))
+    $bar.Style = 'Continuous'
+    $bar.Value = $percent
+    $line = "$done / $('{0:N1}' -f ($Total / 1MB)) MB（$percent%）"
+    $note = "（正在下载 v$($script:updatingTo)，$percent%）"
+  } else {
+    $bar.Style = 'Marquee'
+    $line = "$done MB"
+    $note = "（正在下载 v$($script:updatingTo)）"
+  }
+  $bar.Visible = $true
+  $box.Text = $script:title + "`r`n`r`n" + $line
+  if ($script:updatingTo) { Show-Version $note }
+}
+
 $timer.Add_Tick({
-  if (-not $script:process.HasExited -or -not $script:output.IsCompleted -or -not $script:errors.IsCompleted) { return }
+  while ($script:lineTask -and $script:lineTask.IsCompleted) {
+    $line = $script:lineTask.Result
+    if ($null -eq $line) { $script:lineTask = $null; break }
+    if ($line -match '^progress (\d+) (\d+)\s*$') { Show-Progress ([double]$Matches[1]) ([double]$Matches[2]) }
+    else { [void]$script:lines.Add($line) }
+    $script:lineTask = $script:process.StandardOutput.ReadLineAsync()
+  }
+  if (-not $script:process.HasExited -or $script:lineTask -or -not $script:errors.IsCompleted) { return }
   $timer.Stop()
-  $text = ($script:output.Result + $script:errors.Result).Trim() -replace "`r?`n", "`r`n"
+  $bar.Visible = $false
+  $text = ((($script:lines -join "`n") + "`n" + $script:errors.Result).Trim()) -replace "`r?`n", "`r`n"
   $script:resultText = $text
   $script:resultCode = $script:process.ExitCode
   $script:process = $null
@@ -158,7 +198,7 @@ function Show-Version([string]$Note) {
 function Update-Program($Latest) {
   $script:updatingTo = $Latest      # the block below runs after this function has returned
   Show-Version "（发现新版本 v$Latest，正在更新…）"
-  Start-Command 'update --reopen' "正在下载新版本 v$Latest（约 90 MB），之后会重新打补丁，可能弹出一次管理员确认…" {
+  Start-Command 'update --reopen --progress' "正在下载新版本 v$Latest，下载后会重新打补丁，可能弹出一次管理员确认" {
     if ($script:resultCode -eq $UpdatedAndReopened) { $form.Close(); return }
     Show-Version "（更新到 v$($script:updatingTo) 没有完成）"
     Show-Status

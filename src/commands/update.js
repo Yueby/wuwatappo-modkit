@@ -3,6 +3,8 @@
 //   update --check [--json]   only ask (the window does, every time it opens)
 //   update                    download it, check it, put it in place of this program, then run its
 //                             `setup` (which re-applies the patch and replaces the running loader)
+//   update --progress         with --reopen or alone: while it downloads, a line `progress <bytes> <of>` about five times
+//                             a second, which is what the window shows its bar from (a terminal gets a line of its own)
 //   update --reopen           as above, and open the window again from the new program; exit code 10
 //                             tells the window that did the asking that it is replaced and can close
 //
@@ -17,7 +19,7 @@ import { VERSION } from '../lib/version.js';
 
 export const UPDATED_AND_REOPENED = 10;
 
-const FLAGS = new Set(['--check', '--json', '--reopen']);
+const FLAGS = new Set(['--check', '--json', '--reopen', '--progress']);
 
 const run = promisify(execFile);
 
@@ -34,10 +36,22 @@ const setupOf = exe => new Promise((resolve, reject) => {
   child.on('exit', code => resolve(code));
 });
 
+// What is said while a download goes on: lines the window reads (--progress), or one line a terminal
+// rewrites in place, or nothing (a pipe that did not ask).
+export function progressWriter({ machine, stream = process.stdout }) {
+  const megabytes = bytes => (bytes / 1024 / 1024).toFixed(1);
+  if (machine) return (received, total) => log(`progress ${received} ${total}`);
+  if (!stream.isTTY) return null;
+  return (received, total) => {
+    const of = total ? ` / ${megabytes(total)} MB  ${Math.floor((received * 100) / total)}%` : ' MB';
+    stream.write(`\r  ${megabytes(received)}${of}   `);
+  };
+}
+
 export default async function update(argv) {
   const unknown = argv.filter(arg => !FLAGS.has(arg));
   if (unknown.length) throw new Error(`unknown option ${unknown[0]} (update takes ${[...FLAGS].join(', ')})`);
-  const [check, json, reopen] = ['--check', '--json', '--reopen'].map(flag => argv.includes(flag));
+  const [check, json, reopen, progress] = ['--check', '--json', '--reopen', '--progress'].map(flag => argv.includes(flag));
 
   let latest;
   try {
@@ -63,8 +77,10 @@ export default async function update(argv) {
   const target = process.execPath;
   const fresh = `${target}.new`;
 
-  log(`downloading ${latest.tag} (about 90 MB)…`);
-  await downloadRelease(latest.tag, fresh);
+  log(`downloading ${latest.tag}…`);
+  const onProgress = progressWriter({ machine: progress });
+  await downloadRelease(latest.tag, fresh, { onProgress });
+  if (onProgress && !progress) process.stdout.write('\n');          // the line a terminal rewrites is finished
   log('checksum ok');
 
   const said = await versionOf(fresh).catch(err => { throw new Error(`the download does not start: ${err.message}`); });

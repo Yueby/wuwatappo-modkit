@@ -13,7 +13,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { compareVersions, downloadRelease, latestRelease, parseChecksum, removeLeftovers, replaceProgram } from '../src/lib/release.js';
+import { progressWriter } from '../src/commands/update.js';
+import { compareVersions, downloadVerified, downloadRelease, latestRelease, parseChecksum, removeLeftovers, replaceProgram } from '../src/lib/release.js';
 import { write } from './app-helpers.js';
 
 let root;
@@ -164,4 +165,46 @@ test('--version prints the version in package.json, which is where it is written
   const { stdout } = await promisify(execFile)(process.execPath, [path.join(import.meta.dirname, '..', 'src', 'cli.js'), '--version']);
   const { version } = JSON.parse(await fs.readFile(path.join(import.meta.dirname, '..', 'package.json'), 'utf8'));
   assert.equal(stdout.trim(), version);
+});
+
+// --- progress ---------------------------------------------------------------------------------------------
+
+test('a download says how far it is, ends on all of it, and knows the total from the server or else from what it was told', async () => {
+  const bytes = Buffer.alloc(300_000, 7);
+  const body = () => new ReadableStream({ start(controller) { for (let i = 0; i < bytes.length; i += 100_000) controller.enqueue(bytes.subarray(i, i + 100_000)); controller.close(); } });
+  const file = path.join(root, `progress-${++counter}.bin`);
+
+  const seen = [];
+  await downloadVerified('https://github.com/x/y/z', file, { expected: sha(bytes), size: bytes.length, fetch: async () => new Response(body(), { headers: { 'content-length': String(bytes.length) } }), onProgress: (received, total) => seen.push([received, total]) });
+  assert.deepEqual(seen.at(-1), [bytes.length, bytes.length], 'the last word is all of it');
+  assert.ok(seen.every(([received, total], i) => total === bytes.length && (i === 0 || received >= seen[i - 1][0])), 'the total is the server\'s, and it only goes forward');
+
+  const told = [];
+  await downloadVerified('https://github.com/x/y/z', file, { expected: sha(bytes), size: bytes.length, fetch: async () => new Response(body()), onProgress: (received, total) => told.push(total) });
+  assert.ok(told.every(total => total === bytes.length), 'no length from the server: the one it was told');
+
+  const unknown = [];
+  await downloadVerified('https://github.com/x/y/z', file, { expected: sha(bytes), fetch: async () => new Response(body()), onProgress: (received, total) => unknown.push(total) });
+  assert.ok(unknown.every(total => total === 0), 'neither: 0, so that whoever shows it does not invent a percentage');
+});
+
+test('what the update command says while it downloads: lines for a window that asked, a rewritten line for a terminal, nothing for a pipe', () => {
+  const lines = [];
+  const original = process.stdout.write;
+  process.stdout.write = text => { lines.push(String(text).trimEnd()); return true; };
+  try {
+    progressWriter({ machine: true })(26214400, 104857600);
+  } finally {
+    process.stdout.write = original;
+  }
+  assert.deepEqual(lines, ['progress 26214400 104857600']);
+
+  const written = [];
+  const terminal = { isTTY: true, write: text => written.push(text) };
+  progressWriter({ machine: false, stream: terminal })(26214400, 104857600);
+  assert.match(written[0], /^\r\s+25\.0 \/ 100\.0 MB\s+25%/);
+  progressWriter({ machine: false, stream: terminal })(5242880, 0);
+  assert.match(written[1], /5\.0 MB/, 'no total: no percentage');
+
+  assert.equal(progressWriter({ machine: false, stream: { isTTY: false, write() {} } }), null, 'a pipe that did not ask hears nothing');
 });
