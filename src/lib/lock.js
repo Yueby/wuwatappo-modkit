@@ -7,9 +7,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { WORK_DIR } from './paths.js';
+import { LOCK_FILE } from './paths.js';
 
-export const LOCK_FILE = path.join(WORK_DIR, 'loader.lock');
+export { LOCK_FILE };
 
 export class LoaderRunning extends Error {
   constructor(pid, file) {

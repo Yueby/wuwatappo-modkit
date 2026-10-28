@@ -91,6 +91,11 @@ node src/cli.js setup status     # what is in place
 node src/cli.js uninstall        # takes it away (one UAC prompt); --restore-exe also puts the original exe back
 ```
 
+`setup` also lays out the app folder (`mods\`, `moddata\`; see the README) and is safe to run again, which is how a
+new version of this program, or an app update, is taken up: it adds what is missing, writes the registry value
+only if it is not already right (so no UAC prompt again), and replaces the running loader with a new one.
+It never overwrites a mod that is already in `mods\` and never deletes anything of yours.
+
 After `setup`, start `WuwaTappo.exe` however you like (its shortcut, a double-click, its own logon task)
 and the mods start with it. Three pieces make that so:
 
@@ -116,12 +121,12 @@ A running app has to be restarted once after `setup`: it was started before, wit
 
 `start` is `lab` and `watch` in one: it patches the exe if that is needed, starts the app with the
 DevTools port if it is not running, and then stays resident. Run it again and nothing doubles: only one
-loader runs (it holds `work/loader.lock`; a lock left by a crashed loader is taken over), and an
+loader runs (it holds `moddata.modkitoader.lock` in the app folder; a lock left by a crashed loader is taken over), and an
 app that is already up with DevTools is simply attached to.
 
 ```sh
 node src/cli.js start                 # now
-node src/cli.js autostart install     # at every logon, with no window; what it says goes to work/logs/modkit.log
+node src/cli.js autostart install     # at every logon, with no window; what it says goes to moddata.modkitmodkit.log in the app folder
 node src/cli.js autostart status
 node src/cli.js autostart remove
 ```

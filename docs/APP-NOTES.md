@@ -303,6 +303,13 @@ Measured on the running app, because the mod system's cross-window design rests 
 - The profile is the app's own, so `clear_all_browsing_data` (which wipes the login) wipes the
   stored settings with it.
 
+## Files the loader keeps
+
+Everything is in the app folder (paths.js): `mods\`, `moddata\<mod>\`, and `moddata\.modkit\` for its lock and log.
+A mod id cannot begin with a dot, so `.modkit` can never be a mod's. This assumes the app's own installer and
+updater leave unknown folders in that folder alone; that has not been checked (an update has not happened since
+the folders were put there).
+
 ## DevTools port from the registry
 
 WebView2 reads extra browser arguments from the registry as well as from `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`

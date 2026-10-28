@@ -56,6 +56,21 @@ To write a mod, copy `mods/_template/` (see [docs/MODDING.md](docs/MODDING.md)).
 Options: `--port <n>` (default 9222), `--mods-dir <path>` (default `./mods`), `--force`
 (re-inject even if already present). An unknown `--option` is an error, not ignored.
 
+## Where things are
+
+```
+<app folder>\                 where WuwaTappo.exe is (E:\Programs\WuwaTappo; WUWA_INSTALL_DIR overrides it)
+  WuwaTappo.exe               the patched exe
+  WuwaTappo.exe.orig          the original, for uninstall
+  mods\                       the mods that run: a folder (or a .js) each
+  moddata\<mod>\              what a mod's Node part keeps (host.dataDir)
+  moddata\.modkit\            the loader's own: loader.lock and modkit.log
+```
+
+Nothing else is written outside the repository, apart from one registry value and one Startup script
+(see docs/LAUNCHING.md). `node src/cli.js setup` creates the folders, adds the mods that ship with the
+program that are not there yet (it never overwrites one that is), and moves data from where it used to be.
+
 ## Layout
 
 ```
@@ -90,7 +105,8 @@ src/
     modkit-registry.js    window.modkit: mod lifecycle, settings, master switch, state shared
                           between windows (every window)
     panel-tab.js          the MOD tab and page in the settings panel (panel window only)
-mods/                   your mods (auto-click, click-journal; _template* to copy): single files or folders with a package.json (_ = not loaded)
+mods/                   the mods that ship with the program (auto-click, click-journal) and the _template* to copy.
+                          Not where mods run: `setup` puts the ones that are missing into <app folder>\mods
 scripts/                developer tools, not part of the CLI (icon preview)
 tests/                  `npm test` runs the offline ones (no app needed); `npm run test:app` needs the app running
 docs/                   launching, modding, and what is known about the app

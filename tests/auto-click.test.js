@@ -6,9 +6,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { MODS_DIR } from '../src/lib/paths.js';
+import { BUNDLED_MODS_DIR } from '../src/lib/paths.js';
 
-const source = await fs.readFile(path.join(MODS_DIR, 'auto-click', 'main.js'), 'utf8');
+const source = await fs.readFile(path.join(BUNDLED_MODS_DIR, 'auto-click', 'main.js'), 'utf8');
 const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 

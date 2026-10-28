@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { HostManager } from '../src/lib/host.js';
 import { discoverMods } from '../src/lib/mods.js';
-import { MODS_DIR } from '../src/lib/paths.js';
+import { BUNDLED_MODS_DIR } from '../src/lib/paths.js';
 import { ratePerMinute } from '../mods/click-journal/host.js';
 import { sleep, until } from './app-helpers.js';
 
@@ -66,7 +66,7 @@ async function begin(script, dataDir = path.join(root, 'data')) {
 const csv = async dir => (await fs.readFile(path.join(dir ?? path.join(root, 'data'), ID, 'clicks.csv'), 'utf8').catch(() => '')).split('\n').filter(Boolean);
 
 before(async () => {
-  mod = (await discoverMods(MODS_DIR)).find(m => m.name === ID);
+  mod = (await discoverMods(BUNDLED_MODS_DIR)).find(m => m.name === ID);
   assert.ok(mod, 'mods/click-journal is there');
   assert.equal(mod.loadError, null, mod.loadError);
 });

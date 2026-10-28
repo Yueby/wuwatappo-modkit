@@ -10,7 +10,8 @@ mods/auto-click/         a package: package.json says what it is and what it exp
   main.js                the code that runs in the main window
 ```
 
-Start a package by copying `mods/_template/` and dropping the underscore. Files and folders
+Mods run from `mods\` in the app folder (`E:\Programs\WuwaTappo\mods`; the repository's `mods/` holds the ones that
+ship with the program, which `setup` copies there). Start a package by copying `_template` and dropping the underscore. Files and folders
 starting with `_` or `.` are never loaded, so you can keep fragments around.
 
 ## package.json
@@ -217,6 +218,9 @@ half keeps working without it; `mod.host.call` then rejects with a message that 
 a few seconds of the loader going: it tells the pages it is alive every 2 s, and a page does not
 wait for a loader it has not heard from).
 
+A mod's Node part keeps its files in `host.dataDir`, which is `moddata\<mod name>\` in the app folder. It is
+created for it; `mods remove <id> --purge` deletes it.
+
 **One process per mod.** Each Node part is a child process of the loader, not a thread and not an
 import. A native addon that crashes, or an npm package that assumes it owns the process (changes the
 directory, exits, installs signal handlers), takes down only that mod. Its working directory is the
@@ -308,7 +312,7 @@ your account), its `permissions`, the mods it needs, the npm packages it depends
 - A mod that already exists needs `--force`, or `update`. An update that cannot be installed
   (invalid manifest, a dependency that cannot be fetched) leaves the old version exactly as it was.
 - A mod that is renamed at its source is a new mod, not an update of the old one.
-- `remove` keeps what the mod's Node part wrote (`work/mod-data/<id>`) unless `--purge`. Its settings
+- `remove` keeps what the mod's Node part wrote (`moddata<id>` in the app folder) unless `--purge`. Its settings
   are in the app's storage and are used again if it is installed again.
 - Mods are not signed or reviewed: install what you would run.
 

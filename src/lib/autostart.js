@@ -13,7 +13,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { PROJECT_ROOT } from './paths.js';
+import * as sea from 'node:sea';
+import { INSTALL_DIR, PROJECT_ROOT } from './paths.js';
 
 const run = promisify(execFile);
 
@@ -28,9 +29,16 @@ export function startupDir() {
 // In a VBScript string a quote is written twice.
 const vb = text => String(text).replaceAll('"', '""');
 
-export function scriptText({ node, cli, cwd }) {
+// How to run this program: from the repository it is node and cli.js; packaged, it is the exe itself.
+export function launcher() {
+  return sea.isSea()
+    ? { node: process.execPath, cli: null, cwd: INSTALL_DIR }
+    : { node: process.execPath, cli: path.join(PROJECT_ROOT, 'src', 'cli.js'), cwd: PROJECT_ROOT };
+}
+
+export function scriptText({ node, cli = null, cwd }) {
   // --no-launch: the loader waits for the app, however it is started; it does not start it.
-  const command = `"${node}" "${cli}" start --no-launch --log-file`;
+  const command = [`"${node}"`, cli ? `"${cli}"` : null, 'start --no-launch --log-file'].filter(Boolean).join(' ');
   return [
     `' Starts wuwa-modkit when you log on. Written by: node src/cli.js autostart install`,
     `' Remove it with: node src/cli.js autostart remove   (or just delete this file)`,
@@ -43,7 +51,7 @@ export function scriptText({ node, cli, cwd }) {
 
 const fileIn = dir => path.join(dir, SCRIPT_NAME);
 
-export function install({ dir = startupDir(), node = process.execPath, cli = path.join(PROJECT_ROOT, 'src', 'cli.js'), cwd = PROJECT_ROOT } = {}) {
+export function install({ dir = startupDir(), node = launcher().node, cli = launcher().cli, cwd = launcher().cwd } = {}) {
   fs.mkdirSync(dir, { recursive: true });
   const file = fileIn(dir);
   fs.writeFileSync(file, scriptText({ node, cli, cwd }));

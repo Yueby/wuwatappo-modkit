@@ -11,7 +11,7 @@ import vm from 'node:vm';
 import { LOADER_API, ManifestError, parseManifest } from '../src/lib/manifest.js';
 import { checkRequirements, discoverCore, discoverMods, unitFor } from '../src/lib/mods.js';
 import { compileCore, compileMod } from '../src/lib/page-scripts.js';
-import { MODS_DIR } from '../src/lib/paths.js';
+import { BUNDLED_MODS_DIR } from '../src/lib/paths.js';
 
 const problemsOf = (raw, folder = 'demo') => {
   try {
@@ -281,7 +281,7 @@ test('the Node version is checked against the one given, so this can be tested f
 });
 
 test('every mod in mods/ loads cleanly, and the page code generated for it parses', async () => {
-  const mods = await discoverMods(MODS_DIR);
+  const mods = await discoverMods(BUNDLED_MODS_DIR);
   for (const mod of mods) {
     assert.equal(mod.loadError, null, `${mod.name}: ${mod.loadError}`);
     for (const label of ['main', 'panel', 'toast']) {
@@ -291,12 +291,12 @@ test('every mod in mods/ loads cleanly, and the page code generated for it parse
 });
 
 test('the templates are valid once the underscore is dropped, so copying one works', async () => {
-  const templates = (await fs.readdir(MODS_DIR, { withFileTypes: true }))
+  const templates = (await fs.readdir(BUNDLED_MODS_DIR, { withFileTypes: true }))
     .filter(e => e.isDirectory() && e.name.startsWith('_template'));
   assert.ok(templates.length >= 2, 'a template with a Node part, and one without');
 
   for (const { name: folderName } of templates) {
-    const folder = path.join(MODS_DIR, folderName);
+    const folder = path.join(BUNDLED_MODS_DIR, folderName);
     const id = folderName.slice(1);                              // what it is called once copied and renamed
     const raw = JSON.parse(await fs.readFile(path.join(folder, 'package.json'), 'utf8'));
     const { manifest, windows, host } = parseManifest(raw, id);

@@ -5,7 +5,7 @@
 // Safe to run again and again: only one loader runs, and an app that is already up is left alone.
 //
 //   --no-launch   do not start the app; wait for one that has DevTools
-//   --log-file    also write everything to work/logs/modkit.log (for a run with no window)
+//   --log-file    also write everything to moddata.modkitmodkit.log in the app folder (for a run with no window)
 //   --rebuild     re-apply the patch (after an app update overwrote the exe)
 
 import { appState, startApp } from '../lib/app.js';
