@@ -194,6 +194,14 @@ export async function readMarker({ file = PATCH_MARKER, legacy = LEGACY_PATCH_MA
   return null;
 }
 
+// After the original is back: the backup and the marker are of no use any more, and a backup left
+// behind would be a stale copy of the app the day it is updated. Patching again makes a fresh one.
+export async function forgetPatch() {
+  await fs.rm(APP_EXE_BACKUP, { force: true });
+  await fs.rm(PATCH_MARKER, { force: true });
+  await fs.rm(LEGACY_PATCH_MARKER, { force: true });
+}
+
 // Restore the stock exe from the backup.
 export async function restoreOriginal({ file = APP_EXE } = {}) {
   if (!(await exists(APP_EXE_BACKUP))) {

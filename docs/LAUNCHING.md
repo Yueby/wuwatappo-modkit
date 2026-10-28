@@ -90,7 +90,7 @@ The packaged exe does this from its window (double-click it: 安装, 卸载). Th
 ```sh
 node src/cli.js setup            # one UAC prompt, once
 node src/cli.js setup status     # what is in place
-node src/cli.js uninstall        # takes it away (one UAC prompt); --restore-exe also puts the original exe back
+node src/cli.js uninstall        # takes it away and puts the original exe back (one UAC prompt); --keep-exe leaves it patched
 ```
 
 `setup` also makes the app folder's `mods\` and `moddata\` if they are not there (empty: the program carries no mods,

@@ -22,7 +22,7 @@ const OPTIONS = {
   '--no-deps': ['noDeps', false],
   '--allow-scripts': ['allowScripts', false],
   '--purge': ['purge', false],
-  '--restore-exe': ['restoreExe', false],
+  '--keep-exe': ['keepExe', false],
 };
 
 export function parseOptions(argv) {
@@ -40,7 +40,7 @@ export function parseOptions(argv) {
     noDeps: false,
     allowScripts: false,
     purge: false,
-    restoreExe: false,
+    keepExe: false,
     positional: [],
   };
 

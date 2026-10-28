@@ -33,6 +33,14 @@ export async function waitForDevTools(port, timeoutMs) {
   );
 }
 
+// Start the app the way a person does, with nothing added, and wait for its DevTools port: the one the
+// registry gives it (see setup). That it comes up is the proof that the one-time setup worked.
+export async function startAppByItself({ port, timeoutMs = 30_000 }) {
+  const child = launchDetached(APP_EXE, { cwd: INSTALL_DIR, env: process.env });
+  const version = await waitForDevTools(port, timeoutMs);
+  return { pid: child.pid, version };
+}
+
 // Start the (already patched) app with the DevTools port, and wait until the port answers. The
 // app's own profile is used: this is the installed binary itself, just without the administrator
 // requirement, so the login, settings and click counters are the real ones and the updater keeps

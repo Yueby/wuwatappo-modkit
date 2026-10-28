@@ -1,4 +1,4 @@
-# The window that opens when the exe is double-clicked: what is in place, and two buttons.
+# The window that opens when the exe is double-clicked: what is in place, and two buttons (install, uninstall).
 #
 # It does nothing itself. Every button runs this same exe with a command (setup, uninstall, setup
 # status, update) and shows what it printed, so the window and the command line can never disagree.
@@ -62,19 +62,14 @@ $uninstall = New-Button '卸载' 122 100
 $folder = New-Button '打开 mods 文件夹' 232 140
 $refresh = New-Button '刷新' 382 70
 
-$restore = New-Object System.Windows.Forms.CheckBox
-$restore.Text = '卸载时把软件的 exe 也还原成原版'
-$restore.Location = New-Object System.Drawing.Point(14, 356)
-$restore.AutoSize = $true
-$form.Controls.Add($restore)
-
 $hint = New-Object System.Windows.Forms.Label
-$hint.Text = '安装一次就够了：以后直接运行 WuwaTappo.exe，mod 会跟着启动。软件更新后再点一次“安装”。'
-$hint.Location = New-Object System.Drawing.Point(14, 380)
+$hint.Text = '安装一次就够了：以后直接运行 WuwaTappo.exe，mod 会跟着启动。软件更新后再点一次“安装”。' + "`n" +
+  '软件正在运行时，安装和卸载会先关掉它，做完再自动打开。卸载会把软件的 exe 还原成原版。'
+$hint.Location = New-Object System.Drawing.Point(14, 356)
 $hint.AutoSize = $true
 $hint.ForeColor = [System.Drawing.Color]::DimGray
 $form.Controls.Add($hint)
-$form.ClientSize = New-Object System.Drawing.Size(580, 408)
+$form.ClientSize = New-Object System.Drawing.Size(580, 396)
 
 $buttons = @($install, $uninstall, $refresh)
 $script:process = $null
@@ -189,12 +184,8 @@ function Start-Up {
   Show-Status { Check-Update }
 }
 
-$install.Add_Click({ Start-Command 'setup' '正在安装…（会弹出一次管理员确认）' { Show-Status } })
-$uninstall.Add_Click({
-  $arguments = 'uninstall'
-  if ($restore.Checked) { $arguments = 'uninstall --restore-exe' }
-  Start-Command $arguments '正在卸载…' { Show-Status }
-})
+$install.Add_Click({ Start-Command 'setup' '正在安装…（会弹出一次管理员确认；软件正在运行的话会先关掉，装好再自动打开）' { Show-Status } })
+$uninstall.Add_Click({ Start-Command 'uninstall' '正在卸载…（软件正在运行的话会先关掉，还原原版后再自动打开）' { Show-Status } })
 $refresh.Add_Click({ $script:said = $null; Start-Up })
 $folder.Add_Click({
   New-Item -ItemType Directory -Force -Path $ModsDir | Out-Null

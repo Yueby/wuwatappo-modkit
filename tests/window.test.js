@@ -121,13 +121,12 @@ test('a command that fails keeps its message on screen: the status below it does
   assert.deepEqual(lines(report.box), ['boom: setup', '---', 'FAKE ran: setup status']);
 });
 
-test('卸载 runs uninstall, and with the box ticked also restores the original exe', { skip }, async () => {
+test('卸载 runs plain uninstall (putting the original exe back is what uninstall does), and there is no box to tick for it', { skip }, async () => {
   const report = await drive(`
-    $uninstall.PerformClick(); Wait-Idle; $report.plain = $box.Text
-    $restore.Checked = $true
-    $uninstall.PerformClick(); Wait-Idle; $report.restoring = $box.Text`);
-  assert.deepEqual(lines(report.plain), ['FAKE ran: uninstall', '---', 'FAKE ran: setup status']);
-  assert.deepEqual(lines(report.restoring), ['FAKE ran: uninstall --restore-exe', '---', 'FAKE ran: setup status']);
+    $uninstall.PerformClick(); Wait-Idle; $report.box = $box.Text
+    $report.checkboxes = @($form.Controls | Where-Object { $_ -is [System.Windows.Forms.CheckBox] }).Count`);
+  assert.deepEqual(lines(report.box), ['FAKE ran: uninstall', '---', 'FAKE ran: setup status']);
+  assert.equal(report.checkboxes, 0);
 });
 
 test('刷新 reads the status again and drops what was said before', { skip }, async () => {

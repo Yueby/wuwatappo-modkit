@@ -37,6 +37,39 @@ export async function countInstances() {
   return n;
 }
 
+const KILL = `Stop-Process -Name ${PROCESS_NAME} -Force -ErrorAction SilentlyContinue`;
+const SETTLE_MS = 1500;
+const settle = () => new Promise(resolve => setTimeout(resolve, SETTLE_MS));
+
+// Stop every running instance of the app, including one running as administrator. An unelevated
+// token cannot terminate an elevated process (and Stop-Process reports success while doing nothing),
+// so when a plain kill is not enough it is repeated inside a UAC-elevated session. `say` hears of that.
+// Resolves with how many there were.
+export async function stopApp({ say = () => {} } = {}) {
+  const before = await countInstances();
+  if (before === 0) return 0;
+
+  await runPS(KILL).catch(() => {});
+  await settle();
+  if ((await countInstances()) === 0) return before;
+
+  say('still running: an instance is elevated, asking for administrator rights');
+  await runElevated([KILL, `Start-Sleep -Milliseconds ${SETTLE_MS}`]);
+
+  const after = await countInstances();
+  if (after > 0) {
+    throw new Error(`${after} instance(s) survived the elevated kill — is something restarting it?\n` +
+      '  The app has a logon task (\\WuwaTappo\\ElevatedAutostart); a copy started by it can reappear.');
+  }
+  return before;
+}
+
+// Start a program the way Explorer would, so that one whose manifest asks for administrator rights gets
+// its UAC prompt instead of failing (the original app is one). Does not wait for it.
+export async function startThroughShell(exe) {
+  await runPS(`Start-Process -FilePath ${psQuote(exe)} -WorkingDirectory ${psQuote(path.dirname(exe))}`);
+}
+
 // --- administrator -------------------------------------------------------------
 
 const UAC_TIMEOUT_MS = 90_000;

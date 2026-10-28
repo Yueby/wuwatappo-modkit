@@ -17,7 +17,7 @@ ${style.bold('Commands')}
   window              Open the window with the install / uninstall buttons (what a double-click on the exe does)
   update              Look on GitHub for a newer version and take it (--check only asks, --json)
   setup [status]      One-time install: after it, just run WuwaTappo.exe and the mods start with it
-  uninstall           Take setup away again (--restore-exe also puts the original exe back)
+  uninstall           Take setup away again and put the original exe back (--keep-exe leaves it patched)
   start               Keep mods always on: start the app with DevTools if needed, then stay resident
     --no-launch         do not start the app, wait for one
     --log-file          also write to <app folder>\\moddata\\.modkit\\modkit.log
