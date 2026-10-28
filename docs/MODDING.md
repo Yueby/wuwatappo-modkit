@@ -27,12 +27,13 @@ framework (`src/runtime/panel-tab.js`), not a mod: it is injected into every win
 before any mod runs, so `mod.entry` is always available, and it cannot be removed by
 deleting something from `mods/`.
 
-The page is a list of rows, like the settings page: first one row per loaded mod (its
-name, and "正常" / "出错" on the right; a failed mod shows its error as the subtitle), then
-every row added through `mod.entry`. Rows use the app's own settings markup, so they look
-like the rest of the settings page — same fonts, colours, spacing and scrollbar — without
-the mod writing any HTML or CSS. There are no section headings and no red or green: the
-app has neither, and the page does not invent them.
+The page opens with the same header the 联机 page has, which is the one place the app puts a
+title beside a count: `MOD（3）` (3 mods loaded), and under it the overall state — `全部正常`,
+or `1 个出错`. Below that is a list of rows like the settings page: first one row per loaded
+mod (its name, and "正常" / "出错" on the right; a failed mod shows its error as the subtitle),
+then every row added through `mod.entry`. Everything uses the app's own classes, so fonts,
+colours, spacing and scrollbar match without the mod writing any HTML or CSS. There are no
+section headings and no red or green: the app has neither, and the page does not invent them.
 
 ```js
 let enabled = false;

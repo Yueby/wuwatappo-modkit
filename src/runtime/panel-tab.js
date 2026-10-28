@@ -220,20 +220,27 @@ function loadedMods() {
     .sort(([a], [b]) => a.localeCompare(b));
 }
 
+// The page title is the room page's own header (div.room-info), which is the one place
+// the app puts a title next to a count: 房间（3/5）, with the room number as a quieter line
+// under it. Ours reads MOD（3） with the overall state underneath. 20px / 18px, colours and
+// line heights all come from those classes.
+function renderHeader(body, mods) {
+  const failed = mods.filter(([, state]) => state?.status === 'error').length;
+  const head = el('div', 'room-info');
+  head.appendChild(el('div', 'room-qty', `MOD（${mods.length}）`));
+  head.appendChild(el('div', 'room-number',
+    !mods.length ? '把脚本放进 mods/ 文件夹，保存后自动加载'
+      : failed ? `${failed} 个出错`
+        : '全部正常'));
+  // The room page puts 28px between this header and its list (.room-members margin-top).
+  head.style.marginBottom = '28px';
+  body.appendChild(head);
+}
+
 // One row per loaded mod: its name, and on the right whether it is working. A failure
 // shows its message as the row's subtitle. State is said in words, not colour — the app's
 // palette has no red or green to borrow.
-function renderMods(body) {
-  const mods = loadedMods();
-
-  if (!mods.length) {
-    body.appendChild(row({
-      title: 'mods/ 里还没有 mod',
-      description: '把脚本放进 mods/ 文件夹，保存后会自动加载。',
-    }));
-    return;
-  }
-
+function renderMods(body, mods) {
   for (const [name, state] of mods) {
     const status = state?.status ?? 'unknown';
     const failed = status === 'error';
@@ -271,7 +278,9 @@ function renderView() {
   // Redrawing replaces the rows, so remember where the user had scrolled to.
   const scrolled = body.scrollTop;
   body.textContent = '';
-  renderMods(body);
+  const mods = loadedMods();
+  renderHeader(body, mods);
+  renderMods(body, mods);
   renderEntries(body);
   body.scrollTop = scrolled;
 }

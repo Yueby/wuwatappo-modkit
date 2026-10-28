@@ -238,3 +238,22 @@ and the page has **no section headings**. Check a new page the same way: collect
 computed (size, colour, family) of every text-bearing element and diff the set against the
 settings page; anything extra is out of place.
 
+### Titles across the panel's pages
+
+Surveyed from the panel chunk and the stylesheet. Only the 联机 page has a page title:
+
+```
+div.room-info
+  div.room-qty        20px #8e5e43, line 24px, margin-bottom 10px   "房间（5/20）"  (rooms_member_count)
+  div.room-number     18px #8e7b6a, line 22px                         "房间号： xxxx"
+  button.common-btn.leave-room-btn   absolute, bottom right
+ul.room-members       margin-top 28px
+```
+
+Settings has no heading at all; 背包 has `.my-preset-title` (18px #8e7b6a) and 合成 a 14px
+centred `.synthesis-tip`; 图鉴 is a grid. The count is written as a noun plus a full-width
+parenthesis, which is how the MOD page words its own: `MOD（3）`. Strings come from the
+server (`/app/dict/zh.json`), not the bundle, which is why they are not greppable locally.
+Measured on the live page, the MOD header and the room header agree on size, colour, line
+height, left edge and width.
+
