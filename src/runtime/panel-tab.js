@@ -264,7 +264,7 @@ function renderMod(body, id, manifest) {
     title: manifest.name,
     description: state.status === 'error' ? `出错：${state.error}`
       : state.status === 'waiting' ? state.error
-        : manifest.description,
+        : [manifest.dev ? '开发中' : null, manifest.description].filter(Boolean).join(' · '),
     control: controlsOfRow,
   }));
 }
@@ -606,14 +606,17 @@ function loadPlugins() {
 // What a plugin's row says about where it stands, and the buttons that go with it.
 function pluginRow(plugin) {
   const flags = [plugin.author ? `作者 ${plugin.author}` : null, plugin.nodePart ? '带后台程序' : null].filter(Boolean).join(' · ');
-  const state = !plugin.installed ? null
+  const state = plugin.dev ? '开发中：用的是本地文件夹'
+    : !plugin.installed ? null
     : !plugin.fromRegistry ? '已有同名插件（不是从这里安装的）'
       : plugin.update ? `已安装 ${plugin.installedVersion ?? '?'}，有新版本`
         : `已安装 ${plugin.installedVersion ?? ''}`.trim();
   const description = [plugin.description, flags, state].filter(Boolean).join(' · ');
 
   const buttons = [];
-  if (!plugin.installed) {
+  if (plugin.dev) {
+    // its files are in a folder of the person's own: nothing to install, update or remove here
+  } else if (!plugin.installed) {
     buttons.push(controls.button({ label: '安装', onClick: () => pluginRequest('get', plugin) }));
   } else if (plugin.fromRegistry) {
     if (plugin.update) buttons.push(controls.button({ label: '更新', onClick: () => pluginRequest('update', plugin) }));

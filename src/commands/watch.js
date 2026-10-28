@@ -13,6 +13,7 @@ import { HostManager } from '../lib/host.js';
 import { acquireLock } from '../lib/lock.js';
 import { Injector } from '../lib/injector.js';
 import { ModManager } from '../lib/manager.js';
+import { readDev } from '../lib/devmode.js';
 import { discoverAll, modsSignature } from '../lib/mods.js';
 import { DebugPortUnavailable } from '../lib/targets.js';
 import { parseOptions } from './options.js';
@@ -38,6 +39,7 @@ export async function resident(options, { lock = acquireLock() } = {}) {
   };
 
   let signature = '';
+  let devWas = null;
   let stopped = false;
   let lastError = '';
 
@@ -65,14 +67,19 @@ export async function resident(options, { lock = acquireLock() } = {}) {
     if (modsTick-- <= 0) {
       modsTick = Math.max(1, Math.round(MODS_POLL_MS / INJECT_POLL_MS));
       try {
-        const mods = await discoverAll(options.modsDir);
+        const dev = await readDev();                      // read every time: switching modes needs no restart
+        const mods = await discoverAll(options.modsDir, { devDirs: dev.enabled ? dev.dirs : [] });
         const next = modsSignature(mods);
         if (next !== signature) {
           signature = next;
           injector.setMods(mods);
           hosts.setMods(mods);
-          const user = mods.filter(m => !m.core).map(m => m.name);
+          const user = mods.filter(m => !m.core).map(m => (m.dev ? `${m.name} (dev)` : m.name));
           log(`${style.cyan('mods')} ${user.join(', ') || style.dim('(none)')}  ${style.dim(`+ ${mods.length - user.length} framework`)}`);
+          if (dev.enabled !== devWas) {
+            devWas = dev.enabled;
+            log(`${style.cyan('dev mode')} ${dev.enabled ? `on: ${dev.dirs.join(', ')}` : 'off: the plugins installed in mods\\ are used'}`);
+          }
         }
       } catch (err) {
         log(`${style.red('mods')} ${err.message}`);

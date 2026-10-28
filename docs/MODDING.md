@@ -11,9 +11,32 @@ mods/auto-click/         a package: package.json says what it is and what it exp
 ```
 
 Mods run from `mods\` in the app folder (`E:\Programs\WuwaTappo\mods`). It starts empty: the program
-carries no mods, they are installed into it (`mods install`). The repository's `examples/` holds two examples and the
+carries no mods, they are installed into it (`mods install`). The repository's `examples/` holds the
 templates; start a package by copying `_template` there and dropping the underscore. Files and folders
 starting with `_` or `.` are never loaded, so you can keep fragments around.
+
+## Developing a plugin: dev mode
+
+While you write a plugin you do not install it. **Dev mode** uses the folder it is written in, as it is:
+
+```sh
+node src/cli.js dev on E:\Projects\wuwatappo-mods\mods   # a folder of plugins, or one plugin's folder
+node src/cli.js dev off                                  # back to what is installed in mods\
+node src/cli.js dev                                      # where things stand
+```
+
+or, in the launcher window, the 开发模式 box (and 选择文件夹… to choose the folder). The loader notices within a
+second, with nothing restarted.
+
+- A plugin in a dev folder is used **instead of** an installed one of the same name (the one from the registry is
+  left alone, and is back as soon as dev mode is off). Other installed plugins keep working, and may need a plugin
+  that is only in the dev folder.
+- **Hot reload**: save a file and the page script is injected again, in place of the old copy (it is disposed
+  first: `mod.onDispose`), and a Node part is restarted when one of its files changed (not for an edit to a page
+  script). A plugin that does not load shows the reason on the MOD page, like any other.
+- Nothing is copied and there is nothing to publish; the MOD page marks these plugins 开发中, and the plugin dialog
+  does not offer to install, update or remove them (they are not the registry's copy).
+- The folders are remembered in `<app folder>\moddata\.modkit\dev.json`, so switching back on is one word.
 
 ## package.json
 

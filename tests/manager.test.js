@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { installMod } from '../src/lib/install.js';
 import { ModManager } from '../src/lib/manager.js';
+import { writeDev } from '../src/lib/devmode.js';
 import { getFromRegistry } from '../src/lib/registry.js';
 import { until, write } from './app-helpers.js';
 import { github, plugin, release } from './registry-helpers.js';
@@ -34,7 +35,7 @@ async function setup(makeReleases = async () => []) {
   const dataDir = path.join(dir, 'moddata');
   await fs.mkdir(modsDir, { recursive: true });
 
-  const talk = (releases, { fetch = github(releases).fetch } = {}) => {
+  const talk = (releases, { fetch = github(releases).fetch, devFile } = {}) => {
     const sent = [];
     const app = {
       evaluate: async (window, js) => {
@@ -44,7 +45,7 @@ async function setup(makeReleases = async () => []) {
         sent.push({ window, id, event });
       },
     };
-    const manager = new ModManager({ modsDir, dataDir, app, fetch });
+    const manager = new ModManager({ modsDir, dataDir, app, fetch, devFile });
     return {
       manager,
       sent,
@@ -226,4 +227,34 @@ test('remove deletes the plugin, keeps its data unless asked, and cannot reach o
   send({ id: 'd2', action: 'remove', mod: 'beta', purge: true });
   assert.equal((await finished('d2')).purged, true);
   await assert.rejects(fs.stat(path.join(dataDir, 'beta')));
+});
+
+// --- a plugin in development ------------------------------------------------------------------------------
+
+test('a plugin that is being developed is marked in the list, and cannot be installed, updated or removed from here', async () => {
+  const { dir, modsDir, talk } = await setup();
+  const registry = [await alpha(dir)];
+  const devFolder = await plugin(path.join(dir, 'mine'), 'alpha', '9.9.9');
+  const devFile = path.join(dir, 'dev.json');
+  await installMod(await plugin(dir, 'alpha', '1.0.0'), { modsDir });                   // an installed copy as well
+
+  // Not in dev mode: nothing special.
+  await writeDev({ enabled: false, dirs: [devFolder] }, { file: devFile });
+  const off = talk(registry, { devFile });
+  off.send({ id: 'b0', action: 'browse' });
+  assert.equal((await off.finished('b0')).mods.find(m => m.id === 'alpha').dev, false);
+
+  await writeDev({ enabled: true, dirs: [devFolder] }, { file: devFile });
+  const on = talk(registry, { devFile });
+  on.send({ id: 'b1', action: 'browse' });
+  assert.equal((await on.finished('b1')).mods.find(m => m.id === 'alpha').dev, true);
+
+  for (const [n, action] of ['get', 'update', 'remove'].entries()) {
+    on.send({ id: `d${n}`, action, mod: 'alpha' });
+    const refused = await on.finished(`d${n}`);
+    assert.equal(refused.type, 'error', action);
+    assert.match(refused.message, /开发模式/, action);
+  }
+  assert.deepEqual(await installed(modsDir), ['alpha'], 'the installed copy is as it was');
+  assert.equal(JSON.parse(await fs.readFile(path.join(modsDir, 'alpha', 'package.json'), 'utf8')).version, '1.0.0');
 });

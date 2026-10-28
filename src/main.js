@@ -21,6 +21,7 @@ ${style.bold('Commands')}
   start               Keep mods always on: start the app with DevTools if needed, then stay resident
     --no-launch         do not start the app, wait for one
     --log-file          also write to <app folder>\\moddata\\.modkit\\modkit.log
+  dev [on <folder>|off]  Develop a plugin from its own folder: no install, every edit loaded as it is saved
   autostart <action>  install | remove | status (run start at logon)
   mods <action>       list | install <source> | update [id] | remove <id>
                         a source is a folder, .zip/.tgz, git URL, npm name or .js file

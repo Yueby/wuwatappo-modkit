@@ -1,6 +1,7 @@
 // Command registry.
 
 import autostart from './autostart.js';
+import dev from './dev.js';
 import lab from './lab.js';
 import mods from './mods.js';
 import run from './run.js';
@@ -25,6 +26,7 @@ export const COMMANDS = {
   start,
   autostart,
   mods,
+  dev,
   lab,
   run,
   watch,

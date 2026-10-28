@@ -47,6 +47,8 @@ export const MOD_DATA_DIR = path.join(INSTALL_DIR, 'moddata');
 export const LOADER_DIR = path.join(MOD_DATA_DIR, '.modkit');
 export const LOCK_FILE = path.join(LOADER_DIR, 'loader.lock');
 export const LOG_FILE = path.join(LOADER_DIR, 'modkit.log');
+// Dev mode: which folders a plugin is developed in, and whether they are in use (see devmode.js).
+export const DEV_FILE = path.join(LOADER_DIR, 'dev.json');
 
 // What the loader runs from when the program is packaged (see installLoaderCopy in layout.js).
 export const LOADER_EXE = path.join(LOADER_DIR, 'modkit-loader.exe');

@@ -20,6 +20,7 @@ import path from 'node:path';
 import { appState, startAppByItself } from '../lib/app.js';
 import * as autostart from '../lib/autostart.js';
 import { launcher } from '../lib/autostart.js';
+import { readDev } from '../lib/devmode.js';
 import { ensureFolders, installLoaderCopy, removeLoaderCopy } from '../lib/layout.js';
 import { runningLoader } from '../lib/lock.js';
 import { ensurePatched, forgetPatch, isPatched, restoreOriginal } from '../lib/patch.js';
@@ -151,6 +152,8 @@ async function status(options) {
   field('loader now', pid ? `${style.green('running')} (pid ${pid})` : 'not running');
   field('mods', MODS_DIR);
   field('mod data', MOD_DATA_DIR);
+  const dev = await readDev();
+  field('dev mode', dev.enabled ? `${style.green('on')}  ${dev.dirs.join(', ')}` : dev.dirs.length ? `off  (${dev.dirs.join(', ')} is remembered)` : 'off');
 
   const app = await appState(options.port);
   field('app', { debuggable: style.green('running, with DevTools'), running: style.yellow('running, without DevTools (started before setup?)'), stopped: 'not running' }[app]);

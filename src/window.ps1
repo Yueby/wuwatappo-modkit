@@ -57,10 +57,10 @@ $box.Location = New-Object System.Drawing.Point(12, 38)
 $box.Size = New-Object System.Drawing.Size(556, 264)
 $form.Controls.Add($box)
 
-function New-Button([string]$Text, [int]$X, [int]$Width) {
+function New-Button([string]$Text, [int]$X, [int]$Width, [int]$Y = 314) {
   $button = New-Object System.Windows.Forms.Button
   $button.Text = $Text
-  $button.Location = New-Object System.Drawing.Point($X, 314)
+  $button.Location = New-Object System.Drawing.Point($X, $Y)
   $button.Size = New-Object System.Drawing.Size($Width, 32)
   $form.Controls.Add($button)
   return $button
@@ -72,16 +72,25 @@ $folder = New-Button '打开插件文件夹' 232 140
 $refresh = New-Button '刷新' 382 70
 $pluginsButton = New-Button '插件…' 462 100
 
+# Developing a plugin: the program uses the folder it is written in, as it is, and loads every edit.
+$devBox = New-Object System.Windows.Forms.CheckBox
+$devBox.Text = '开发模式：直接用本地的插件文件夹，改了就生效'
+$devBox.Location = New-Object System.Drawing.Point(14, 360)
+$devBox.AutoSize = $true
+$form.Controls.Add($devBox)
+$devFolder = New-Button '选择文件夹…' 452 110 356
+
 $hint = New-Object System.Windows.Forms.Label
 $hint.Text = '装一次就行，以后直接打开 WuwaTappo，插件会跟着启动。软件更新后，再点一次“安装”。' + "`n" +
   '安装和卸载时，如果软件正在运行，会先关闭它，做完再自动打开。卸载会把软件还原成原版。'
-$hint.Location = New-Object System.Drawing.Point(14, 356)
+$hint.Location = New-Object System.Drawing.Point(14, 400)
 $hint.AutoSize = $true
 $hint.ForeColor = [System.Drawing.Color]::DimGray
 $form.Controls.Add($hint)
-$form.ClientSize = New-Object System.Drawing.Size(580, 396)
+$form.ClientSize = New-Object System.Drawing.Size(580, 440)
 
-$buttons = @($install, $uninstall, $refresh, $pluginsButton)
+$buttons = @($install, $uninstall, $refresh, $pluginsButton, $devFolder)
+$script:dev = $null          # what `dev status --json` said: { enabled, dirs }
 $script:process = $null
 $script:lines = $null        # what the program has said so far, but for progress
 $script:lineTask = $null     # the line being waited for; $null once there are no more
@@ -220,9 +229,53 @@ function Check-Update {
   Start-Command 'update --check --json' '' { Read-Check } $null -Quiet
 }
 
-# What happens when the window opens, and on 刷新: the status, then the check.
+# --- dev mode ---------------------------------------------------------------------------------------------
+
+# Asks the person for the folder a plugin is written in. A function of its own so that a test can answer.
+function Select-DevFolder {
+  $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+  $dialog.Description = '选择写插件的文件夹：可以是一个插件的文件夹，也可以是放着很多插件的文件夹'
+  if ($dialog.ShowDialog($form) -eq 'OK') { return $dialog.SelectedPath }
+  return $null
+}
+
+# `dev status --json` printed one line: show it in the box.
+function Apply-Dev {
+  $line = ($script:resultText -split "`r?`n" | Where-Object { $_ -like '{*' } | Select-Object -Last 1)
+  try { $script:dev = $line | ConvertFrom-Json } catch { return }
+  $devBox.Checked = [bool]$script:dev.enabled
+  $count = @($script:dev.mods).Count
+  if ($script:dev.enabled) { $devBox.Text = "开发模式：直接用本地的插件文件夹，改了就生效（现在用着 $count 个）" }
+  else { $devBox.Text = '开发模式：直接用本地的插件文件夹，改了就生效' }
+}
+
+function Read-Dev($Then) {
+  Start-Command 'dev status --json' '' $Then $null -Quiet
+}
+
+# Switch it, then show where things stand.
+function Set-Dev([string]$Arguments, [string]$Title) {
+  Start-Command $Arguments $Title { Read-Dev { Apply-Dev; Show-Status } }
+}
+
+$devBox.Add_Click({
+  if (-not $devBox.Checked) { Set-Dev 'dev off' "正在关闭开发模式…`r`n回到用仓库里装的插件。"; return }
+  $dir = $null
+  if (-not (@($script:dev.dirs).Count)) {
+    $dir = Select-DevFolder
+    if (-not $dir) { $devBox.Checked = $false; return }
+  }
+  if ($dir) { Set-Dev ('dev on "' + $dir.TrimEnd('\') + '"') "正在打开开发模式…" } else { Set-Dev 'dev on' "正在打开开发模式…" }
+})
+
+$devFolder.Add_Click({
+  $dir = Select-DevFolder
+  if ($dir) { Set-Dev ('dev on "' + $dir.TrimEnd('\') + '"') "正在打开开发模式…" }
+})
+
+# What happens when the window opens, and on 刷新: where dev mode stands, the status, then the check.
 function Start-Up {
-  Show-Status { Check-Update }
+  Read-Dev { Apply-Dev; Show-Status { Check-Update } }
 }
 
 $install.Add_Click({ Start-Command 'setup' "正在安装…`r`n过程中会弹出一次管理员确认。软件正在运行的话，会先关闭，装好后自动重新打开。" { Show-Status } })

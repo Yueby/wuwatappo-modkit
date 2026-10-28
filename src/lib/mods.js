@@ -66,7 +66,7 @@ async function readScripts(dir, { prefix = '', core = false } = {}) {
 //
 // A package that cannot be read or fails validation is still returned, with `loadError`, so
 // it shows up on the MOD page as broken instead of vanishing.
-export async function discoverMods(dir = MODS_DIR) {
+export async function discoverMods(dir = MODS_DIR, { check = true } = {}) {
   let entries;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
@@ -86,7 +86,7 @@ export async function discoverMods(dir = MODS_DIR) {
       if (mod) mods.push(mod);
     }
   }
-  return checkRequirements(mods);
+  return check ? checkRequirements(mods) : mods;
 }
 
 async function readSingleFile(file) {
@@ -299,8 +299,36 @@ export async function discoverCore() {
 }
 
 // Everything to inject, in the order to inject it: framework first.
-export async function discoverAll(modsDir = MODS_DIR) {
-  return [...await discoverCore(), ...await discoverMods(modsDir)];
+// The mods in the folders of dev mode (see devmode.js). A folder that is a plugin itself (it has a
+// package.json, or an index.js) is one; any other is a folder of plugins, as mods\ is. Each is marked
+// `dev`, in its manifest, so that the page says so, and it is told apart from the same plugin installed
+// from the registry by that too: the two are not the same plugin to the page.
+export async function discoverDev(dirs, { check = false } = {}) {
+  const found = [];
+  for (const dir of dirs) {
+    const [mod] = (await exists(path.join(dir, 'package.json')) || await exists(path.join(dir, 'index.js')))
+      ? [await readPackage(dir)]
+      : [];
+    const mods = mod ? [mod] : await discoverMods(dir, { check: false });
+    for (const one of mods) {
+      const manifest = { ...one.manifest, dev: true };
+      const digest = hash(JSON.stringify([one.version, 'dev']));
+      found.push({ ...one, manifest, dev: true, devDir: dir, version: digest, signature: digest });
+    }
+  }
+  return check ? checkRequirements(found) : found;
+}
+
+// Everything to inject: the framework, the installed mods, and, in dev mode, the mods of the dev folders,
+// which are used instead of an installed mod of the same name.
+export async function discoverAll(modsDir = MODS_DIR, { devDirs = [] } = {}) {
+  const core = await discoverCore();
+  if (!devDirs.length) return [...core, ...await discoverMods(modsDir)];
+
+  const dev = await discoverDev(devDirs);
+  const names = new Set(dev.map(mod => mod.name));
+  const installed = (await discoverMods(modsDir, { check: false })).filter(mod => !names.has(mod.name));
+  return [...core, ...checkRequirements([...installed, ...dev])];
 }
 
 // FNV-1a; we only need change detection, not cryptographic strength.

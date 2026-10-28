@@ -1,6 +1,7 @@
 // node src/cli.js run — one pass over every window, then exit.
 
 import { Injector } from '../lib/injector.js';
+import { readDev } from '../lib/devmode.js';
 import { discoverAll } from '../lib/mods.js';
 import { parseOptions } from './options.js';
 import { log, statusWord, style } from '../lib/output.js';
@@ -9,7 +10,8 @@ export default async function run(argv) {
   const options = parseOptions(argv);
   // Framework first, then the user's mods. The framework is always present, so an
   // empty mods/ folder is no reason to stop: the manager page still has to appear.
-  const mods = await discoverAll(options.modsDir);
+  const dev = await readDev();
+  const mods = await discoverAll(options.modsDir, { devDirs: dev.enabled ? dev.dirs : [] });
   if (!mods.some(m => !m.core)) log(style.dim(`no mods in ${options.modsDir} — injecting the framework only`));
 
   const withNodePart = mods.filter(m => m.hostFile).map(m => m.name);

@@ -34,7 +34,12 @@ const PLUGINS = [
 const FAKE = `
 const fs = require('fs');
 const args = process.argv.slice(2);
-if (process.env.FAKE_CALLS) fs.appendFileSync(process.env.FAKE_CALLS, args.join(' ') + '\\n');
+if (process.env.FAKE_CALLS) fs.appendFileSync(process.env.FAKE_CALLS, args.map(arg => (arg.includes(' ') ? '"' + arg + '"' : arg)).join(' ') + '\\n');   // an argument with a space is shown in quotes: that it stayed one argument is what is tested
+if (args[0] === 'dev') {
+  if (args[1] === 'status') console.log(process.env.FAKE_DEV ?? JSON.stringify({ enabled: false, dirs: [], mods: [], shadowed: [] }));
+  else console.log('FAKE ran: ' + args.join(' '));
+  process.exit(0);
+}
 if (args[0] === 'mods' && args[1] === 'browse') {
   if (process.env.FAKE_BROWSE_FAIL) { console.error('registry unreachable'); process.exit(1); }
   console.log(JSON.stringify({ mods: JSON.parse(process.env.FAKE_PLUGINS ?? process.env.FAKE_DEFAULT_PLUGINS), problems: [] }));
@@ -89,6 +94,11 @@ $form.Show()
 $report = [ordered]@{}
 # Not a real Explorer: what it would have been asked to open is written down.
 function Start-Process { $script:launched = ($args -join ' ') }
+$script:folderAnswer = $null
+$script:folderAsked = 0
+# A check box has no PerformClick: this raises its click the way the mouse does, which also ticks it.
+function Click-Box($Box) { $Box.GetType().GetMethod('OnClick', [Reflection.BindingFlags]'NonPublic,Instance').Invoke($Box, @([EventArgs]::Empty)) }
+function Select-DevFolder { $script:folderAsked++; return $script:folderAnswer }
 # Not a real dialog: what the person would have been asked is written down, and the answer is the test's.
 $script:questions = @()
 $script:answer = $true
@@ -145,12 +155,13 @@ test('a command that fails keeps its message on screen: the status below it does
   assert.deepEqual(lines(report.box), ['boom: setup', '---', 'FAKE ran: setup status']);
 });
 
-test('卸载 runs plain uninstall (putting the original exe back is what uninstall does), and there is no box to tick for it', { skip }, async () => {
+test('卸载 runs plain uninstall (putting the original exe back is what uninstall does), and no box for it: the only check box is the one for dev mode', { skip }, async () => {
   const report = await drive(`
     $uninstall.PerformClick(); Wait-Idle; $report.box = $box.Text
-    $report.checkboxes = @($form.Controls | Where-Object { $_ -is [System.Windows.Forms.CheckBox] }).Count`);
+    $report.checkboxes = @($form.Controls | Where-Object { $_ -is [System.Windows.Forms.CheckBox] } | ForEach-Object { $_.Text })`);
   assert.deepEqual(lines(report.box), ['FAKE ran: uninstall', '---', 'FAKE ran: setup status']);
-  assert.equal(report.checkboxes, 0);
+  assert.equal(report.checkboxes.length, 1, 'the one box is the one for dev mode: none for restoring the exe');
+  assert.match(report.checkboxes[0], /^开发模式/);
 });
 
 test('刷新 reads the status again and drops what was said before', { skip }, async () => {
@@ -181,12 +192,12 @@ test('the launcher\'s version is shown, and when it is the latest the window say
   assert.equal(report.before, '启动器 v1.0.0');
   assert.match(report.label, /^启动器 v1\.0\.0 +（已是最新）$/);
   assert.deepEqual(lines(report.box), ['FAKE ran: setup status'], 'the check says nothing in the box');
-  assert.deepEqual(report.calls, ['setup status', 'update --check --json'], 'it only asked');
+  assert.deepEqual(report.calls, ['dev status --json', 'setup status', 'update --check --json'], 'it only asked');
 });
 
 test('a newer version is taken at once: the window asks the program to update and reopen, and closes when it says it has', { skip }, async () => {
   const report = await drive(`Start-Up; Wait-Idle; $report.closed = $form.IsDisposed`, { FAKE_LATEST: '2.0.0' });
-  assert.deepEqual(report.calls, ['setup status', 'update --check --json', 'update --reopen --progress']);
+  assert.deepEqual(report.calls, ['dev status --json', 'setup status', 'update --check --json', 'update --reopen --progress']);
   assert.equal(report.closed, true, 'exit code 10 means the new window is up, so this one goes');
 });
 
@@ -209,7 +220,7 @@ test('not being able to ask, and there being nothing to take yet, are said and n
 
 test('刷新 asks again, and takes a newer version the same way', { skip }, async () => {
   const report = await drive(`$refresh.PerformClick(); Wait-Idle; $report.closed = $form.IsDisposed`, { FAKE_LATEST: '3.0.0' });
-  assert.deepEqual(report.calls, ['setup status', 'update --check --json', 'update --reopen --progress']);
+  assert.deepEqual(report.calls, ['dev status --json', 'setup status', 'update --check --json', 'update --reopen --progress']);
   assert.equal(report.closed, true);
 });
 
@@ -307,4 +318,60 @@ test('a program that says nothing of progress shows the title alone, and the bar
     $report.box = $box.Text; $report.visible = $bar.Visible; Wait-Idle`);
   assert.deepEqual(lines(report.box), ['正在下载新版本']);
   assert.equal(report.visible, false);
+});
+
+// --- dev mode ---------------------------------------------------------------------------------------------------
+
+const DEV_ON = JSON.stringify({ enabled: true, dirs: ['D:\\work\\mods'], mods: [{ id: 'a' }, { id: 'b' }], shadowed: [] });
+const DEV_REMEMBERED = JSON.stringify({ enabled: false, dirs: ['D:\\work\\mods'], mods: [{ id: 'a' }], shadowed: [] });
+
+test('when the window opens it asks where dev mode stands first, and the box shows it and how many plugins it is using', { skip }, async () => {
+  const report = await drive(`Start-Up; Wait-Idle; $report.checked = $devBox.Checked; $report.text = $devBox.Text`, { FAKE_DEV: DEV_ON });
+  assert.equal(report.calls[0], 'dev status --json');
+  assert.equal(report.checked, true);
+  assert.match(report.text, /现在用着 2 个/);
+
+  const off = await drive(`Start-Up; Wait-Idle; $report.checked = $devBox.Checked; $report.text = $devBox.Text`);
+  assert.equal(off.checked, false);
+  assert.doesNotMatch(off.text, /现在用着/);
+});
+
+test('ticking the box with no folder yet asks for one, and then switches it on with that folder, with the quoting right', { skip }, async () => {
+  const report = await drive(`
+    $script:folderAnswer = 'D:\\work\\my plugins\\'
+    Start-Up; Wait-Idle
+    Click-Box $devBox; Wait-Idle
+    $report.asked = $script:folderAsked`);
+  assert.equal(report.asked, 1);
+  assert.ok(report.calls.includes('dev on "D:\\work\\my plugins"'), `the folder, quoted, without its trailing backslash (which would eat the quote): ${report.calls}`);
+  assert.deepEqual(report.calls.slice(-2), ['dev status --json', 'setup status'], 'and it shows where things stand after');
+});
+
+test('cancelling the folder box leaves dev mode off and runs nothing', { skip }, async () => {
+  const report = await drive(`
+    $script:folderAnswer = $null
+    Start-Up; Wait-Idle
+    Click-Box $devBox; Wait-Idle
+    $report.checked = $devBox.Checked; $report.asked = $script:folderAsked`);
+  assert.equal(report.asked, 1);
+  assert.equal(report.checked, false, 'the box goes back');
+  assert.ok(!report.calls.some(call => call.startsWith('dev on')), 'nothing was switched on');
+});
+
+test('with a folder remembered the box switches it on without asking, and ticking it off switches it off', { skip }, async () => {
+  const on = await drive(`Start-Up; Wait-Idle; Click-Box $devBox; Wait-Idle; $report.asked = $script:folderAsked`, { FAKE_DEV: DEV_REMEMBERED });
+  assert.equal(on.asked, 0, 'the folder is remembered: no question');
+  assert.ok(on.calls.includes('dev on'));
+
+  const off = await drive(`Start-Up; Wait-Idle; Click-Box $devBox; Wait-Idle`, { FAKE_DEV: DEV_ON });
+  assert.ok(off.calls.includes('dev off'));
+  assert.ok(!off.calls.some(call => call.startsWith('dev on')));
+});
+
+test('选择文件夹… picks another folder and switches dev mode on with it; cancelling does nothing', { skip }, async () => {
+  const picked = await drive(`$script:folderAnswer = 'E:\\my plugins'; $devFolder.PerformClick(); Wait-Idle`);
+  assert.ok(picked.calls.includes('dev on "E:\\my plugins"'), picked.calls.join(' | '));
+
+  const cancelled = await drive(`$script:folderAnswer = $null; $devFolder.PerformClick(); Wait-Idle`);
+  assert.ok(!cancelled.calls.some(call => call.startsWith('dev on')));
 });
