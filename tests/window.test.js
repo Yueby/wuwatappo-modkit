@@ -19,6 +19,7 @@ const skip = process.platform !== 'win32' && 'the window is for Windows';
 
 let dir;
 let script;
+let modsDir;
 
 // What the program would print for each command: its own arguments, so a test can see what a button asked.
 const FAKE = `
@@ -33,6 +34,7 @@ before(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), 'modkit window test '));
   await write(path.join(dir, 'fake cli.js'), FAKE);
   script = await windowScript();
+  modsDir = path.join(dir, 'the app', 'mods');      // not next to the program: the window must be told, not work it out
 });
 
 after(async () => {
@@ -50,6 +52,8 @@ async function drive(steps, env = {}) {
   const driver = `
 $form.Show()
 $report = [ordered]@{}
+# Not a real Explorer: what it would have been asked to open is written down.
+function Start-Process { $script:launched = ($args -join ' ') }
 function Wait-Idle {
   $deadline = (Get-Date).AddSeconds(20)
   do { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 40 }
@@ -66,7 +70,7 @@ $form.Close()
   await fs.rm(out, { force: true });
   await exec('powershell.exe', [
     '-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', file,
-    '-Exe', process.execPath, '-Script', path.join(dir, 'fake cli.js'),
+    '-Exe', process.execPath, '-Script', path.join(dir, 'fake cli.js'), '-ModsDir', modsDir,
   ], { env: { ...process.env, MODKIT_TEST_OUT: out, ...env }, windowsHide: true, timeout: 60_000 });
   return JSON.parse((await fs.readFile(out, 'utf8')).replace(/^\uFEFF/, ''));
 }
@@ -116,4 +120,11 @@ test('a program that cannot be started is said in the window, and the buttons co
   const report = await drive(`$script:Exe = 'C:\\nowhere\\none.exe'; $Exe = 'C:\\nowhere\\none.exe'; Show-Status; $report.box = $box.Text; $report.enabled = $install.Enabled`);
   assert.match(report.box, /无法运行/);
   assert.equal(report.enabled, true);
+});
+
+test('打开 mods 文件夹 opens the mods folder the program says, making it if it is not there, and not one next to the program', { skip }, async () => {
+  const report = await drive(`$folder.PerformClick(); $report.launched = $script:launched`);
+  assert.ok(report.launched.includes(modsDir), `it was asked to open ${report.launched}`);
+  assert.ok(!report.launched.includes(path.dirname(process.execPath) + path.sep + 'mods'), 'not "mods" beside the program (node.exe, from the repository)');
+  assert.ok((await fs.stat(modsDir)).isDirectory(), 'and the folder is there');
 });

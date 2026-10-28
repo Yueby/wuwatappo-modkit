@@ -6,7 +6,9 @@
 # (Windows PowerShell reads a file without one as ANSI, and the Chinese below would be garbage).
 
 # $Script: when the program is node and a script (from the repository), the script it is run with.
-param([Parameter(Mandatory)][string]$Exe, [string]$Script = '')
+# $ModsDir: the mods folder, as the program itself says it is (never worked out from $Exe: from the
+# repository that is node.exe, and its folder is not the app's).
+param([Parameter(Mandatory)][string]$Exe, [Parameter(Mandatory)][string]$ModsDir, [string]$Script = '')
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -127,9 +129,8 @@ $uninstall.Add_Click({
 })
 $refresh.Add_Click({ $script:said = $null; Show-Status })
 $folder.Add_Click({
-  $mods = Join-Path (Split-Path -Parent $Exe) 'mods'
-  New-Item -ItemType Directory -Force -Path $mods | Out-Null
-  Start-Process explorer.exe -ArgumentList "`"$mods`""
+  New-Item -ItemType Directory -Force -Path $ModsDir | Out-Null
+  Start-Process explorer.exe -ArgumentList "`"$ModsDir`""
 })
 
 $form.Add_Shown({ Show-Status })

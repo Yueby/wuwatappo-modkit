@@ -16,9 +16,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isPackaged, windowScript } from '../lib/bundle.js';
+import { MODS_DIR } from '../lib/paths.js';
 
 // Windows PowerShell reads a script as ANSI unless it starts with a byte order mark.
-const BOM = '﻿';
+const BOM = String.fromCharCode(0xFEFF);
 
 // A string for a single-quoted PowerShell string.
 const quoted = text => `'${text.replaceAll("'", "''")}'`;
@@ -32,7 +33,7 @@ export default async function openWindow() {
   await fs.writeFile(file, BOM + await windowScript());
 
   // Packaged, the buttons run this exe. From the repository they run node on cli.js.
-  const params = [`-Exe "${process.execPath}"`];
+  const params = [`-Exe "${process.execPath}"`, `-ModsDir "${MODS_DIR}"`];
   if (!isPackaged()) params.push(`-Script "${fileURLToPath(new URL('../cli.js', import.meta.url))}"`);
   const argumentList = `-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File "${file}" ${params.join(' ')}`;
 

@@ -58,7 +58,7 @@ export default async function selftest() {
       if (!/ShowDialog/.test(text)) throw new Error('it is not the window script');
       if (process.platform !== 'win32') return 'not checked: not Windows';
       const file = path.join(dir, 'window.ps1');
-      await fs.writeFile(file, '\uFEFF' + text);
+      await fs.writeFile(file, String.fromCharCode(0xFEFF) + text);
       const { stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-Command',
         `$e = $null; $t = $null; [void][System.Management.Automation.Language.Parser]::ParseFile('${file}', [ref]$t, [ref]$e); $e | ForEach-Object { $_.Message }`], { windowsHide: true });
       if (stdout.trim()) throw new Error(stdout.trim());
