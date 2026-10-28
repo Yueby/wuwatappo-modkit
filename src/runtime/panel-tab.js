@@ -38,6 +38,10 @@ const ICON_ACTIVE = '__MOD_ICON_ACTIVE__';
 // come from the stock rules, which apply to us because our button sits before 收起
 // rather than last.
 const ICON_CLASS = 'tab-btn__icon--mod';
+
+// The title row has room for the app's one button in its corner (.leave-room-btn is "position: absolute;
+// right: 0; bottom: 0", and .common-btn is 135px wide). The second sits one button and a gap from the edge.
+const INSTALL_BUTTON_RIGHT = 147;
 const STYLE_ID = 'modkit-style';
 
 function installStyle() {
@@ -213,9 +217,11 @@ function loadedMods() {
 // A button at the right end of a title row, the way the room page puts its 离开房间: the app's
 // own button (common-btn) with the class that places it (leave-room-btn is only "absolute, right
 // 0, bottom 0" inside .room-info). The empty space beside a title is used, not a row of the list.
-function headerButton(label, onClick) {
+// `beside`: how far from the right edge, in px, when another button already has the corner.
+function headerButton(label, onClick, beside = 0) {
   const button = el('button', 'common-btn leave-room-btn', label);
   button.type = 'button';
+  if (beside) button.style.right = `${beside}px`;
   button.addEventListener('click', onClick);
   return button;
 }
@@ -225,10 +231,11 @@ function renderHeader(body, mods) {
   const head = el('div', 'room-info');
   head.appendChild(el('div', 'room-qty', `MOD（${mods.length}）`));
   head.appendChild(el('div', 'room-number',
-    !mods.length ? '把脚本放进 mods/ 文件夹，保存后自动加载'
+    !mods.length ? '还没有 mod：点右边的“安装”，或放进软件目录的 mods 文件夹'
       : failed ? `${failed} 个出错`
         : '全部正常'));
   head.appendChild(headerButton('日志', openLog));
+  head.appendChild(headerButton('安装', openPlugins, INSTALL_BUTTON_RIGHT));
   // The room page puts 28px between this header and its list (.room-members margin-top).
   head.style.marginBottom = '28px';
   body.appendChild(head);
@@ -325,8 +332,14 @@ function openDialog(next) {
 
 const openSettings = id => openDialog({ kind: 'settings', id });
 const openLog = () => openDialog({ kind: 'log' });
+const openPlugins = () => {
+  openDialog({ kind: 'plugins', phase: 'loading', plugins: [], problems: [] });
+  loadPlugins();
+};
 
 function closeDialog() {
+  // An install waiting for its yes is a no, not something left hanging in the loader.
+  if (dialog?.kind === 'plugins' && dialog.phase === 'confirm') kit.manageAnswer(dialog.requestId, false);
   dialog = null;
   document.getElementById(POPUP_ID)?.remove();
   document.removeEventListener('keydown', onDialogKey);
@@ -335,6 +348,7 @@ function closeDialog() {
 function renderPopup() {
   if (dialog?.kind === 'log') renderLogDialog();
   else if (dialog?.kind === 'settings') renderSettingsDialog();
+  else if (dialog?.kind === 'plugins') renderPluginsDialog();
 }
 
 // Same header as the MOD page (name, and what it does under it), then the rows.
@@ -354,6 +368,198 @@ function renderSettingsDialog() {
     for (const def of manifest.settings) next.appendChild(settingRow(dialog.id, def));
     for (const entry of entriesOf(dialog.id)) next.appendChild(entryRow(entry));
   });
+}
+
+// --- plugins: the registry's list, and installing, updating, removing ---------------------------
+//
+// The page cannot touch the disk or the network; the loader does (src/lib/manager.js), and checks every
+// download against the registry's index. What this page adds is the order of things: an install fetches the
+// plugin, then stops to say what it declares, and nothing is put in place until the person says yes here.
+// The dialog is the same layer and card as the settings dialog, and its rows are the app's settings rows.
+
+const infoRow = (title, text, description) => row({ title, description, control: controls.value(text) });
+
+// One request to the loader, shown in the plugins dialog. The dialog is the one that was open when it was
+// made: if it has been closed since, a plugin waiting for its yes gets a no.
+function pluginRequest(action, plugin, args = {}) {
+  const mine = dialog;
+  mine.current = { id: plugin.id, name: plugin.name, action };
+  mine.cancelled = false;
+  mine.phase = 'working';
+  const { id, done } = kit.manage(action, { mod: plugin.id, ...args }, {
+    onConfirm: info => {
+      if (dialog !== mine) return void kit.manageAnswer(id, false);
+      mine.phase = 'confirm';
+      mine.info = info;
+      renderPopup();
+    },
+  });
+  mine.requestId = id;
+  renderPopup();
+  done.then(result => {
+    if (dialog !== mine) return;
+    if (result.mods) {
+      mine.plugins = result.mods;
+      mine.problems = result.problems ?? [];
+    }
+    if (mine.cancelled) {          // it was said no to meanwhile: the list is already showing
+      renderPopup();
+      return;
+    }
+    mine.phase = 'done';
+    mine.result = result;
+    renderPopup();
+  }, err => {
+    if (dialog !== mine || mine.cancelled) return;
+    mine.phase = 'error';
+    mine.message = err.message;
+    renderPopup();
+  });
+}
+
+function loadPlugins() {
+  const mine = dialog;
+  mine.phase = 'loading';
+  renderPopup();
+  kit.manage('browse').done.then(result => {
+    if (dialog !== mine) return;
+    mine.plugins = result.mods;
+    mine.problems = result.problems ?? [];
+    mine.phase = 'list';
+    renderPopup();
+  }, err => {
+    if (dialog !== mine) return;
+    mine.phase = 'error';
+    mine.message = err.message;
+    mine.failedToLoad = true;
+    renderPopup();
+  });
+}
+
+// Said before it is installed: what it is, and what it brings with it. (The loader has already checked
+// that this is what the registry's list said.)
+function declarationRows(info) {
+  const rows = [];
+  rows.push(infoRow('Node 部分', info.nodePart ? '有' : '没有',
+    info.nodePart ? '会作为单独的程序运行，用您账号的权限，能读写文件、联网，没有沙盒' : '只有网页脚本'));
+  rows.push(infoRow('它声明要用', info.permissions.length ? info.permissions.join('、') : '没写',
+    '这是作者自己写的，仓库的人看过它和代码对不对，但程序不会限制它'));
+  const requires = Object.entries(info.requires ?? {}).map(([name, range]) => `${name} ${range}`);
+  if (requires.length) rows.push(infoRow('需要别的插件', requires.join('、')));
+  if (info.dependencies.length) {
+    rows.push(infoRow('依赖包', `${info.dependencies.length} 个`, `${info.dependencies.join('、')}（用 npm 取，不运行它们的安装脚本）`));
+  }
+  if (info.warning) rows.push(infoRow('注意', '', info.warning));
+  return rows;
+}
+
+const DONE_TEXT = {
+  installed: r => `已安装 ${r.id}${r.version ? ` ${r.version}` : ''}`,
+  updated: r => `已更新到 ${r.version ?? '新版本'}`,
+  current: r => `已经是最新${r.version ? `（${r.version}）` : ''}`,
+  removed: r => `已卸载 ${r.id}${r.purged ? '，它的数据也删了' : ''}`,
+  declined: () => '没有装',
+};
+
+const WORKING_TEXT = { get: '正在下载并核对', update: '正在下载并核对', remove: '正在卸载' };
+
+// What a plugin's row says about where it stands, and the buttons that go with it.
+function pluginRow(plugin) {
+  const flags = [plugin.author ? `作者 ${plugin.author}` : null, plugin.nodePart ? '有 Node 部分' : null].filter(Boolean).join(' · ');
+  const state = !plugin.installed ? null
+    : !plugin.fromRegistry ? '已有（不是从这里装的）'
+      : plugin.update ? `已装 ${plugin.installedVersion ?? '?'}，可更新`
+        : `已装 ${plugin.installedVersion ?? ''}`.trim();
+  const description = [plugin.description, flags, state].filter(Boolean).join(' · ');
+
+  const buttons = [];
+  if (!plugin.installed) {
+    buttons.push(controls.button({ label: '安装', onClick: () => pluginRequest('get', plugin) }));
+  } else if (plugin.fromRegistry) {
+    if (plugin.update) buttons.push(controls.button({ label: '更新', onClick: () => pluginRequest('update', plugin) }));
+    buttons.push(controls.button({ label: '卸载', onClick: () => { dialog.current = { id: plugin.id, name: plugin.name }; dialog.purge = false; dialog.phase = 'confirm-remove'; renderPopup(); } }));
+  }
+  return row({ title: `${plugin.name}  ${plugin.version}`, description, control: buttons });
+}
+
+function renderPluginsDialog() {
+  const body = document.getElementById(POPUP_BODY_ID);
+  if (!body) return;
+  const state = dialog;
+
+  redraw(body, next => {
+    const head = el('div', 'room-info');
+    head.appendChild(el('div', 'room-qty', '插件'));
+    head.appendChild(el('div', 'room-number', '来自插件仓库。装之前会告诉您它要做什么，问您同意'));
+    if (state.phase === 'list') head.appendChild(headerButton('刷新', loadPlugins));
+    head.style.marginBottom = '28px';
+    next.appendChild(head);
+
+    if (state.phase === 'loading') {
+      next.appendChild(infoRow('正在读取插件列表', '…'));
+    } else if (state.phase === 'list') {
+      if (!state.plugins.length) next.appendChild(infoRow('仓库里还没有插件', ''));
+      for (const plugin of state.plugins) next.appendChild(pluginRow(plugin));
+      if (state.problems.length) next.appendChild(infoRow('有条目不合格，已跳过', `${state.problems.length} 个`, state.problems.join('；')));
+    } else if (state.phase === 'working') {
+      next.appendChild(infoRow(`${WORKING_TEXT[state.current.action ?? 'get']} ${state.current.name}`, '…', '从仓库下载，核对校验和，再看它自己的声明'));
+    } else if (state.phase === 'confirm') {
+      const info = state.info;
+      const update = Boolean(info.before);
+      next.appendChild(infoRow(info.name ?? info.id, info.version ?? '', info.description));
+      for (const item of declarationRows(info)) next.appendChild(item);
+      next.appendChild(row({
+        title: update ? `从 ${info.before} 更新到 ${info.version}？` : '装上它？',
+        description: '它的网页脚本会在软件的窗口里运行，能做软件自己能做的一切',
+        control: [
+          controls.button({ label: update ? '更新' : '安装', onClick: () => answerPlugin(true) }),
+          controls.button({ label: '取消', onClick: () => answerPlugin(false) }),
+        ],
+      }));
+    } else if (state.phase === 'confirm-remove') {
+      next.appendChild(row({
+        title: '同时删除它的数据',
+        description: 'moddata 里属于它的文件。它在软件里存的设置不在那里，装回来还在',
+        control: controls.toggle({ value: () => state.purge, onChange: on => { state.purge = on; } }),
+      }));
+      next.appendChild(row({
+        title: `卸载 ${state.current.name}？`,
+        description: '删掉它的文件夹',
+        control: [
+          controls.button({ label: '卸载', onClick: () => pluginRequest('remove', state.current, { purge: state.purge }) }),
+          controls.button({ label: '取消', onClick: () => { state.phase = 'list'; renderPopup(); } }),
+        ],
+      }));
+    } else if (state.phase === 'done') {
+      next.appendChild(row({
+        title: (DONE_TEXT[state.result.done] ?? (() => '完成'))(state.result),
+        control: controls.button({ label: '好', onClick: () => { state.phase = 'list'; renderPopup(); } }),
+      }));
+    } else if (state.phase === 'error') {
+      next.appendChild(row({
+        title: state.failedToLoad ? '读不到插件列表' : '没有成功',
+        description: state.message,
+        control: controls.button({ label: state.failedToLoad ? '重试' : '返回', onClick: () => {
+          if (state.failedToLoad) { state.failedToLoad = false; loadPlugins(); return; }
+          state.phase = 'list';
+          renderPopup();
+        } }),
+      }));
+    }
+  });
+}
+
+function answerPlugin(ok) {
+  const state = dialog;
+  kit.manageAnswer(state.requestId, ok);
+  if (!ok) {
+    state.cancelled = true;
+    state.phase = 'list';
+    renderPopup();
+    return;
+  }
+  state.phase = 'working';       // until the loader says it is done
+  renderPopup();
 }
 
 // --- the log ---------------------------------------------------------------------
