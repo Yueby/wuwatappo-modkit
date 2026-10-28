@@ -1,10 +1,12 @@
 // Launching the app with WebView2 remote debugging enabled.
 //
-// Two modes:
-//   patch      a test copy with asInvoker + a separate bundle id; runs beside a
-//              real install, own WebView2 profile
-//   native     the real executable, launched through UAC; shares the real
-//              install's profile (and therefore its login)
+// launchDetached starts the installed binary with the environment that opens the
+// DevTools port; the port is the only thing we add, so the app runs normally.
+//
+// launchElevated exists for process control, not for launching the app: an
+// unelevated token cannot stop an instance that is running as administrator
+// (Stop-Process reports success and does nothing), so `stop` needs a way to act
+// inside an elevated session.
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';

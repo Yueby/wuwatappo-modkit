@@ -12,7 +12,7 @@ export class DebugPortUnavailable extends Error {
   constructor(port) {
     super(
       `no DevTools endpoint on 127.0.0.1:${port}.\n` +
-      `Start the patched copy first:  node src/cli.js lab  (see docs/LAUNCHING.md)`,
+      `Start it with:  node src/cli.js lab  (see docs/LAUNCHING.md)`,
     );
     this.name = 'DebugPortUnavailable';
     this.port = port;

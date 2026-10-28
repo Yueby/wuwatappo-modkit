@@ -1,152 +1,65 @@
-// node src/cli.js lab [--elevated] [--rebuild]
+// node src/cli.js lab [--rebuild] [--restore]
 //
-// Default: build the patched test copy and start it. Independent of any real
-// install, own WebView2 profile.
+// Patches the installed executable in place and starts it with WebView2 remote
+// debugging enabled. This is the normal way to run the app now: it stays the
+// real installed binary, so the updater keeps working.
 //
-// --elevated: start the *real* executable through UAC instead, sharing its
-// profile and login. Requires stopping a running instance first, because the app
-// is single-instance.
+//   --rebuild   re-apply the patch (needed after an app update overwrote the exe)
+//   --restore   put the unpatched original back and exit
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { buildLabCopy, ORIGINAL_EXE, describeEdits } from '../lib/patch.js';
-import { launchDetached, launchElevated, findDebugPortOwner, defaultWebViewDataDir } from '../lib/launch.js';
-import { cloneProfile, cloneProfileDir } from '../lib/profile.js';
-import { PROJECT_ROOT } from '../lib/mods.js';
+import {
+  ORIGINAL_EXE, INSTALL_DIR, ensurePatched, isPatched, restoreOriginal, readMarker,
+} from '../lib/patch.js';
+import { launchDetached, findDebugPortOwner } from '../lib/launch.js';
 import { browserVersion } from '../lib/targets.js';
-import { runPS } from '../lib/ps.js';
 import { parseOptions } from './options.js';
 import { field, log, section, style } from '../lib/output.js';
 
-const BUNDLE_ID = 'com.kuro.wuwatappo.cn';
-const LAB_EXE = path.join(PROJECT_ROOT, 'work', 'lab', 'WuwaTappo.exe');
-
 export default async function lab(argv) {
   const options = parseOptions(argv);
-  const elevated = argv.includes('--elevated');
+  const restore = argv.includes('--restore');
   const rebuild = argv.includes('--rebuild');
 
+  if (restore) return doRestore();
+
   if (!(await exists(ORIGINAL_EXE))) {
-    throw new Error(`original executable not found at ${ORIGINAL_EXE}`);
+    throw new Error(`installed executable not found at ${ORIGINAL_EXE}\n` +
+      `  Set INSTALL_DIR in src/lib/patch.js if the app lives elsewhere.`);
   }
 
   if (!(await isPortFree(options.port))) {
-    throw new Error(`port ${options.port} is already in use — an earlier debug instance is still running`);
+    throw new Error(`port ${options.port} is already in use — an earlier instance is still running.\n` +
+      `  Stop it with: node src/cli.js stop`);
   }
 
-  return elevated ? startNative(options) : startPatched(options, rebuild);
-}
-
-// --- native mode -----------------------------------------------------------
-//
-// Kept because it is genuinely useful for inspecting the *real* install (it
-// shares that profile, so the login is there), but it cannot enable DevTools:
-// the app sets its own WebView2 data directory, and an explicit --user-data-dir
-// suppresses WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS. Verified by reading the
-// webview child's command line: the flag is absent and the profile is
-// ...\EBWebView\EBWebView (the app appends its own subdirectory).
-//
-// So this mode launches the app for use, not for modding. Use the default
-// patched copy for anything the loader needs to attach to.
-
-async function startNative(options) {
-  section('Native launch (UAC)');
-
-  const running = await countInstances();
-  if (running > 0) {
-    field('running', `${running} instance(s) — will be stopped after elevation`);
+  section(rebuild ? 'Patching (forced)' : 'Patching');
+  const patched = await ensurePatched({ log });
+  if (!patched.changed && !rebuild) {
+    field('status', style.dim('already patched'));
   }
 
-  const env = {
-    // Harmless, and it would work if the app ever stopped pinning its profile.
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${options.port}`,
-    WEBVIEW2_USER_DATA_FOLDER: defaultWebViewDataDir(BUNDLE_ID),
-  };
-
-  log('  waiting for the UAC prompt…');
-  const { helperPid, status, statusPath } = await launchElevated(ORIGINAL_EXE, {
-    cwd: path.dirname(ORIGINAL_EXE),
-    extraEnv: env,
-    // The running instance may be elevated (e.g. started by its autostart task),
-    // and an unelevated token cannot terminate it. Do it inside the elevated
-    // session we just got consent for.
-    prelude: [
-      'Stop-Process -Name WuwaTappo -Force -ErrorAction SilentlyContinue',
-      'Start-Sleep -Milliseconds 2000',
-      '__report "stage=cleared"',
-    ],
-  });
-
-  if (status.error) {
-    field('helper', helperPid ?? '(unknown)');
-    throw new Error(`the elevated script failed: ${status.error}\n` +
-      `  status file: ${statusPath}\n` +
-      `  check the app log under %LOCALAPPDATA%\\com.kuro.wuwatappo.cn\\logs`);
-  }
-
-  field('helper', helperPid ?? '(unknown)');
-  field('app pid', status.appPid ?? '(not reported)');
-
-  // Give the webview a moment, then say plainly whether it is moddable.
-  const attached = await waitForDevTools(options.port, 20_000, { required: false });
-  if (!attached) {
-    log('');
-    log(`  ${style.yellow('launched')} ${style.dim('— but without DevTools, as expected on this app')}`);
-    log(`  ${style.dim('the real install pins its own WebView2 profile, which overrides')}`);
-    log(`  ${style.dim('the environment variable that enables the debug port')}`);
-    log(`\n  For modding use the patched copy: ${style.bold('node src/cli.js lab')}`);
-    return 0;
-  }
-
-  field('webview2', attached.Browser);
-  log(`\n${style.green('ready')}  next: ${style.bold('node src/cli.js watch')}`);
-  return 0;
-}
-
-async function countInstances() {
-  const out = await runPS('(Get-Process WuwaTappo -ErrorAction SilentlyContinue | Measure-Object).Count');
-  return Number(out.trim()) || 0;
-}
-
-// --- patched-copy mode -----------------------------------------------------
-
-async function startPatched(options, rebuild) {
-  if (rebuild || !(await exists(LAB_EXE))) {
-    section('Building test copy');
-    const result = await buildLabCopy({ destination: LAB_EXE });
-    for (const edit of result.applied) log(`  ${style.green('patched')} ${edit.label}`);
-    field('output', result.destination);
-  } else {
-    section('Using existing test copy');
-    field('output', LAB_EXE);
-  }
-
-  for (const edit of await describeEdits(LAB_EXE)) {
-    if (edit.untouched) throw new Error(`test copy still matches the original: ${edit.label}`);
+  // The app must not be running while we clone its profile: the cookie store is
+  // locked and a half-read store produces a corrupt clone.
+  if (await isRunning()) {
+    log(`\n  ${style.yellow('the app is running')} — stop it first so the profile can be cloned:`);
+    log(`  ${style.bold('node src/cli.js stop')}`);
+    return 1;
   }
 
   section('Starting');
 
-  // Bring the real install's login along by cloning its WebView2 profile. A
-  // shared profile is not an option: it is locked while in use, and the app
-  // clears its auth cookies on logout, which would sign the real install out.
-  const profile = await cloneProfile({
-    log: msg => log(style.dim(msg)),
-  });
-  if (profile.cloned) {
-    field('profile', `cloned ${profile.files} file(s) -> ${profile.to}`);
-    if (profile.skipped) log(style.dim(`  (${profile.skipped} cache entries skipped)`));
-  } else {
-    field('profile', style.yellow(profile.reason));
-  }
-
-  const child = launchDetached(LAB_EXE, {
-    cwd: path.dirname(LAB_EXE),
+  // Use the app's own profile. We are launching the installed binary itself
+  // (just without the admin requirement), so there is no second install to keep
+  // apart: the login, settings, and click counters are the real ones, and the
+  // updater keeps working normally.
+  const child = launchDetached(ORIGINAL_EXE, {
+    cwd: INSTALL_DIR,
     env: {
       ...process.env,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${options.port}`,
-      WEBVIEW2_USER_DATA_FOLDER: cloneProfileDir(),
     },
   });
 
@@ -159,7 +72,20 @@ async function startPatched(options, rebuild) {
   return 0;
 }
 
-// --- helpers ---------------------------------------------------------------
+async function doRestore() {
+  section('Restoring');
+  const marker = await readMarker();
+  if (await isRunning()) {
+    throw new Error('the app is running — stop it first: node src/cli.js stop');
+  }
+  const result = await restoreOriginal();
+  field('restored', result.file);
+  field('from', result.restoredFrom);
+  if (marker?.patchedAt) field('was patched', marker.patchedAt);
+  log(`\n  The app is back to stock (administrator + original bundle id).`);
+  log(`  Run ${style.bold('node src/cli.js lab')} to patch it again.`);
+  return 0;
+}
 
 async function exists(p) {
   try { await fs.access(p); return true; } catch { return false; }
@@ -169,9 +95,17 @@ async function isPortFree(port) {
   return (await findDebugPortOwner(port)) === null;
 }
 
-// Resolves with the browser version, or null if `required` is false and the port
-// never opened. With `required`, throws and lets `onFail` add context.
-async function waitForDevTools(port, timeoutMs, { required = true, onFail = null } = {}) {
+async function isRunning() {
+  try {
+    const { runPS } = await import('../lib/ps.js');
+    const out = await runPS('(Get-Process WuwaTappo -ErrorAction SilentlyContinue | Measure-Object).Count');
+    return Number(out.trim()) > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForDevTools(port, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -180,8 +114,9 @@ async function waitForDevTools(port, timeoutMs, { required = true, onFail = null
       await new Promise(r => setTimeout(r, 400));
     }
   }
-  if (!required) return null;
-  const detail = onFail ? await onFail() : null;
-  throw new Error(`DevTools endpoint did not come up on port ${port} within ${timeoutMs / 1000}s` +
-    (detail ? `\n  ${detail}` : ''));
+  throw new Error(
+    `DevTools endpoint did not come up on port ${port} within ${timeoutMs / 1000}s.\n` +
+    `  If Windows showed a UAC prompt, the patch did not take — run ` +
+    `${style.bold('node src/cli.js lab --rebuild')} and try again.`,
+  );
 }

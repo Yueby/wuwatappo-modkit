@@ -9,7 +9,7 @@ import { log, style } from '../lib/output.js';
 export default async function state(argv) {
   const options = parseOptions(argv);
   const sessions = await openAppSessions({ port: options.port, log: m => log(style.yellow(m)) });
-  if (!sessions.length) throw new Error('no app windows found — is the test copy running?');
+  if (!sessions.length) throw new Error('no app windows found — is the app running? (node src/cli.js lab)');
 
   try {
     for (const { target, session } of sessions) {

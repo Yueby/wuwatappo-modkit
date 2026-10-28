@@ -11,16 +11,14 @@ ${style.bold('Usage')}
   node src/cli.js <command> [options]
 
 ${style.bold('Commands')}
-  lab                 Start a debuggable instance (default: patched test copy)
-    --elevated          run the real exe through UAC instead — shares its login,
-                        but this launch path cannot enable DevTools
-    --rebuild           force a fresh test copy
+  lab                 Patch the installed app, then start it with DevTools
+    --rebuild           force the patch to be re-applied
+    --restore           put the unpatched original back
   run                 Inject mods into all open windows, then exit
   watch               Stay resident: keep mods applied across reloads and edits
   eval <js>           Evaluate JS in every app window
   state               Show which mods are live in each window
   stop                Stop every instance, elevating if one is running as admin
-  login-check         Is the real install signed in, and will a copy inherit it?
   extract-assets      Unpack the frontend (Vue/JS/CSS/images) from the exe
   commands            List backend commands found in the frontend
 

@@ -11,7 +11,7 @@ export default async function evaluate(argv) {
   if (!expression.trim()) throw new Error('usage: eval <javascript expression>');
 
   const sessions = await openAppSessions({ port: options.port, log: m => log(style.yellow(m)) });
-  if (!sessions.length) throw new Error('no app windows found — is the test copy running?');
+  if (!sessions.length) throw new Error('no app windows found — is the app running? (node src/cli.js lab)');
 
   try {
     for (const { target, session } of sessions) {
