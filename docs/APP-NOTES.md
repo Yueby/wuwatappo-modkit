@@ -208,3 +208,26 @@ which can show a stale, open-looking panel while the main window thinks it is cl
 Several wrong conclusions in this project came from skipping that check; `tests/` does it.
 Use real mouse events (`Input.dispatchMouseEvent`), not `element.click()`.
 
+## The settings page's markup and look
+
+Read from the running app (computed styles) and the stylesheet. The classes are global
+(no `data-v-*` scoping), so any element carrying them is styled by the app. The MOD page
+is built from exactly this.
+
+```
+div.module-block.settings-module     padding 90px 26px 32px 32px, flex column
+  div.panel-content                  overflow-y:auto, 5px scrollbar styled by the app
+    div.setting-item                 #fbedd5, radius 5px, padding 8px 26px, margin-bottom 10px
+      div.setting-label
+        div.setting-title            18px, #8e5e43
+        div.setting-sub              14px, #8e7b6a     (optional)
+      div.setting-content            the control
+        label.setting-switch > input[type=checkbox] + span.setting-slider
+        button.setting-btn           input.setting-input     input.setting-range
+        span.setting-value           18px, #8e7b6a
+```
+
+Font family is the app's bundled `975MaruSC`. Spacing between rows is each row's own
+`margin-bottom: 10px`, not a gap on the container. An earlier version of the MOD page used
+hand-picked 12-14px system-font cards, which is why it looked out of place.
+

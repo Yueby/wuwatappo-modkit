@@ -78,24 +78,15 @@ function installStyle() {
     .tab-bar--collapsed #${TAB_ID} .tab-btn__label {
       display: none;
     }
-    #${VIEW_ID} .mk-section {
-      font-size: 13px; color: #8e5e43; margin: 20px 0 8px;
-    }
-    #${VIEW_ID} .mk-card {
-      background: rgba(255, 251, 244, .75); border: 1px solid rgba(180, 150, 120, .25);
-      border-radius: 12px; padding: 14px 16px; margin-bottom: 12px;
-    }
-    #${VIEW_ID} .mk-title { font-size: 14px; color: #5a4030; }
-    #${VIEW_ID} .mk-desc  { font-size: 12px; color: #a08a78; margin-top: 4px; }
-    #${VIEW_ID} .mk-row   { display: flex; align-items: baseline; gap: 10px; padding: 6px 0; }
-    #${VIEW_ID} .mk-row + .mk-row { border-top: 1px solid rgba(180, 150, 120, .18); }
-    #${VIEW_ID} .mk-name  { font-size: 14px; color: #5a4030; flex: 0 0 auto; }
-    #${VIEW_ID} .mk-state { font-size: 12px; margin-left: auto; }
-    #${VIEW_ID} .mk-ok    { color: #5b8a4a; }
-    #${VIEW_ID} .mk-bad   { color: #b4533c; }
-    #${VIEW_ID} .mk-wait  { color: #a08a78; }
-    #${VIEW_ID} .mk-err   { font-size: 12px; color: #b4533c; padding: 0 0 6px 0; word-break: break-all; }
-    #${VIEW_ID} .mk-empty { color: #a08a78; font-size: 13px; }`;
+    /* The page itself uses the app's own classes (module-block, setting-item, ...), so
+       fonts, colours, spacing and the scrollbar come from the app. Only what the app has
+       no class for is styled here. */
+    #${VIEW_ID} .mk-group { margin: 22px 0 8px; font-size: 14px; color: #8e7b6a; }
+    #${VIEW_ID} .mk-group:first-child { margin-top: 0; }
+    #${VIEW_ID} .setting-value.mk-ok   { color: #5b8a4a; }
+    #${VIEW_ID} .setting-value.mk-bad  { color: #b4533c; }
+    #${VIEW_ID} .setting-sub.mk-bad    { color: #b4533c; word-break: break-all; }
+    #${VIEW_ID} .mk-empty { font-size: 14px; color: #8e7b6a; }`;
   document.head.appendChild(style);
 }
 
@@ -119,6 +110,20 @@ function moduleHost() {
 }
 
 // --- the page ---------------------------------------------------------------
+//
+// Built from the app's own settings markup, so it looks like one of its pages and not
+// like something laid over it:
+//
+//   div.module-block.settings-module        outer shell: padding, column layout
+//     div.panel-content                      the scrolling area, with the app's scrollbar
+//       div.setting-item                     one row
+//         div.setting-label
+//           div.setting-title                18px, #8e5e43
+//           div.setting-sub                  14px, #8e7b6a   (optional)
+//         div.setting-content                the control: .setting-switch, .setting-btn,
+//                                            .setting-input, .setting-value, ...
+//
+// These classes are global (no data-v scoping), so using them is enough.
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -128,24 +133,93 @@ function el(tag, className, text) {
 }
 
 function buildView() {
-  const view = el('div');
+  const view = el('div', 'module-block settings-module');
   view.id = VIEW_ID;
-  // .module-content stacks a .module-content__bg layer over its children, so the
-  // page has to sit above it rather than merely being appended.
-  view.style.cssText = `
-    display: none; position: relative; z-index: 1;
-    padding: 24px; overflow-y: auto; height: 100%; box-sizing: border-box;`;
+  view.style.display = 'none';
 
-  const heading = el('h2', null, 'MOD');
-  heading.style.cssText = 'margin:0 0 4px;font-size:20px;color:#5a4030';
-  const sub = el('p', null, '由 wuwa-modkit 注入，不属于原版界面。');
-  sub.style.cssText = 'margin:0 0 4px;font-size:13px;color:#a08a78';
-
-  const body = el('div');
-  body.id = BODY_ID;
-  view.append(heading, sub, body);
+  const scroller = el('div', 'panel-content');
+  scroller.id = BODY_ID;
+  view.appendChild(scroller);
   return view;
 }
+
+// --- rows --------------------------------------------------------------------
+
+// A row in the app's own layout: title (+ subtitle) on the left, `control` on the right.
+function row({ title, description, control, descriptionClass }) {
+  const item = el('div', 'setting-item');
+
+  const label = el('div', 'setting-label');
+  label.appendChild(el('div', 'setting-title', title ?? '(未命名)'));
+  if (description) label.appendChild(el('div', `setting-sub${descriptionClass ? ' ' + descriptionClass : ''}`, description));
+  item.appendChild(label);
+
+  const content = el('div', 'setting-content');
+  if (control) content.appendChild(control);
+  item.appendChild(content);
+  return item;
+}
+
+// Every field of an entry may be a plain value or a function returning one. The page is
+// redrawn from the entry each time, so a mod passes functions for anything that changes
+// (`value: () => enabled`) and the redraw picks up the current state.
+const resolve = x => (typeof x === 'function' ? x() : x);
+
+// Controls the app already has a class for. A mod describes one declaratively and the
+// framework builds it, so no mod needs to know the markup.
+const controls = {
+  // { toggle: { value: boolean, onChange(next: boolean) } }
+  toggle({ value, onChange }) {
+    const wrap = el('label', 'setting-switch');
+    const input = el('input');
+    input.type = 'checkbox';
+    input.checked = !!resolve(value);
+    input.addEventListener('change', () => onChange?.(input.checked));
+    wrap.append(input, el('span', 'setting-slider'));
+    return wrap;
+  },
+  // { button: { label, onClick, disabled? } }
+  button({ label, onClick, disabled }) {
+    const b = el('button', 'setting-btn', resolve(label));
+    b.type = 'button';
+    b.disabled = !!resolve(disabled);
+    b.addEventListener('click', () => onClick?.());
+    return b;
+  },
+  // { value: 'text' }  read-only figure, like "累计点击数  43524"
+  value(text) {
+    return el('span', 'setting-value', String(resolve(text)));
+  },
+  // { number: { value, min?, max?, step?, onChange(next: number) } }
+  number({ value, min, max, step, onChange }) {
+    const input = el('input', 'setting-input');
+    input.type = 'number';
+    input.value = resolve(value) ?? '';
+    if (min != null) input.min = min;
+    if (max != null) input.max = max;
+    if (step != null) input.step = step;
+    input.style.minWidth = '120px';
+    input.style.maxWidth = '140px';
+    input.addEventListener('change', () => {
+      const n = Number(input.value);
+      if (Number.isFinite(n)) onChange?.(Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n)));
+    });
+    return input;
+  },
+};
+
+function controlFor(entry) {
+  for (const kind of ['toggle', 'button', 'number']) {
+    if (entry[kind]) return controls[kind](entry[kind]);
+  }
+  if (entry.value != null) return controls.value(entry.value);
+  if (typeof entry.render === 'function') return entry.render();   // anything else: the mod builds it
+  return null;
+}
+
+// --- sections ----------------------------------------------------------------
+
+const group = text => el('div', 'mk-group', text);
 
 // User mods only: framework scripts are not something the user installed.
 function loadedMods() {
@@ -156,51 +230,46 @@ function loadedMods() {
 
 function renderMods(body) {
   const mods = loadedMods();
-  body.appendChild(el('div', 'mk-section', `已加载的 mod（${mods.length}）`));
+  body.appendChild(group(`已加载的 mod（${mods.length}）`));
 
   if (!mods.length) {
     body.appendChild(el('div', 'mk-empty', 'mods/ 里还没有 mod。'));
     return;
   }
 
-  const card = el('div', 'mk-card');
   for (const [name, state] of mods) {
-    const row = el('div', 'mk-row');
-    row.appendChild(el('span', 'mk-name', name));
-
     const status = state?.status ?? 'unknown';
-    const label = status === 'ok' ? '正常' : status === 'error' ? '出错' : '加载中';
-    const cls = status === 'ok' ? 'mk-ok' : status === 'error' ? 'mk-bad' : 'mk-wait';
-    row.appendChild(el('span', `mk-state ${cls}`, label));
-    card.appendChild(row);
-
-    if (status === 'error' && state.error) card.appendChild(el('div', 'mk-err', state.error));
+    const failed = status === 'error';
+    const value = el('span', `setting-value ${status === 'ok' ? 'mk-ok' : failed ? 'mk-bad' : ''}`,
+      status === 'ok' ? '正常' : failed ? '出错' : '加载中');
+    body.appendChild(row({
+      title: name,
+      description: failed ? state.error : null,
+      descriptionClass: 'mk-bad',
+      control: value,
+    }));
   }
-  body.appendChild(card);
 }
 
 function renderEntries(body) {
   if (!kit.entries.length) return;
-  body.appendChild(el('div', 'mk-section', '功能'));
+  body.appendChild(group('功能'));
 
   for (const entry of kit.entries) {
-    const card = el('div', 'mk-card');
-    card.appendChild(el('div', 'mk-title', entry.title ?? '(未命名)'));
-    if (entry.description) card.appendChild(el('div', 'mk-desc', entry.description));
-
-    if (typeof entry.render === 'function') {
-      try {
-        const extra = entry.render();
-        if (extra) {
-          extra.style.marginTop = '10px';
-          card.appendChild(extra);
-        }
-      } catch (err) {
-        card.appendChild(el('div', 'mk-err', `渲染失败：${err.message ?? err}`));
-        console.warn('[modkit] entry render failed', entry.title, err);
-      }
+    let control = null;
+    let failure = null;
+    try {
+      control = controlFor(entry);
+    } catch (err) {
+      failure = `渲染失败：${err.message ?? err}`;
+      console.warn('[modkit] entry render failed', entry.title, err);
     }
-    body.appendChild(card);
+    body.appendChild(row({
+      title: resolve(entry.title),
+      description: failure ?? resolve(entry.description),
+      descriptionClass: failure ? 'mk-bad' : null,
+      control,
+    }));
   }
 }
 
@@ -209,9 +278,12 @@ function renderView() {
   const body = document.getElementById(BODY_ID);
   if (!view || !body || view.style.display === 'none') return; // nothing to update while hidden
 
+  // Redrawing replaces the rows, so remember where the user had scrolled to.
+  const scrolled = body.scrollTop;
   body.textContent = '';
   renderMods(body);
   renderEntries(body);
+  body.scrollTop = scrolled;
 }
 
 kit.onChange = renderView;
@@ -240,7 +312,9 @@ function showModView() {
     view = buildView();
     host.appendChild(view);
   }
-  view.style.display = 'block';
+  // Not 'block': the app's .module-block is a flex column, and an inline display would
+  // replace that layout. Dropping the inline value lets the app's own rule apply.
+  view.style.removeProperty('display');
   renderView();
 }
 

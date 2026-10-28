@@ -12,7 +12,7 @@ around without them loading.
 ```js
 mod.invoke(cmd, args?)      // call a backend Tauri command, returns a promise
 mod.css(text)               // inject a stylesheet; returns a remover function
-mod.entry({ title, description?, render? })   // add a card to the MOD page (see below)
+mod.entry({ title, description?, <control> })   // add a row to the MOD page (see below)
 mod.onDispose(fn)           // run fn when this mod is unloaded (reload, delete, failure)
 mod.onEvent(name, fn)       // subscribe to a backend event
 mod.waitFor(selector, opts) // resolve when an element appears (MutationObserver)
@@ -27,28 +27,37 @@ framework (`src/runtime/panel-tab.js`), not a mod: it is injected into every win
 before any mod runs, so `mod.entry` is always available, and it cannot be removed by
 deleting something from `mods/`.
 
-The page lists the mods that are loaded (with an "error" row and the message if one
-failed) and, below that, every card added through `mod.entry`:
+The page lists the mods that are loaded (with the error message under one that failed)
+and, below that, every row added through `mod.entry`. Rows use the app's own settings
+markup, so they look like the rest of the settings page — same fonts, colours, spacing and
+scrollbar — without the mod writing any HTML or CSS.
 
 ```js
+let enabled = false;
+
 mod.entry({
-  title: '自动点击',
-  description: '一句话说明',
-  render() {                       // optional; called each time the page is drawn
-    const b = document.createElement('button');
-    b.textContent = running ? '停止' : '开始';
-    b.onclick = () => { toggle(); window.modkit.changed(); };   // ask for a redraw
-    return b;
-  },
+  title: '自动点击',                                  // the row's title
+  description: () => enabled ? '运行中' : '已停止',    // the subtitle under it (optional)
+  toggle: { value: () => enabled, onChange: v => { enabled = v; window.modkit.changed(); } },
 });
 ```
 
-- `render()` runs on every redraw, so build the element from the mod's current state
-  instead of caching it.
-- Call `window.modkit.changed()` after the state behind a card changes.
-- A card is removed automatically when its mod is unloaded. That includes a mod that
-  throws partway through: whatever it had already added is undone, and the error shows
-  on the MOD page.
+Pick one control per row:
+
+| field | control |
+|---|---|
+| `toggle: { value, onChange(next) }` | on/off switch |
+| `button: { label, onClick, disabled? }` | button |
+| `number: { value, min?, max?, step?, onChange(next) }` | number input; the result is clamped to min/max |
+| `value: 'text'` | read-only figure on the right, like 累计点击数 |
+| `render: () => HTMLElement` | anything else; the mod builds the element (the app's classes `setting-btn`, `setting-input`, `setting-range`, `setting-value` are available) |
+
+- Any field may be a plain value **or a function returning one**. The page is redrawn from the
+  entry each time, so use a function for whatever changes (`value: () => enabled`).
+- Keep the state in the mod and call `window.modkit.changed()` after it changes; that
+  redraws the page (scroll position is kept). While another page is showing, nothing is drawn.
+- A row is removed automatically when its mod is unloaded, including a mod that throws
+  partway through: whatever it had already added is undone, and the error shows on the page.
 
 ### Loading and unloading
 

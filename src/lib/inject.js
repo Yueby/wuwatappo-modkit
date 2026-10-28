@@ -50,11 +50,18 @@ export function compileMod({ name, code, version }) {
       disposers.push(fn);
       return fn;
     },
-    // Put a card on the MOD page of the settings panel. The argument is
-    //   { title, description?, render?() -> HTMLElement }
-    // render() is called every time the page is drawn, so build the element from the
-    // mod's own state rather than keeping it around. The card is removed again when
-    // this mod is disposed (hot reload, or the mod failing).
+    // Add a row to the MOD page of the settings panel, in the app's own settings style:
+    //   { title, description?, <one control> }
+    // where the control is one of
+    //   toggle: { value, onChange(next) }              an on/off switch
+    //   button: { label, onClick, disabled? }
+    //   number: { value, min?, max?, step?, onChange(next) }
+    //   value:  'text'                                  a read-only figure
+    //   render: () => HTMLElement                       anything else, built by the mod
+    // Any field may be a value or a function returning one; use functions for whatever
+    // changes (value: () => enabled). The page is redrawn from the entry every time, so
+    // keep the state in the mod and call window.modkit.changed() after it changes. The row goes away when this mod is
+    // unloaded (hot reload, deletion, or failing partway).
     entry(def) {
       const kit = window.modkit;
       if (!kit) {
