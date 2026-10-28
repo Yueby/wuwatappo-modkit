@@ -31,9 +31,10 @@ before(async () => {
   app = await openWindows();
   windows = app.windows;
 
-  // Precondition, read-only: never run this while the real auto-click is clicking.
-  const running = await inWindow('main', `window.modkit?.mods.has('auto-click') ? modkit.getConfig('auto-click', 'running') : false`);
-  assert.equal(running, false, 'auto-click is running: switch it off before running this test');
+  // Precondition, read-only: never run this while a plugin that acts on the account (auto-click,
+  // auto-chest) is switched on: the master switch is the only switch it has, and this test reloads the scripts.
+  const on = await inWindow('main', `JSON.stringify(['auto-click', 'auto-chest'].filter(id => window.modkit?.mods.has(id) && modkit.isEnabled(id)))`);
+  assert.deepEqual(JSON.parse(on), [], 'a plugin that acts on the account is switched on: switch it off before running this test');
 
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'modkit-runtime-'));
 

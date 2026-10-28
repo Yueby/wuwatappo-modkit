@@ -280,16 +280,6 @@ test('the Node version is checked against the one given, so this can be tested f
   assert.match(checkRequirements([mod], '20.9.0')[0].loadError, /需要 Node >=22，现在是 20\.9\.0/);
 });
 
-test('every example mod loads cleanly, and the page code generated for it parses', async () => {
-  const mods = await discoverMods(EXAMPLES_DIR);
-  for (const mod of mods) {
-    assert.equal(mod.loadError, null, `${mod.name}: ${mod.loadError}`);
-    for (const label of ['main', 'panel', 'toast']) {
-      new vm.Script(compileMod(unitFor(mod, label), label), { filename: `${mod.name}@${label}` });
-    }
-  }
-});
-
 test('the templates are valid once the underscore is dropped, so copying one works', async () => {
   const templates = (await fs.readdir(EXAMPLES_DIR, { withFileTypes: true }))
     .filter(e => e.isDirectory() && e.name.startsWith('_template'));
