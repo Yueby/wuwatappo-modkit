@@ -35,7 +35,10 @@ Windows are separate webviews, one route each:
 | `#/about` | about |
 | `#/oss-notice` | open-source notice |
 
-45 backend commands; `node src/cli.js commands` lists them.
+162 backend commands in 1.0.2 (`node src/cli.js backend-commands` lists them, and marks the five
+that end the app, install an update, or wipe the login). An earlier version of that command
+reported 117: it assumed Tauri's `invoke` was exported under a fixed name, which was only true of
+some of the calls.
 
 ## Networking
 

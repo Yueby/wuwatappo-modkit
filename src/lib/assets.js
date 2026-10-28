@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Unpacks the Tauri frontend out of the exe.
 //
 // Tauri stores each asset as: asset path (plain text) followed by a brotli
@@ -9,11 +8,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { fileURLToPath } from 'node:url';
-
-const PROJECT_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const DEFAULT_EXE = 'E:\\Programs\\WuwaTappo\\WuwaTappo.exe';
-const DEFAULT_OUT = path.join(PROJECT_ROOT, 'work', 'assets');
 
 // Slack between the path string and its stream; empirical, small.
 const MAX_SKIP = 48;
@@ -73,13 +67,4 @@ function findStream(buffer, offset) {
     }
   }
   return null;
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const [exe = DEFAULT_EXE, outDir = DEFAULT_OUT] = process.argv.slice(2);
-  const results = extractAssets({ exe, outDir, log: m => console.log(m) });
-  const ok = results.filter(r => r.ok).length;
-  console.log(`\n${ok}/${results.length} extracted to ${outDir}`);
-  for (const r of results.filter(r => !r.ok)) console.log(`  FAILED ${r.path}`);
-  process.exitCode = ok === results.length ? 0 : 1;
 }

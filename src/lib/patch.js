@@ -20,13 +20,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-
-export const INSTALL_DIR = 'E:\\Programs\\WuwaTappo';
-export const ORIGINAL_EXE = path.join(INSTALL_DIR, 'WuwaTappo.exe');
-export const BACKUP_EXE = path.join(INSTALL_DIR, 'WuwaTappo.exe.orig');
-const MARKER = path.join(INSTALL_DIR, '.wuwa-modkit.json');
-
-export const BUNDLE_ID = 'com.kuro.wuwatappo.cn';
+import { APP_EXE, APP_EXE_BACKUP, PATCH_MARKER } from './paths.js';
 
 const EDITS = [
   {
@@ -47,7 +41,7 @@ async function exists(p) {
 }
 
 // Is the installed exe currently patched?
-export async function isPatched(file = ORIGINAL_EXE) {
+export async function isPatched(file = APP_EXE) {
   let data;
   try {
     data = await fs.readFile(file);
@@ -57,18 +51,8 @@ export async function isPatched(file = ORIGINAL_EXE) {
   return EDITS.every(edit => data.includes(edit.to) && !data.includes(edit.from));
 }
 
-// Per-edit status, for diagnostics.
-export async function describeEdits(file = ORIGINAL_EXE) {
-  const data = await fs.readFile(file);
-  return EDITS.map(edit => ({
-    label: edit.label,
-    replacements: data.includes(edit.to),
-    untouched: data.includes(edit.from),
-  }));
-}
-
 // Applies the edits to `file` in place.
-export async function patchInPlace(file = ORIGINAL_EXE) {
+export async function patchInPlace(file = APP_EXE) {
   const original = await fs.readFile(file);
   const patched = Buffer.from(original);
   const applied = [];
@@ -142,7 +126,7 @@ export async function patchInPlace(file = ORIGINAL_EXE) {
 // `force` re-applies the patch even when the exe already looks patched, by going
 // back to the stock backup first. That is what `lab --rebuild` means: recover from
 // a patch that was applied by an older version of this tool.
-export async function ensurePatched({ file = ORIGINAL_EXE, force = false, log = () => {} } = {}) {
+export async function ensurePatched({ file = APP_EXE, force = false, log = () => {} } = {}) {
   if (!(await exists(file))) {
     throw new Error(`installed executable not found at ${file}`);
   }
@@ -157,10 +141,10 @@ export async function ensurePatched({ file = ORIGINAL_EXE, force = false, log = 
   if (alreadyPatched && force) {
     // The stock bytes live in the backup; start from those so the result does not
     // depend on whatever state the installed file is in.
-    if (!(await exists(BACKUP_EXE))) {
-      throw new Error(`cannot rebuild: no backup at ${BACKUP_EXE} to start from`);
+    if (!(await exists(APP_EXE_BACKUP))) {
+      throw new Error(`cannot rebuild: no backup at ${APP_EXE_BACKUP} to start from`);
     }
-    await fs.copyFile(BACKUP_EXE, file).catch(err => {
+    await fs.copyFile(APP_EXE_BACKUP, file).catch(err => {
       if (['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) {
         throw new Error(`cannot overwrite ${path.basename(file)}: it is in use. Close the app first:  node src/cli.js stop`);
       }
@@ -172,11 +156,11 @@ export async function ensurePatched({ file = ORIGINAL_EXE, force = false, log = 
     // If a backup already exists but differs, the exe has been updated since it
     // was made, so refresh it — it must always be the current stock binary.
     const currentHash = await fileHash(file);
-    const backupHash = (await exists(BACKUP_EXE)) ? await fileHash(BACKUP_EXE) : null;
+    const backupHash = (await exists(APP_EXE_BACKUP)) ? await fileHash(APP_EXE_BACKUP) : null;
 
     if (backupHash !== currentHash) {
-      await fs.copyFile(file, BACKUP_EXE);
-      log(`  backed up original -> ${BACKUP_EXE}`);
+      await fs.copyFile(file, APP_EXE_BACKUP);
+      log(`  backed up original -> ${APP_EXE_BACKUP}`);
     }
   }
 
@@ -192,35 +176,34 @@ export async function ensurePatched({ file = ORIGINAL_EXE, force = false, log = 
 
 async function recordMarker(file) {
   const hash = await fileHash(file);
-  await fs.writeFile(MARKER, JSON.stringify({
+  await fs.writeFile(PATCH_MARKER, JSON.stringify({
     patchedAt: new Date().toISOString(),
     sha256: hash,
-    bundleId: BUNDLE_ID,
-    backup: BACKUP_EXE,
+    backup: APP_EXE_BACKUP,
   }, null, 2));
 }
 
 // Reads the marker written by the last patch.
 export async function readMarker() {
   try {
-    return JSON.parse(await fs.readFile(MARKER, 'utf8'));
+    return JSON.parse(await fs.readFile(PATCH_MARKER, 'utf8'));
   } catch {
     return null;
   }
 }
 
 // Restore the stock exe from the backup.
-export async function restoreOriginal({ file = ORIGINAL_EXE } = {}) {
-  if (!(await exists(BACKUP_EXE))) {
-    throw new Error(`no backup at ${BACKUP_EXE} — nothing to restore from`);
+export async function restoreOriginal({ file = APP_EXE } = {}) {
+  if (!(await exists(APP_EXE_BACKUP))) {
+    throw new Error(`no backup at ${APP_EXE_BACKUP} — nothing to restore from`);
   }
   try {
-    await fs.copyFile(BACKUP_EXE, file);
+    await fs.copyFile(APP_EXE_BACKUP, file);
   } catch (err) {
     if (['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) {
       throw new Error(`cannot overwrite ${path.basename(file)}: it is in use. Close the app first:  node src/cli.js stop`);
     }
     throw err;
   }
-  return { file, restoredFrom: BACKUP_EXE };
+  return { file, restoredFrom: APP_EXE_BACKUP };
 }

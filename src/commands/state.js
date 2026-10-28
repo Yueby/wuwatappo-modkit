@@ -2,7 +2,7 @@
 
 import { openAppSessions } from '../lib/cdp.js';
 import { windowLabel } from '../lib/targets.js';
-import { PROBE_MODS } from '../lib/inject.js';
+import { PROBE_MODS } from '../lib/page-scripts.js';
 import { parseOptions } from './options.js';
 import { log, style } from '../lib/output.js';
 

@@ -1,15 +1,19 @@
-// node src/cli.js extract-assets — thin wrapper over scripts/extract-assets.js
+// node src/cli.js extract-assets [--exe <path>] [--out <dir>]
+//
+// Unpack the frontend (Vue/JS/CSS/images) out of the app's exe. Defaults to the stock
+// backup when there is one, so the result does not depend on whether the installed exe
+// is patched at the moment.
 
-import path from 'node:path';
-import { extractAssets } from '../../scripts/extract-assets.js';
-import { PROJECT_ROOT } from '../lib/mods.js';
-import { ORIGINAL_EXE } from '../lib/patch.js';
+import fs from 'node:fs';
+import { extractAssets } from '../lib/assets.js';
+import { APP_EXE, APP_EXE_BACKUP, ASSETS_DIR } from '../lib/paths.js';
 import { parseOptions } from './options.js';
 import { log, style } from '../lib/output.js';
 
 export default async function extract(argv) {
   const options = parseOptions(argv);
-  const [exe = ORIGINAL_EXE, outDir = path.join(PROJECT_ROOT, 'work', 'assets')] = options.positional;
+  const exe = options.exe ?? (fs.existsSync(APP_EXE_BACKUP) ? APP_EXE_BACKUP : APP_EXE);
+  const outDir = options.out ?? ASSETS_DIR;
 
   const results = extractAssets({ exe, outDir, log });
   const ok = results.filter(r => r.ok).length;

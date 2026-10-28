@@ -10,10 +10,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import {
-  ORIGINAL_EXE, INSTALL_DIR, ensurePatched, isPatched, restoreOriginal, readMarker,
-} from '../lib/patch.js';
-import { launchDetached, findDebugPortOwner } from '../lib/launch.js';
+import { ensurePatched, restoreOriginal, readMarker } from '../lib/patch.js';
+import { APP_EXE, INSTALL_DIR } from '../lib/paths.js';
+import { launchDetached } from '../lib/launch.js';
 import { browserVersion } from '../lib/targets.js';
 import { countInstances } from '../lib/ps.js';
 import { parseOptions } from './options.js';
@@ -21,14 +20,13 @@ import { field, log, section, style } from '../lib/output.js';
 
 export default async function lab(argv) {
   const options = parseOptions(argv);
-  const restore = argv.includes('--restore');
-  const rebuild = argv.includes('--rebuild');
+  const { restore, rebuild } = options;
 
   if (restore) return doRestore();
 
-  if (!(await exists(ORIGINAL_EXE))) {
-    throw new Error(`installed executable not found at ${ORIGINAL_EXE}\n` +
-      `  Set INSTALL_DIR in src/lib/patch.js if the app lives elsewhere.`);
+  if (!(await exists(APP_EXE))) {
+    throw new Error(`installed executable not found at ${APP_EXE}\n` +
+      `  Set INSTALL_DIR in src/lib/paths.js if the app lives elsewhere.`);
   }
 
   if (!(await isPortFree(options.port))) {
@@ -57,7 +55,7 @@ export default async function lab(argv) {
   // (just without the admin requirement), so there is no second install to keep
   // apart: the login, settings, and click counters are the real ones, and the
   // updater keeps working normally.
-  const child = launchDetached(ORIGINAL_EXE, {
+  const child = launchDetached(APP_EXE, {
     cwd: INSTALL_DIR,
     env: {
       ...process.env,
@@ -93,8 +91,9 @@ async function exists(p) {
   try { await fs.access(p); return true; } catch { return false; }
 }
 
+// browserVersion throws when nothing answers on the port, which is what "free" means here.
 async function isPortFree(port) {
-  return (await findDebugPortOwner(port)) === null;
+  try { await browserVersion({ port }); return false; } catch { return true; }
 }
 
 async function isRunning() {

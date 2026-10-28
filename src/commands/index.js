@@ -7,7 +7,7 @@ import evaluate from './eval.js';
 import state from './state.js';
 import stop from './stop.js';
 import extractAssets from './extract-assets.js';
-import commands from './commands.js';
+import backendCommands from './backend-commands.js';
 
 export const COMMANDS = {
   lab,
@@ -17,5 +17,5 @@ export const COMMANDS = {
   state,
   stop,
   'extract-assets': extractAssets,
-  commands,
+  'backend-commands': backendCommands,
 };

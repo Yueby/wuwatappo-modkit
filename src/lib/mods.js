@@ -9,12 +9,8 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { iconDataUrls } from './icon.js';
-
-export const PROJECT_ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-export const DEFAULT_MODS_DIR = path.join(PROJECT_ROOT, 'mods');
-export const RUNTIME_DIR = path.join(PROJECT_ROOT, 'src', 'runtime');
+import { MODS_DIR, RUNTIME_DIR } from './paths.js';
 
 // Framework scripts are registered under this prefix so they can never collide with a
 // user mod's name, and so the manager can tell them apart.
@@ -57,7 +53,7 @@ async function readScripts(dir, { prefix = '', core = false } = {}) {
   return scripts;
 }
 
-export function discoverMods(dir = DEFAULT_MODS_DIR) {
+export function discoverMods(dir = MODS_DIR) {
   return readScripts(dir);
 }
 
@@ -78,7 +74,7 @@ export async function discoverCore() {
 }
 
 // Everything to inject, in the order to inject it: framework first.
-export async function discoverAll(modsDir = DEFAULT_MODS_DIR) {
+export async function discoverAll(modsDir = MODS_DIR) {
   return [...await discoverCore(), ...await discoverMods(modsDir)];
 }
 

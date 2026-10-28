@@ -5,8 +5,8 @@
 // the whole reason this is a resident process rather than a one-shot script.
 
 import { CDPSession } from './cdp.js';
-import { targetList, windowLabel, DebugPortUnavailable } from './targets.js';
-import { compileMod, retireMissing } from './inject.js';
+import { targetList, windowLabel } from './targets.js';
+import { compileMod, retireMissing } from './page-scripts.js';
 import { modsSignature } from './mods.js';
 
 export class Injector {
@@ -14,42 +14,34 @@ export class Injector {
   #log;
   #mods = [];
   #signature = '';
-  #sessions = new Map(); // targetId -> { target, session, needsInject, off }
-  #reports = [];
+  #sessions = new Map(); // target id -> { target, session, needsInject }
 
   constructor({ port, log = () => {} }) {
     this.#port = port;
     this.#log = log;
   }
 
-  get mods() { return this.#mods; }
-
+  // Returns true when the set of mods actually changed.
   setMods(mods) {
     const signature = modsSignature(mods);
     if (signature === this.#signature) return false;
     this.#mods = mods;
     this.#signature = signature;
-    // A changed mod must be re-evaluated even in windows we already injected
-    // into; the page compares versions and disposes the old copy itself.
+    // A changed mod must be re-evaluated even in windows we already injected into; the
+    // page compares versions and disposes the old copy itself.
     for (const entry of this.#sessions.values()) entry.needsInject = true;
     return true;
   }
 
   // Attach to new windows, drop sessions for windows that are gone.
   async #syncSessions() {
-    let targets;
-    try {
-      targets = await targetList({ port: this.#port });
-    } catch (err) {
-      if (err instanceof DebugPortUnavailable) throw err;
-      throw err;
-    }
+    const targets = await targetList({ port: this.#port });
 
     const live = new Set(targets.map(t => t.id));
-    for (const [targetId, entry] of this.#sessions) {
-      if (!live.has(targetId)) {
+    for (const [id, entry] of this.#sessions) {
+      if (!live.has(id) || entry.session.closed) {
         entry.session.close();
-        this.#sessions.delete(targetId);
+        this.#sessions.delete(id);
       }
     }
 
@@ -57,8 +49,6 @@ export class Injector {
       if (this.#sessions.has(target.id)) continue;
       try {
         const session = await CDPSession.connect(target);
-        // Page.enable must precede navigation hints, but loading a brand-new
-        // window takes a moment; evaluate retries instead of failing outright.
         await session.enable(['Page', 'Runtime']);
         const entry = { target, session, needsInject: true };
         session.on(msg => {
@@ -74,24 +64,22 @@ export class Injector {
     }
   }
 
-  // Inject into every window. Only windows whose document changed, or that are
-  // missing a mod, get work. Returns the fresh reports from this pass.
+  // Inject into every window that needs it (its document changed, or the mods did).
+  // Returns one report per mod that was installed, failed, or removed.
   async injectAll({ force = false } = {}) {
-    const fresh = [];
+    const reports = [];
     await this.#syncSessions();
 
     for (const [id, entry] of this.#sessions) {
+      if (!force && !entry.needsInject) continue;
+
       const { target, session } = entry;
       const label = windowLabel(target);
-      const reason = force ? 'forced' : entry.needsInject ? 'changed' : null;
-      if (!reason) continue;
-
       const thisWindow = [];
+
       try {
-        // First drop anything whose file is gone, so a deleted mod's UI does not
-        // outlive it.
-        const retired = await session.evaluate(retireMissing(this.#mods.map(m => m.name)));
-        for (const name of retired ?? []) {
+        // Drop anything whose file is gone first, so a deleted mod's UI does not outlive it.
+        for (const name of await session.evaluate(retireMissing(this.#mods.map(m => m.name))) ?? []) {
           thisWindow.push({ window: label, mod: name, status: 'removed' });
         }
 
@@ -104,40 +92,19 @@ export class Injector {
         entry.needsInject = false;
         if (thisWindow.length) this.#log(`${label}: injected ${thisWindow.length} mod(s)`);
       } catch (err) {
-        // Window went away mid-pass; let the next pass re-sync.
-        this.#sessions.delete(id);
-        session.close();
+        if (session.closed) {
+          // The window went away mid-pass; the next pass re-syncs.
+          this.#sessions.delete(id);
+        } else {
+          // Anything else is a real failure and must be seen, not swallowed: leave the
+          // window flagged so the next pass retries it, and say what happened.
+          this.#log(`${label}: injection failed (${err.message})`);
+          thisWindow.push({ window: label, mod: '(injector)', status: 'error', error: err.message });
+        }
       }
-      fresh.push(...thisWindow);
+      reports.push(...thisWindow);
     }
-    return fresh;
-  }
-
-  async modState() {
-    const state = {};
-    for (const [id, entry] of this.#sessions) {
-      const label = windowLabel(entry.target);
-      try {
-        const { PROBE_MODS } = await import('./inject.js');
-        state[label] = await entry.session.evaluate(PROBE_MODS);
-      } catch {
-        state[label] = { error: 'window unresponsive' };
-      }
-    }
-    return state;
-  }
-
-  async evaluateInAll(expression) {
-    const results = [];
-    for (const [id, entry] of this.#sessions) {
-      const label = windowLabel(entry.target);
-      try {
-        results.push({ window: label, value: await entry.session.evaluate(expression) });
-      } catch (err) {
-        results.push({ window: label, error: err.message });
-      }
-    }
-    return results;
+    return reports;
   }
 
   close() {

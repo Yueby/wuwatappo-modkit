@@ -1,6 +1,6 @@
 // Behavioural tests for the MOD tab in the settings panel, driven with real mouse events.
 //
-//   node tests/panel-tab.suite.mjs
+//   node tests/panel-tab.test.js
 //
 // Needs the app running with the framework injected:  node src/cli.js lab, then run (or
 // watch). It folds and unfolds the panel and clicks through the tabs, and leaves the
@@ -9,7 +9,7 @@
 // Cases here are ones that were once broken: returning to the tab that was already
 // selected, folding while the MOD page is open, and building the tab while folded.
 
-import { connect, sleep } from './panel-harness.mjs';
+import { connect, sleep } from './panel-harness.js';
 const t = await connect();
 let failed = 0;
 const check = (name, got, want) => { const ok = JSON.stringify(got) === JSON.stringify(want); if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${ok ? '' : `   got ${JSON.stringify(got)}, wanted ${JSON.stringify(want)}`}`); };

@@ -1,43 +1,22 @@
 // Framework: the "MOD" entry in the settings panel, and the page behind it.
 //
-// This is NOT a mod. It is injected by the loader into every window before any mod
-// runs (see discoverCore in src/lib/mods.js), so mods can rely on `window.modkit`
-// existing and on the manager page being there. It lives outside mods/ on purpose:
-// the manager lists the mods, so it must not be one of them, and deleting a mod must
-// never be able to take the manager away.
+// Not a mod. The loader injects it before any mod runs (see discoverCore in src/lib/mods.js),
+// and it lives outside mods/ on purpose: the page lists the mods, so it must not be one of
+// them, and deleting a mod must never be able to take the page away.
 //
-// Two layers:
+// It draws what modkit-registry.js collects. That file is loaded first (file-name order) and
+// defines window.modkit in every window; this one only does anything in the panel window.
 //
-//   1. a tiny registry, window.modkit, present in every window. Mods add UI through
-//      `mod.entry(...)`, which lands here and is removed again when the mod is
-//      disposed (hot reload) — mods never touch the globals directly.
-//   2. in the panel window only, a tab in the left navigation and the page it opens.
-//
-// The tab is a clone of a real tab button with only the icon and label replaced, so
-// it inherits every style. The panel keeps its active tab in component state (not the
-// URL) and the production build exposes no Vue instance, so the page is shown by
-// hiding the app's module blocks; any click on a stock tab puts them back.
-
-// --- 1. registry (every window) --------------------------------------------
-
-const kit = (window.modkit ??= { entries: [], onChange: null });
-
-kit.addEntry = entry => {
-  kit.entries.push(entry);
-  kit.changed();
-};
-kit.removeEntry = entry => {
-  const i = kit.entries.indexOf(entry);
-  if (i >= 0) kit.entries.splice(i, 1);
-  kit.changed();
-};
-// Called when entries change and when a mod finishes installing (its status in
-// window.__wuwaMods only becomes final after it returns).
-kit.changed = () => { try { kit.onChange?.(); } catch (err) { console.warn('[modkit]', err); } };
+// The tab is built from the stock tab's structure (two spans, four class names) and sits just
+// before 收起. The panel keeps its active tab in component state, not in the URL, and the
+// production build exposes no Vue instance to hook, so this is a pure DOM extension: our page
+// is shown by hiding the app's module blocks, and a click on a stock tab puts them back.
 
 if (!location.hash.includes('/panel')) return;
 
-// --- 2. the panel tab and page ---------------------------------------------
+const kit = window.modkit;
+if (!kit) throw new Error('window.modkit is missing: modkit-registry.js must be injected first');
+
 
 const TAB_SELECTOR = '.tab-btn';
 const BLOCK_SELECTOR = '.module-block';

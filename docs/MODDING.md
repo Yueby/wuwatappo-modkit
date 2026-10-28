@@ -111,12 +111,14 @@ await mod.invoke('plugin:app|version');                 // -> "1.0.1"
 await mod.invoke('plugin:autostart|is_enabled');        // -> false
 ```
 
-Run `node src/cli.js commands` for the full list. Two things to know:
+Run `node src/cli.js backend-commands` for the full list. Two things to know:
 
 - Some commands require an `environment` argument (`cn-cn-prod` in this build).
   Omitting it fails with `missing required key environment`.
-- **`exit_app` terminates the app.** Do not call it while iterating; you will
-  lose the window you are working in.
+- **Five commands have effects beyond the page** (the list marks them in red):
+  `exit_app` ends the app and `plugin:process|restart` restarts it, either one drops the window
+  you are working in; `plugin:updater|install` and `plugin:updater|download_and_install` install
+  an update; `plugin:webview|clear_all_browsing_data` wipes the cookies, which is the login.
 
 ## Seeing console output and errors
 

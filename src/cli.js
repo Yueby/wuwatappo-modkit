@@ -20,7 +20,7 @@ ${style.bold('Commands')}
   state               Show which mods are live in each window
   stop                Stop every instance, elevating if one is running as admin
   extract-assets      Unpack the frontend (Vue/JS/CSS/images) from the exe
-  commands            List backend commands found in the frontend
+  backend-commands    List the backend commands the frontend calls
 
 ${style.bold('Options')}
   --port <n>          DevTools port (default 9222)
