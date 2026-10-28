@@ -1,4 +1,4 @@
-// mods/click-journal, the real mod and its real Node part in a worker thread, with a scripted
+// examples/click-journal, the real mod and its real Node part in a worker thread, with a scripted
 // stand-in for the app: what the app would answer to "what is the click count", and a record of
 // what the mod shows and logs. Nothing here reaches an app.   node --test tests/click-journal.test.js
 
@@ -9,8 +9,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { HostManager } from '../src/lib/host.js';
 import { discoverMods } from '../src/lib/mods.js';
-import { BUNDLED_MODS_DIR } from '../src/lib/paths.js';
-import { ratePerMinute } from '../mods/click-journal/host.js';
+import { EXAMPLES_DIR } from '../src/lib/paths.js';
+import { ratePerMinute } from '../examples/click-journal/host.js';
 import { sleep, until } from './app-helpers.js';
 
 const ID = 'click-journal';
@@ -66,8 +66,8 @@ async function begin(script, dataDir = path.join(root, 'data')) {
 const csv = async dir => (await fs.readFile(path.join(dir ?? path.join(root, 'data'), ID, 'clicks.csv'), 'utf8').catch(() => '')).split('\n').filter(Boolean);
 
 before(async () => {
-  mod = (await discoverMods(BUNDLED_MODS_DIR)).find(m => m.name === ID);
-  assert.ok(mod, 'mods/click-journal is there');
+  mod = (await discoverMods(EXAMPLES_DIR)).find(m => m.name === ID);
+  assert.ok(mod, 'examples/click-journal is there');
   assert.equal(mod.loadError, null, mod.loadError);
 });
 

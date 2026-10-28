@@ -27,11 +27,12 @@ or in two steps, which is what to use while writing a mod:
 
 ```sh
 node src/cli.js lab          # patch the installed app, start it with DevTools on :9222
-node src/cli.js watch        # inject ./mods and keep them applied
+node src/cli.js watch        # inject the mods of the app folder and keep them applied
 ```
 
-Edit a file in `mods/` and it is re-injected within a couple of seconds. Stop with Ctrl+C.
-To write a mod, copy `mods/_template/` (see [docs/MODDING.md](docs/MODDING.md)).
+Mods live in `<app folder>\mods` (empty to begin with: the program carries none, they are installed with
+`mods install`). Edit a file there and it is re-injected within a couple of seconds. Stop with Ctrl+C.
+To write a mod, copy `examples/_template/` into it (see [docs/MODDING.md](docs/MODDING.md)).
 `node src/cli.js --help` lists everything.
 
 ## Commands
@@ -53,7 +54,7 @@ To write a mod, copy `mods/_template/` (see [docs/MODDING.md](docs/MODDING.md)).
 | `extract-assets [--exe p] [--out d]` | Unpack the frontend bundle out of the exe |
 | `backend-commands [--assets d]` | List the backend commands the frontend calls |
 
-Options: `--port <n>` (default 9222), `--mods-dir <path>` (default `./mods`), `--force`
+Options: `--port <n>` (default 9222), `--mods-dir <path>` (default: `mods` in the app folder), `--force`
 (re-inject even if already present). An unknown `--option` is an error, not ignored.
 
 ## Where things are
@@ -105,8 +106,8 @@ src/
     modkit-registry.js    window.modkit: mod lifecycle, settings, master switch, state shared
                           between windows (every window)
     panel-tab.js          the MOD tab and page in the settings panel (panel window only)
-mods/                   the mods that ship with the program (auto-click, click-journal) and the _template* to copy.
-                          Not where mods run: `setup` puts the ones that are missing into <app folder>\mods
+examples/               example mods (auto-click, click-journal) and the _template* to copy. Not part of the program
+                          and never installed by it: <app folder>\mods starts empty
 scripts/                developer tools, not part of the CLI (icon preview)
 tests/                  `npm test` runs the offline ones (no app needed); `npm run test:app` needs the app running
 docs/                   launching, modding, and what is known about the app
@@ -119,7 +120,8 @@ it is read from disk and sent into the page.
 
 ## Requirements
 
-Node 22+ (uses the built-in `WebSocket`). No npm dependencies.
+Node 22+ (uses the built-in `WebSocket`). No runtime npm dependencies. `npm run build` makes the single
+exe, `dist/modkit.exe` (see [docs/PACKAGING.md](docs/PACKAGING.md)); that needs the devDependencies (esbuild, postject).
 
 ## Docs
 

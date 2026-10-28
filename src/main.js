@@ -1,0 +1,71 @@
+// What a command line means. Shared by the two ways this program is started: `node src/cli.js ...` from
+// the repository, and the packaged exe (src/entry.js).
+
+import { COMMANDS } from './commands/index.js';
+import { installAndWait } from './commands/setup.js';
+import { isPackaged } from './lib/bundle.js';
+import { fail, log, style } from './lib/output.js';
+
+const USAGE = `
+${style.bold('wuwa-modkit')} — mod loader for Wuwa Tappo (Tauri 2 / WebView2)
+
+${style.bold('Usage')}
+  node src/cli.js <command> [options]
+
+${style.bold('Commands')}
+  setup [status]      One-time install: after it, just run WuwaTappo.exe and the mods start with it
+  uninstall           Take setup away again (--restore-exe also puts the original exe back)
+  start               Keep mods always on: start the app with DevTools if needed, then stay resident
+    --no-launch         do not start the app, wait for one
+    --log-file          also write to <app folder>\\moddata\\.modkit\\modkit.log
+  autostart <action>  install | remove | status (run start at logon)
+  mods <action>       list | install <source> | update [id] | remove <id>
+                        a source is a folder, .zip/.tgz, git URL, npm name or .js file
+    --force --no-deps --allow-scripts --purge
+  lab                 Patch the installed app, then start it with DevTools
+    --rebuild           force the patch to be re-applied
+    --restore           put the unpatched original back
+  run                 Inject mods into all open windows, then exit
+  watch               Stay resident: keep mods applied across reloads and edits
+  eval <js>           Evaluate JS in every app window
+  state               Show which mods are live in each window
+  stop                Stop every instance, elevating if one is running as admin
+  extract-assets      Unpack the frontend (Vue/JS/CSS/images) from the exe
+  backend-commands    List the backend commands the frontend calls
+  selftest            Check this build works (what it can read, that a Node part starts)
+
+${style.bold('Options')}
+  --port <n>          DevTools port (default 9222)
+  --mods-dir <path>   Mod directory (default: mods in the app folder)
+  --help              Show this help
+
+${style.dim('Docs: docs/LAUNCHING.md, docs/MODDING.md, docs/PACKAGING.md')}
+`;
+
+// With no command, the packaged exe does what it is for: unpack this version's mods into the app folder
+// and set everything up (a double-click on it). Run from the repository it shows the help, as before.
+export async function main(argv) {
+  const [name, ...rest] = argv;
+
+  if (!name && isPackaged() && process.stdin.isTTY) return installAndWait();
+
+  if (!name || name === '--help' || name === '-h' || name === 'help') {
+    log(USAGE);
+    return 0;
+  }
+
+  const command = COMMANDS[name];
+  if (!command) {
+    fail(`unknown command "${name}"`);
+    log(USAGE);
+    return 2;
+  }
+
+  try {
+    return (await command(rest)) ?? 0;
+  } catch (err) {
+    fail(err.message);
+    if (process.env.DEBUG) console.error(err);
+    return 1;
+  }
+}

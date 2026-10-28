@@ -39,19 +39,21 @@ export const LOADER_DIR = path.join(MOD_DATA_DIR, '.modkit');
 export const LOCK_FILE = path.join(LOADER_DIR, 'loader.lock');
 export const LOG_FILE = path.join(LOADER_DIR, 'modkit.log');
 
+// What the loader runs from when the program is packaged (see installLoaderCopy in layout.js).
+export const LOADER_EXE = path.join(LOADER_DIR, 'modkit-loader.exe');
+
 // --- this repository -----------------------------------------------------------
 
-export const PROJECT_ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
+// (Packaged, there is no repository: the app folder stands in, and nothing is read from it.)
+export const PROJECT_ROOT = sea.isSea() ? INSTALL_DIR : path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 export const RUNTIME_DIR = path.join(PROJECT_ROOT, 'src', 'runtime');
 
-// The mods that come with the program (and the templates to copy). `setup` puts the ones that are
-// not in MODS_DIR yet there; it never overwrites one that is.
-export const BUNDLED_MODS_DIR = path.join(PROJECT_ROOT, 'mods');
+// Example mods and templates to copy from. They are not part of the program and are never installed
+// by it: mods starts empty.
+export const EXAMPLES_DIR = path.join(PROJECT_ROOT, 'examples');
 
 // Generated, git-ignored. The extracted frontend is a build artefact of whichever app
 // version was last unpacked, so it is not worth keeping in version control.
 export const WORK_DIR = path.join(PROJECT_ROOT, 'work');
 export const ASSETS_DIR = path.join(WORK_DIR, 'assets');
 
-// Where a mod's data used to be, before it moved to the app folder: moved from there by `setup`.
-export const LEGACY_MOD_DATA_DIR = path.join(WORK_DIR, 'mod-data');

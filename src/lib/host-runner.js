@@ -21,19 +21,33 @@
 // Everything that needs the app or another mod (evaluating in a window, settings, services) is a
 // message to the loader, which owns the CDP sessions and knows who is running.
 
+import * as sea from 'node:sea';
 import { format } from 'node:util';
 import { pathToFileURL } from 'node:url';
+import vm from 'node:vm';
 
-// The loader going away (it exited, or crashed) closes the channel: this process has nothing left
-// to serve and must not stay behind. (On Windows it is ended with the loader anyway, as every child
-// is; this is for other systems, and costs one line.)
-process.on('disconnect', () => process.exit(0));
+// Load an ES module from a file on disk. A packaged program has no plain import(): it is given the
+// main context's loader instead (checked: the module can import node: modules and packages from the
+// node_modules beside it). Run from the repository, import() is just import().
+const loadFromMainContext = sea.isSea()
+  ? vm.compileFunction('return import(spec)', ['spec'], { importModuleDynamically: vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER })
+  : null;
+const importFile = href => (loadFromMainContext ? loadFromMainContext(href) : import(href));
 
-process.once('message', init => {
-  run(init).catch(err => {
-    send({ t: 'failed', error: String(err?.stack ?? err) });
+// Start serving: wait for the loader's first message, which says what to run. Called by
+// host-runner-main.js (from the repository) or by the packaged program's own entry (src/entry.js).
+export function runHost() {
+  // The loader going away (it exited, or crashed) closes the channel: this process has nothing left
+  // to serve and must not stay behind. (On Windows it is ended with the loader anyway, as every child
+  // is; this is for other systems, and costs one line.)
+  process.on('disconnect', () => process.exit(0));
+
+  process.once('message', init => {
+    run(init).catch(err => {
+      send({ t: 'failed', error: String(err?.stack ?? err) });
+    });
   });
-});
+}
 
 const send = (message, done) => {
   try {
@@ -171,7 +185,7 @@ async function run({ id, dir, dataDir, file, config: initial }) {
   });
 
   process.chdir(dir);
-  const module = await import(pathToFileURL(file).href);
+  const module = await importFile(pathToFileURL(file).href);
   const start = module.default ?? module.start;
   if (typeof start !== 'function') throw new Error('the Node part must export a function: a default export, or "start"');
   const cleanup = await start(host);

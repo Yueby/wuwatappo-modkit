@@ -1,4 +1,4 @@
-// The click loop of mods/auto-click, run against a stand-in for `mod`. Nothing here talks to
+// The click loop of examples/auto-click, run against a stand-in for `mod`. Nothing here talks to
 // the app, so no event is ever sent: this is how the loop is tested without clicking on
 // anyone's account.   node --test tests/auto-click.test.js
 
@@ -6,9 +6,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { BUNDLED_MODS_DIR } from '../src/lib/paths.js';
+import { EXAMPLES_DIR } from '../src/lib/paths.js';
 
-const source = await fs.readFile(path.join(BUNDLED_MODS_DIR, 'auto-click', 'main.js'), 'utf8');
+const source = await fs.readFile(path.join(EXAMPLES_DIR, 'auto-click', 'main.js'), 'utf8');
 const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 

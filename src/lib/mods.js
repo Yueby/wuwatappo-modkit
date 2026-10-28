@@ -12,7 +12,8 @@ import path from 'node:path';
 import { iconDataUrls } from './icon.js';
 import { ManifestError, parseManifest } from './manifest.js';
 import { satisfies } from './semver.js';
-import { MODS_DIR, RUNTIME_DIR } from './paths.js';
+import { runtimeScripts } from './bundle.js';
+import { MODS_DIR } from './paths.js';
 
 // Framework scripts are registered under this prefix so they can never collide with a
 // user mod's name, and so the manager can tell them apart.
@@ -280,15 +281,20 @@ export function unitFor(mod, label) {
 // by the generated icons (src/lib/icon.js) before the script is hashed or injected, so
 // the image is never a pasted blob that can drift from its generator.
 export async function discoverCore() {
-  const scripts = await readScripts(RUNTIME_DIR, { prefix: CORE_PREFIX, core: true });
   const icons = iconDataUrls();
-  return scripts.map(script => {
-    const code = script.code
+  return (await runtimeScripts()).map(({ name, code: raw }) => {
+    const code = raw
       .replaceAll('__MOD_ICON_INACTIVE__', icons.inactive)
       .replaceAll('__MOD_ICON_ACTIVE__', icons.active);
-    if (code === script.code) return script;
     const digest = `${code.length}:${hash(code)}`;
-    return { ...script, code, version: digest, signature: digest };
+    return {
+      name: CORE_PREFIX + path.basename(name, path.extname(name)),
+      file: `runtime/${name}`,
+      code,
+      core: true,
+      version: digest,
+      signature: digest,
+    };
   });
 }
 

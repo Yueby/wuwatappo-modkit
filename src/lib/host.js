@@ -27,13 +27,23 @@
 import { fork } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import * as sea from 'node:sea';
 import { fileURLToPath } from 'node:url';
 import { MOD_DATA_DIR } from './paths.js';
 
 // Added to every window by the injector's session. Spelled the same in modkit-registry.js.
 export const HOST_BINDING = '__modkitHost';
 
-const RUNNER_FILE = fileURLToPath(new URL('./host-runner.js', import.meta.url));
+// How a Node part is started. From the repository: node, on the file that calls runHost(). Packaged:
+// the program itself, which is told by its environment that this time it is the runner (the argument
+// fork() needs is never looked at). A packaged program also silences Node's own warnings in the child:
+// importing a mod's file uses an experimental loader that would otherwise write one to the log.
+function forkRunner(options) {
+  if (sea.isSea()) {
+    return fork('modkit-host-runner', [], { ...options, env: { ...process.env, MODKIT_ROLE: 'host-runner', NODE_NO_WARNINGS: '1' } });
+  }
+  return fork(fileURLToPath(new URL('../host-runner-main.js', import.meta.url)), [], options);
+}
 const STOP_GRACE_MS = 2000;
 const BEAT_MS = 2000;       // the pages treat the loader as gone after 3 missed beats (HOST_STALE_MS)
 const TAIL_CHARS = 2000;    // how much of what a failing process printed is kept to explain it
@@ -225,7 +235,7 @@ export class HostManager {
 
       this.#report(id, 'loading');
       const dir = path.dirname(mod.hostFile);
-      const proc = fork(RUNNER_FILE, [], {
+      const proc = forkRunner({
         cwd: dir,
         execArgv: [],                          // not whatever the loader was started with (--test, --inspect, ...)
         serialization: 'json',

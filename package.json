@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "node src/cli.js --help",
+    "build": "node scripts/build.js",
     "lab": "node src/cli.js lab",
     "watch": "node src/cli.js watch",
     "run": "node src/cli.js run",
@@ -17,5 +18,9 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "postject": "^1.0.0-alpha.6"
   }
 }

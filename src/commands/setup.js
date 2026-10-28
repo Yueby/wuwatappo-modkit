@@ -13,23 +13,24 @@
 // administrator is needed to set it up or to take it away again.
 
 import { spawn } from 'node:child_process';
+import readline from 'node:readline/promises';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { appState } from '../lib/app.js';
 import * as autostart from '../lib/autostart.js';
 import { launcher } from '../lib/autostart.js';
-import { ensureFolders, installBundledMods, moveLegacyData } from '../lib/layout.js';
+import { ensureFolders, installLoaderCopy, removeLoaderCopy } from '../lib/layout.js';
 import { runningLoader } from '../lib/lock.js';
 import { ensurePatched, isPatched, restoreOriginal } from '../lib/patch.js';
-import { APP_EXE, LOG_FILE, MODS_DIR, MOD_DATA_DIR, WORK_DIR } from '../lib/paths.js';
+import { APP_EXE, LOG_FILE, MODS_DIR, MOD_DATA_DIR } from '../lib/paths.js';
 import { countInstances } from '../lib/ps.js';
 import { POLICY_KEY, APP_NAME, portOf, readArguments, removeArguments, setArguments } from '../lib/webview-policy.js';
-import { field, log, section, style } from '../lib/output.js';
+import { isPackaged } from '../lib/bundle.js';
+import { listMods } from '../lib/install.js';
+import { fail, field, log, section, style } from '../lib/output.js';
 import { parseOptions } from './options.js';
 
-// The lock an earlier version kept inside the repository: a loader started by it is still a loader.
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const LEGACY_LOCK = path.join(WORK_DIR, 'loader.lock');
 
 export default async function setup(argv) {
   const options = parseOptions(argv);
@@ -67,23 +68,23 @@ export default async function setup(argv) {
   // stopped first: it keeps writing where it was told to, and what it wrote after its data was moved
   // would start a second copy. (Running setup again is how a new version of this program, or a new
   // place for these folders, is taken up; the new loader is started at the end.)
-  for (const old of [runningLoader(), runningLoader({ file: LEGACY_LOCK })].filter(Boolean)) {
+  for (const old of [runningLoader()].filter(Boolean)) {
     try { process.kill(old); } catch { /* gone already */ }
     field('loader', style.dim(`stopped the old one (pid ${old})`));
   }
   await sleep(500);                                  // its Node parts end with it; let go of their files
 
-  await ensureFolders();
-  const bundled = await installBundledMods();
-  field('mods', MODS_DIR);
-  if (bundled.installed.length) field('', style.dim(`added: ${bundled.installed.join(', ')}`));
-  if (bundled.kept.length) field('', style.dim(`already there, left as they are: ${bundled.kept.join(', ')}`));
-  const moved = await moveLegacyData();
-  field('mod data', MOD_DATA_DIR);
-  if (moved.moved.length) field('', style.dim(`moved from the old place: ${moved.moved.join(', ')}`));
-  if (moved.skipped.length) field('', style.yellow(`not moved (already has data in moddata, the old copy is kept): ${moved.skipped.join(', ')}`));
+  const made = await ensureFolders();
+  field('mods', `${MODS_DIR}${made.includes(MODS_DIR) ? style.dim('  (made, empty)') : ''}`);
+  field('mod data', `${MOD_DATA_DIR}${made.includes(MOD_DATA_DIR) ? style.dim('  (made, empty)') : ''}`);
+  const installed = (await listMods(MODS_DIR)).length;
+  field('', style.dim(installed
+    ? `${installed} mod(s) installed: node src/cli.js mods list`
+    : 'no mods yet: node src/cli.js mods install <folder | .zip | git URL | npm name>'));
 
-  // 4. The loader at logon.
+  // 4. The loader at logon. Packaged, it runs from a copy of this program, so that this one, in the app
+  // folder, is never in use and a new version can simply be put over it.
+  if (isPackaged()) await installLoaderCopy();
   field('at logon', autostart.install());
 
   // 5. And now.
@@ -139,6 +140,8 @@ export async function uninstall(argv) {
   }
 
   field('at logon', autostart.remove().existed ? 'removed' : style.dim('was not installed'));
+  if (pid) await sleep(500);                         // let go of its files first
+  await removeLoaderCopy().catch(() => {});
   field('DevTools port', (await removeArguments()) ? 'removed from the registry' : style.dim('was not set'));
 
   if (options.restoreExe) {
@@ -152,4 +155,21 @@ export async function uninstall(argv) {
   log(`\n${style.green('done')}  the app keeps its DevTools port until it is restarted.`);
   log(style.dim(`  Your mods (${MODS_DIR}) and what they keep (${MOD_DATA_DIR}) are left where they are.`));
   return 0;
+}
+
+// What running the packaged exe with nothing else typed does (a double-click): everything setup does,
+// and then the console is held open so that what it said can be read.
+export async function installAndWait() {
+  let code = 0;
+  try {
+    code = (await setup([])) ?? 0;
+  } catch (err) {
+    fail(err.message);
+    code = 1;
+  }
+  log(style.dim('\nTo take it away: run this program with the word uninstall.   卸载:带 uninstall 参数运行本程序。'));
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  await rl.question('\nPress Enter to close.   按回车键关闭。');
+  rl.close();
+  return code;
 }

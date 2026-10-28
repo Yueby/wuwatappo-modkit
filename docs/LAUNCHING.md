@@ -91,10 +91,10 @@ node src/cli.js setup status     # what is in place
 node src/cli.js uninstall        # takes it away (one UAC prompt); --restore-exe also puts the original exe back
 ```
 
-`setup` also lays out the app folder (`mods\`, `moddata\`; see the README) and is safe to run again, which is how a
-new version of this program, or an app update, is taken up: it adds what is missing, writes the registry value
-only if it is not already right (so no UAC prompt again), and replaces the running loader with a new one.
-It never overwrites a mod that is already in `mods\` and never deletes anything of yours.
+`setup` also makes the app folder's `mods\` and `moddata\` if they are not there (empty: the program carries no mods,
+see `mods install`) and is safe to run again, which is how a new version of this program, or an app update, is taken
+up: it writes the registry value only if it is not already right (so no UAC prompt again), and replaces the running
+loader with a new one. It never touches a mod and never deletes anything of yours.
 
 After `setup`, start `WuwaTappo.exe` however you like (its shortcut, a double-click, its own logon task)
 and the mods start with it. Three pieces make that so:

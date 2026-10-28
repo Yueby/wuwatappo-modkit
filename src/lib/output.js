@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import * as sea from 'node:sea';
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 
@@ -44,11 +45,16 @@ export function stopTee() {
   sink = null;
 }
 
+// What to type to run this program. The messages all say "node src/cli.js ..."; packaged, that is
+// the exe's own name.
+const sayProgram = text => (sea.isSea() ? text.replaceAll('node src/cli.js', path.basename(process.execPath)) : text);
+
 export function log(message) {
+  const text = sayProgram(String(message));
   try {
-    process.stdout.write(`${message}\n`);
+    process.stdout.write(`${text}\n`);
   } catch { /* no console to write to */ }
-  toFile(String(message));
+  toFile(text);
 }
 
 export function section(title) {
@@ -74,8 +80,9 @@ export function statusWord(status) {
 }
 
 export function fail(message) {
+  const text = sayProgram(String(message));
   try {
-    process.stderr.write(`${style.red('error')} ${message}\n`);
+    process.stderr.write(`${style.red('error')} ${text}\n`);
   } catch { /* no console to write to */ }
-  toFile(`error ${message}`);
+  toFile(`error ${text}`);
 }

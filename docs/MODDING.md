@@ -10,8 +10,9 @@ mods/auto-click/         a package: package.json says what it is and what it exp
   main.js                the code that runs in the main window
 ```
 
-Mods run from `mods\` in the app folder (`E:\Programs\WuwaTappo\mods`; the repository's `mods/` holds the ones that
-ship with the program, which `setup` copies there). Start a package by copying `_template` and dropping the underscore. Files and folders
+Mods run from `mods\` in the app folder (`E:\Programs\WuwaTappo\mods`). It starts empty: the program
+carries no mods, they are installed into it (`mods install`). The repository's `examples/` holds two examples and the
+templates; start a package by copying `_template` there and dropping the underscore. Files and folders
 starting with `_` or `.` are never loaded, so you can keep fragments around.
 
 ## package.json

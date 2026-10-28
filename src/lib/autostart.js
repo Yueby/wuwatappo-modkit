@@ -14,7 +14,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import * as sea from 'node:sea';
-import { INSTALL_DIR, PROJECT_ROOT } from './paths.js';
+import { INSTALL_DIR, LOADER_EXE, PROJECT_ROOT } from './paths.js';
 
 const run = promisify(execFile);
 
@@ -29,10 +29,12 @@ export function startupDir() {
 // In a VBScript string a quote is written twice.
 const vb = text => String(text).replaceAll('"', '""');
 
-// How to run this program: from the repository it is node and cli.js; packaged, it is the exe itself.
+// How to run this program: from the repository it is node and cli.js; packaged, it is the loader's
+// own copy of the exe (see installLoaderCopy in layout.js), so that the exe in the app folder is
+// never in use and can be replaced.
 export function launcher() {
   return sea.isSea()
-    ? { node: process.execPath, cli: null, cwd: INSTALL_DIR }
+    ? { node: LOADER_EXE, cli: null, cwd: INSTALL_DIR }
     : { node: process.execPath, cli: path.join(PROJECT_ROOT, 'src', 'cli.js'), cwd: PROJECT_ROOT };
 }
 

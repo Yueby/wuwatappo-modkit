@@ -4,6 +4,7 @@ import autostart from './autostart.js';
 import lab from './lab.js';
 import mods from './mods.js';
 import run from './run.js';
+import selftest from './selftest.js';
 import setup, { uninstall } from './setup.js';
 import start from './start.js';
 import watch from './watch.js';
@@ -14,6 +15,7 @@ import extractAssets from './extract-assets.js';
 import backendCommands from './backend-commands.js';
 
 export const COMMANDS = {
+  selftest,
   setup,
   uninstall,
   start,
