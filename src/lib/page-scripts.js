@@ -1,131 +1,69 @@
-// Source of the in-page mod runtime.
+// Generates the JavaScript that is evaluated inside the webview.
 //
-// Each mod is compiled into a small async IIFE that runs inside the webview.
-// The runtime is shipped as source text because it executes in the page's world,
-// not in Node. Keep this file dependency-free: it is never bundled, it is
-// stringified straight into Runtime.evaluate.
+// Two kinds of script go in, and they are wrapped differently:
+//
+//   framework (src/runtime/*.js)  compileCore — a minimal wrapper. It has to be minimal: it
+//                                 is what installs window.modkit, so it cannot rely on it.
+//   user mods                     compileMod — a call to window.modkit.install, which owns
+//                                 the lifecycle, the `mod` API, settings and the master
+//                                 switch (src/runtime/modkit-registry.js).
+//
+// This file is source text, not a module the page loads: keep it dependency-free, and keep
+// backticks out of comments (the generated code is built from template strings).
 
 export const MOD_STATE_KEY = '__wuwaMods';
 
-// Bumped whenever a mod's source changes, so the page can tell a retry apart from
-// a genuine re-install. `version` is the mod's signature hash.
-export function compileMod({ name, code, version }) {
+// Framework script. `mod` is deliberately small: onDispose, log, warn.
+export function compileCore({ name, code, version }) {
   const nameLiteral = JSON.stringify(name);
   const versionLiteral = JSON.stringify(version ?? '0');
   return `(async () => {
-  const T = window.__TAURI_INTERNALS__;
-  if (!T) return { status: 'not-ready' };
+  if (!window.__TAURI_INTERNALS__) return { status: 'not-ready' };
 
   const registry = (window.${MOD_STATE_KEY} ??= {});
   const previous = registry[${nameLiteral}];
   if (previous && previous.version === ${versionLiteral}) {
-    // Same source: keep whatever the installed copy did, do not run it twice.
     return { status: previous.status === 'error' ? 'error' : 'already-installed' };
   }
   if (previous && previous.dispose) {
-    // Source changed while the window was live: tear the old copy down first.
     try { previous.dispose(); } catch (err) { console.warn('dispose failed', err); }
   }
 
   const disposers = [];
-  registry[${nameLiteral}] = { status: 'installing', version: ${versionLiteral}, dispose: () => disposers.splice(0).reverse().forEach(fn => { try { fn(); } catch {} }) };
+  const dispose = () => disposers.splice(0).reverse().forEach(fn => { try { fn(); } catch {} });
+  registry[${nameLiteral}] = { status: 'installing', version: ${versionLiteral}, dispose };
 
   const mod = {
     name: ${nameLiteral},
-    invoke: (cmd, args) => T.invoke(cmd, args),
-    log: (...args) => console.log('[%s]'.replace('%s', ${nameLiteral}), ...args),
-    warn: (...args) => console.warn('[%s]'.replace('%s', ${nameLiteral}), ...args),
-    css(text) {
-      const style = document.createElement('style');
-      style.textContent = text;
-      style.dataset.wuwaMod = ${nameLiteral};
-      (document.head ?? document.documentElement).appendChild(style);
-      const remove = () => style.remove();
-      disposers.push(remove);
-      return remove;
-    },
-    // Registering an element/timer cleanup is what makes hot-reload safe: on a
-    // source change the old copy is disposed before the new one runs.
-    onDispose(fn) {
-      disposers.push(fn);
-      return fn;
-    },
-    // Add a row to the MOD page of the settings panel, in the app's own settings style:
-    //   { title, description?, <one control> }
-    // where the control is one of
-    //   toggle: { value, onChange(next) }              an on/off switch
-    //   button: { label, onClick, disabled? }
-    //   number: { value, min?, max?, step?, onChange(next) }
-    //   value:  'text'                                  a read-only figure
-    //   render: () => HTMLElement                       anything else, built by the mod
-    // Any field may be a value or a function returning one; use functions for whatever
-    // changes (value: () => enabled). The page is redrawn from the entry every time, so
-    // keep the state in the mod and call window.modkit.changed() after it changes. The row goes away when this mod is
-    // unloaded (hot reload, deletion, or failing partway).
-    entry(def) {
-      const kit = window.modkit;
-      if (!kit) {
-        console.warn('[%s] mod.entry: the framework is not loaded in this window'.replace('%s', ${nameLiteral}));
-        return () => {};
-      }
-      const entry = { ...def, owner: ${nameLiteral} };
-      kit.addEntry(entry);
-      const remove = () => kit.removeEntry(entry);
-      disposers.push(remove);
-      return remove;
-    },
-    onEvent(event, handler) {
-      return T.invoke('plugin:event|listen', {
-        event,
-        target: { kind: 'Any' },
-        handler: T.transformCallback(handler),
-      });
-    },
-    waitFor(selector, { timeout = 10000, root = document } = {}) {
-      return new Promise((resolve, reject) => {
-        const found = root.querySelector(selector);
-        if (found) return resolve(found);
-        const observer = new MutationObserver(() => {
-          const el = root.querySelector(selector);
-          if (!el) return;
-          observer.disconnect();
-          clearTimeout(timer);
-          resolve(el);
-        });
-        const timer = setTimeout(() => {
-          observer.disconnect();
-          reject(new Error('timed out waiting for ' + selector));
-        }, timeout);
-        observer.observe(document.documentElement, { childList: true, subtree: true });
-      });
-    },
+    onDispose(fn) { disposers.push(fn); return fn; },
+    log: (...args) => console.log('[' + ${nameLiteral} + ']', ...args),
+    warn: (...args) => console.warn('[' + ${nameLiteral} + ']', ...args),
   };
 
   try {
-    const result = await (async () => { ${code}\n })();
-    registry[${nameLiteral}] = {
-      status: 'ok',
-      result: result ?? null,
-      version: ${versionLiteral},
-      dispose: registry[${nameLiteral}]?.dispose,
-    };
+    await (async () => { ${code}\n })();
+    registry[${nameLiteral}] = { status: 'ok', version: ${versionLiteral}, dispose };
     window.modkit?.changed?.();
     return { status: 'ok' };
   } catch (err) {
-    // A mod that dies halfway has usually already added a card, a style, a timer.
-    // Leaving that behind gives a half-working UI that is harder to diagnose than
-    // none, so undo it; the error itself stays visible in the registry.
-    try { registry[${nameLiteral}]?.dispose?.(); } catch {}
-    registry[${nameLiteral}] = {
-      status: 'error',
-      error: String(err),
-      version: ${versionLiteral},
-      dispose: registry[${nameLiteral}]?.dispose,
-    };
-    console.error('[%s] failed'.replace('%s', ${nameLiteral}), err);
-    window.modkit?.changed?.();
+    try { dispose(); } catch {}
+    registry[${nameLiteral}] = { status: 'error', error: String(err), version: ${versionLiteral}, dispose };
+    console.error('[' + ${nameLiteral} + '] failed', err);
     return { status: 'error', error: String(err) };
   }
+})()`;
+}
+
+// A user mod, as one window sees it (see unitFor in mods.js): the manifest, plus the code for
+// this window or null when the mod has none here. `loadError` marks a mod that could not be
+// loaded at all; the page lists it as broken.
+export function compileMod({ name, manifest, code, version, loadError }, label) {
+  const spec = { id: name, manifest, version, label, loadError: loadError ?? null };
+  const run = code == null ? 'null' : `async mod => {\n${code}\n}`;
+  return `(async () => {
+  const kit = window.modkit;
+  if (!window.__TAURI_INTERNALS__ || typeof kit?.install !== 'function') return { status: 'not-ready' };
+  return kit.install({ ...${JSON.stringify(spec)}, run: ${run} });
 })()`;
 }
 
@@ -156,4 +94,3 @@ export function retireMissing(keep) {
   return retired;
 })()`;
 }
-

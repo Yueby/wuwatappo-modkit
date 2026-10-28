@@ -1,8 +1,10 @@
 # Wuwa Tappo modkit
 
 CDP-based mod loader for **Wuwa Tappo** (Kuro's Tauri 2 / WebView2 desktop app).
-Mods are plain JavaScript injected into the app's webviews. The installed executable gets
-one length-preserving byte edit (it stops demanding administrator) and nothing else.
+Mods are JavaScript injected into the app's webviews, each with a `mod.json` that declares the
+switches and numbers it shows on the MOD page (remembered across restarts, one master switch per
+mod). The installed executable gets one length-preserving byte edit (it stops demanding
+administrator) and nothing else.
 
 ## Quick start
 
@@ -12,6 +14,7 @@ node src/cli.js watch        # inject ./mods/*.js and keep them applied
 ```
 
 Edit a file in `mods/` and it is re-injected within a couple of seconds. Stop with Ctrl+C.
+To write a mod, copy `mods/_template/` (see [docs/MODDING.md](docs/MODDING.md)).
 `node src/cli.js --help` lists everything.
 
 ## Commands
@@ -45,7 +48,8 @@ src/
     targets.js            finding the app's windows over the DevTools HTTP endpoint
     injector.js           one live session per window; re-injects on navigation and edits
     page-scripts.js       generates the JavaScript that is evaluated *inside* the page
-    mods.js               discovery of framework scripts and user mods, change detection
+    manifest.js           mod.json: parsing and validation
+    mods.js               discovery of framework scripts and user mods (files and folders)
     patch.js              patches the installed exe in place, with backup and restore
     launch.js             starting the app detached
     ps.js                 PowerShell: process count, kill, run-as-administrator
@@ -54,11 +58,12 @@ src/
     icon.js               draws the MOD tab's two icons
     output.js             console formatting
   runtime/              framework scripts injected into every window before any mod
-    modkit-registry.js    window.modkit: the list of entries mods add (every window)
+    modkit-registry.js    window.modkit: mod lifecycle, settings, master switch, state shared
+                          between windows (every window)
     panel-tab.js          the MOD tab and page in the settings panel (panel window only)
-mods/                   your mods (files starting with _ are not loaded)
+mods/                   your mods: single files or folders with a mod.json (_ = not loaded)
 scripts/                developer tools, not part of the CLI (icon preview)
-tests/                  behavioural tests for the panel UI (`npm test`, needs the app running)
+tests/                  `npm test` runs the offline ones; `npm run test:app` needs the app running
 docs/                   launching, modding, and what is known about the app
 work/                   generated and git-ignored: the unpacked frontend
 ```

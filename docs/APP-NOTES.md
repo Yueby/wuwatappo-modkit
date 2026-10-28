@@ -260,3 +260,18 @@ server (`/app/dict/zh.json`), not the bundle, which is why they are not greppabl
 Measured on the live page, the MOD header and the room header agree on size, colour, line
 height, left edge and width.
 
+## What the seven windows share
+
+Measured on the running app, because the mod system's cross-window design rests on it:
+
+- **`localStorage` is one store.** All seven windows read the same 13 keys (they share the
+  `tauri.localhost` origin and the WebView2 profile). A write in one window fires a `storage`
+  event in the other six, but not in the writer.
+- **`BroadcastChannel` reaches every window.** A message posted in the panel arrived in the
+  other six, and not back in the sender.
+- So a setting written in the panel is visible in main at once, and nothing needs to go through
+  the Rust side. Settings are stored under `modkit:cfg:<id>`, `modkit:tmp:<id>` (values that
+  reset when the mod starts) and `modkit:on:<id>` (master switch); run state and live figures
+  are only sent over the channel, so a restart cannot leave stale ones behind.
+- The profile is the app's own, so `clear_all_browsing_data` (which wipes the login) wipes the
+  stored settings with it.

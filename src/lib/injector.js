@@ -6,8 +6,12 @@
 
 import { CDPSession } from './cdp.js';
 import { targetList, windowLabel } from './targets.js';
-import { compileMod, retireMissing } from './page-scripts.js';
-import { modsSignature } from './mods.js';
+import { compileCore, compileMod, retireMissing } from './page-scripts.js';
+import { modsSignature, unitFor } from './mods.js';
+
+// What is worth a line in the log. 'idle' (the mod has no script for this window) and
+// 'already-installed' would be noise: every mod is installed in every window.
+const REPORTED = new Set(['ok', 'error', 'off']);
 
 export class Injector {
   #port;
@@ -84,10 +88,8 @@ export class Injector {
         }
 
         for (const mod of this.#mods) {
-          const report = await session.evaluate(compileMod(mod));
-          if (report?.status === 'ok' || report?.status === 'error') {
-            thisWindow.push({ window: label, mod: mod.name, ...report });
-          }
+          const report = await this.#install(session, mod, label);
+          if (REPORTED.has(report?.status)) thisWindow.push({ window: label, mod: mod.name, ...report });
         }
         entry.needsInject = false;
         if (thisWindow.length) this.#log(`${label}: injected ${thisWindow.length} mod(s)`);
@@ -105,6 +107,23 @@ export class Injector {
       reports.push(...thisWindow);
     }
     return reports;
+  }
+
+  // One mod into one window. A mod that fails to even compile (a syntax error) must not stop
+  // the ones after it, and must still show up on the MOD page, so it is installed again as a
+  // placeholder that carries the message.
+  async #install(session, mod, label) {
+    const unit = mod.core ? null : unitFor(mod, label);
+    try {
+      return await session.evaluate(mod.core ? compileCore(mod) : compileMod(unit, label));
+    } catch (err) {
+      if (session.closed || mod.core) throw err;
+      const message = err.message.split('\n')[0];
+      try {
+        await session.evaluate(compileMod({ ...unit, code: null, loadError: message }, label));
+      } catch { /* the report below is what matters */ }
+      return { status: 'error', error: message };
+    }
   }
 
   close() {

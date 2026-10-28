@@ -32,6 +32,7 @@ export function statusWord(status) {
     case 'ok': return style.green('ok');
     case 'already-installed': return style.dim('already');
     case 'removed': return style.yellow('removed');
+    case 'off': return style.dim('off (switched off)');
     case 'not-ready': return style.yellow('waiting for app');
     case 'error': return style.red('error');
     default: return status;

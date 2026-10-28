@@ -1,7 +1,7 @@
 // Loading scripts from disk: the framework runtime, and the user's mods.
 //
 //   src/runtime/*.js   framework — injected first, into every window, always
-//   mods/*.js          user mods — injected after the framework
+//   mods/              user mods (single files or folders) — injected after the framework
 //
 // They share one pipeline (same wrapper, same hot reload), but they are kept apart
 // on purpose: the manager page lists the user's mods, so the code that draws that
@@ -10,6 +10,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { iconDataUrls } from './icon.js';
+import { ManifestError, parseManifest } from './manifest.js';
 import { MODS_DIR, RUNTIME_DIR } from './paths.js';
 
 // Framework scripts are registered under this prefix so they can never collide with a
@@ -53,8 +54,123 @@ async function readScripts(dir, { prefix = '', core = false } = {}) {
   return scripts;
 }
 
-export function discoverMods(dir = MODS_DIR) {
-  return readScripts(dir);
+// User mods come in two shapes, and both end up as the same record:
+//
+//   mods/name.js              a single script, runs in every window, no settings
+//   mods/name/mod.json        a package: manifest + one script per window (see manifest.js)
+//   mods/name/<scripts>       (mod.json may be left out if there is an index.js)
+//
+// { name, manifest, scripts: { <window|'*'>: code }, loadError?, signature, core: false }
+//
+// A package that cannot be read or fails validation is still returned, with `loadError`, so
+// it shows up on the MOD page as broken instead of vanishing.
+export async function discoverMods(dir = MODS_DIR) {
+  let entries;
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    if (err.code === 'ENOENT') return [];
+    throw err;
+  }
+
+  const mods = [];
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (IGNORED.test(entry.name)) continue;
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isFile() && SCRIPT_FILE.test(entry.name)) {
+      mods.push(await readSingleFile(fullPath));
+    } else if (entry.isDirectory()) {
+      const mod = await readPackage(fullPath);
+      if (mod) mods.push(mod);
+    }
+  }
+  return mods;
+}
+
+async function readSingleFile(file) {
+  const id = path.basename(file, path.extname(file));
+  const code = await fs.readFile(file, 'utf8');
+  return makeMod({
+    name: id,
+    file,
+    manifest: { id, name: id, version: null, description: null, defaultEnabled: true, settings: [] },
+    scripts: { '*': code },
+  });
+}
+
+async function readPackage(folder) {
+  const id = path.basename(folder);
+  const manifestFile = path.join(folder, 'mod.json');
+
+  let raw = {};
+  let hasManifest = true;
+  try {
+    raw = JSON.parse(await fs.readFile(manifestFile, 'utf8'));
+  } catch (err) {
+    if (err.code !== 'ENOENT') return brokenMod(id, manifestFile, `mod.json: ${err.message}`);
+    hasManifest = false;
+  }
+  // Without a manifest a folder is only a mod if it has the default script; otherwise it
+  // is just a folder (assets, notes) and not our business.
+  if (!hasManifest && !await exists(path.join(folder, 'index.js'))) return null;
+
+  let parsed;
+  try {
+    parsed = parseManifest(raw, id);
+  } catch (err) {
+    if (!(err instanceof ManifestError)) throw err;
+    return brokenMod(id, manifestFile, `mod.json: ${err.message}`);
+  }
+
+  const scripts = {};
+  for (const [windowName, relative] of Object.entries(parsed.scripts)) {
+    try {
+      scripts[windowName] = await fs.readFile(path.join(folder, relative), 'utf8');
+    } catch (err) {
+      return brokenMod(id, manifestFile, `scripts.${windowName}: cannot read ${relative} (${err.code ?? err.message})`);
+    }
+  }
+  return makeMod({ name: id, file: manifestFile, manifest: parsed.manifest, scripts });
+}
+
+// A mod that could not be loaded. It has no scripts and a manifest with just a name, so the
+// page can list it and say why.
+function brokenMod(id, file, loadError) {
+  return makeMod({
+    name: id,
+    file,
+    manifest: { id, name: id, version: null, description: null, defaultEnabled: true, settings: [] },
+    scripts: {},
+    loadError,
+  });
+}
+
+function makeMod({ name, file, manifest, scripts, loadError = null }) {
+  const digest = hash(JSON.stringify([manifest, scripts, loadError]));
+  return { name, file, core: false, manifest, scripts, loadError, version: digest, signature: digest };
+}
+
+async function exists(file) {
+  try {
+    await fs.access(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// What one window gets of a mod: always the manifest (the panel draws the settings from it
+// even though the code runs elsewhere), and the code written for that window, if any.
+// `version` covers exactly those two, so editing main.js leaves the panel's copy alone.
+export function unitFor(mod, label) {
+  const code = mod.scripts[label] ?? mod.scripts['*'] ?? null;
+  return {
+    name: mod.name,
+    manifest: mod.manifest,
+    code,
+    loadError: mod.loadError,
+    version: hash(JSON.stringify([mod.manifest, code, mod.loadError])),
+  };
 }
 
 // Framework scripts may contain __MOD_ICON_INACTIVE__ / __MOD_ICON_ACTIVE__, replaced

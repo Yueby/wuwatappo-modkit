@@ -1,78 +1,149 @@
 # Writing mods
 
-A mod is a `.js` file in `mods/`. It runs inside each app webview after the Tauri
-bootstrap is ready, in an async function — so `await` works at the top level.
-The last expression (or a `return`) is recorded as the mod's result.
+A mod is code injected into the app's webviews, plus a small description of what it shows
+on the MOD page. It comes in two shapes:
 
-Files whose names start with `_` or `.` are ignored, so you can keep fragments
-around without them loading.
+```
+mods/hello.js            a single script: runs in every window, nothing on the MOD page but a switch
+mods/auto-click/         a package: mod.json says what it is and what it exposes
+  mod.json
+  main.js                the code that runs in the main window
+```
+
+Start a package by copying `mods/_template/` and dropping the underscore. Files and folders
+starting with `_` or `.` are never loaded, so you can keep fragments around.
+
+## mod.json
+
+```json
+{
+  "name": "自动点击",
+  "version": "0.2.0",
+  "description": "按设定间隔模拟按键，增加点击数",
+  "scripts": { "main": "main.js" },
+  "settings": [
+    { "key": "running",  "type": "toggle", "title": "开始点击", "default": false, "persist": false },
+    { "key": "interval", "type": "number", "title": "点击间隔（毫秒）", "default": 200, "min": 50, "max": 5000, "step": 10 },
+    { "key": "state",    "type": "value",  "title": "状态", "default": "未运行" }
+  ]
+}
+```
+
+| field | meaning |
+|---|---|
+| `id` | optional; if given it must equal the folder name (the folder name is the id) |
+| `name`, `description`, `version` | shown on the MOD page (`name` defaults to the id) |
+| `defaultEnabled` | whether the master switch starts on; default `true` |
+| `scripts` | which file runs in which window: `{ "main": "main.js", "panel": "ui.js" }`, or `"*"` for all of them. Default: `index.js` in every window |
+| `settings` | what the MOD page shows under the mod, in order (below) |
+
+Windows are `main`, `panel`, `login`, `update`, `toast`, `about`, `oss-notice`. A mod only runs in
+the windows named in `scripts`; every window still receives the manifest, because the MOD page
+is drawn in the panel while the code usually runs in main. That is why `settings` are data, not
+code: the panel can draw them without running anything.
+
+A manifest that does not parse or does not validate is not ignored: the mod is listed on the
+MOD page as broken, with the reason. The same goes for a script that fails to compile or throws
+while starting (whatever it had already added is undone).
+
+### Settings
+
+| `type` | row on the MOD page | value the mod gets |
+|---|---|---|
+| `toggle` | on/off switch | `true` / `false` |
+| `number` | number box; clamped to `min`/`max` | a number |
+| `value` | read-only text on the right | nothing: the mod publishes it with `mod.live` |
+
+Every setting has `key` (letters, digits, `_`), `title`, an optional `description` (the subtitle),
+and for `toggle`/`number` a `default`. Two behaviours worth deciding on purpose:
+
+- **Remembered** (the default). The value survives restarts. It is stored in `localStorage`,
+  which all windows of the app share; changing it in one window reaches the others at once.
+- **`"persist": false`**. The value is reset to its default every time the mod starts (app start,
+  hot reload, or the master switch coming back on). Use it for any switch that makes the mod
+  *do* something to the account, so that it cannot be on again after a restart without the user
+  turning it on.
+
+Stored values are validated against the manifest on every read: a hand-edited or older value
+cannot give the mod a string where it expects a number.
+
+### The master switch
+
+Every mod gets a switch on its own row of the MOD page, remembered across restarts. Off means
+the mod's code is not running at all: its timers, styles and rows are torn down (everything
+registered with `mod.onDispose`), and its settings are hidden. Switching it on starts it again.
+It is separate from a feature switch such as "开始点击": the master switch is whether the mod is
+loaded, the setting is what it is doing.
 
 ## API
 
+Inside a mod script, `mod` is:
+
 ```js
-mod.invoke(cmd, args?)      // call a backend Tauri command, returns a promise
-mod.css(text)               // inject a stylesheet; returns a remover function
-mod.entry({ title, description?, <control> })   // add a row to the MOD page (see below)
-mod.onDispose(fn)           // run fn when this mod is unloaded (reload, delete, failure)
-mod.onEvent(name, fn)       // subscribe to a backend event
-mod.waitFor(selector, opts) // resolve when an element appears (MutationObserver)
-mod.log(...args)            // console.log, prefixed with the mod name
-mod.warn(...args)           // same, as a warning
+mod.config.get(key)            // current value of a declared setting
+mod.config.set(key, value)     // change it (stored, and every window is told)
+mod.config.onChange(key, fn)   // fn(next, previous), whichever window changed it
+mod.live(key, value)           // publish the text of a `value` row; null clears it
+mod.invoke(cmd, args?)         // call a backend Tauri command, returns a promise
+mod.onEvent(name, fn)          // subscribe to a backend event
+mod.css(text)                  // inject a stylesheet; returns a remover function
+mod.waitFor(selector, opts)    // resolve when an element appears (MutationObserver)
+mod.onDispose(fn)              // run fn when the mod stops: reload, deletion, master switch, failure
+mod.entry({ title, ... })      // add a row from code (below)
+mod.log(...args)               // console.log, prefixed with the mod name
+mod.warn(...args)              // same, as a warning
 ```
 
-### The MOD page
+A key that is not declared in `mod.json` throws, on purpose: a typo should be an error, not a
+setting that always reads its default.
 
-The settings panel has a **MOD** entry in its left navigation. It is part of the
-framework (`src/runtime/panel-tab.js`), not a mod: it is injected into every window
-before any mod runs, so `mod.entry` is always available, and it cannot be removed by
-deleting something from `mods/`.
+**State and timers belong in the window that runs the mod; the MOD page only shows and changes
+settings.** The page and the mod talk through `mod.config` and `mod.live`, which work across
+windows, so the mod never needs to know where the page is.
 
-The page opens with the same header the 联机 page has, which is the one place the app puts a
-title beside a count: `MOD（3）` (3 mods loaded), and under it the overall state — `全部正常`,
-or `1 个出错`. Below that is a list of rows like the settings page: first one row per loaded
-mod (its name, and "正常" / "出错" on the right; a failed mod shows its error as the subtitle),
-then every row added through `mod.entry`. Everything uses the app's own classes, so fonts,
-colours, spacing and scrollbar match without the mod writing any HTML or CSS. There are no
-section headings and no red or green: the app has neither, and the page does not invent them.
+### Rows added from code
+
+When a manifest cannot say it, a mod that runs *in the panel window* can add a row itself:
 
 ```js
-let enabled = false;
-
 mod.entry({
-  title: '自动点击',                                  // the row's title
-  description: () => enabled ? '运行中' : '已停止',    // the subtitle under it (optional)
-  toggle: { value: () => enabled, onChange: v => { enabled = v; window.modkit.changed(); } },
+  title: '清空缓存',
+  button: { label: '清空', onClick: () => clear() },
 });
 ```
 
-Pick one control per row:
+Pick one control: `toggle: { value, onChange(next) }`, `button: { label, onClick, disabled? }`,
+`number: { value, min?, max?, step?, onChange(next) }`, `value: 'text'`, or
+`render: () => HTMLElement` (the app's classes `setting-btn`, `setting-input`, `setting-range`,
+`setting-value` are available). Any field may be a value or a function returning one; call
+`window.modkit.changed()` after the state changes to redraw. Rows appear under their mod's own
+row while it is on, and go away when it stops. A row is invisible when the mod runs only in
+another window, which is why settings are declared in the manifest instead.
 
-| field | control |
-|---|---|
-| `toggle: { value, onChange(next) }` | on/off switch |
-| `button: { label, onClick, disabled? }` | button |
-| `number: { value, min?, max?, step?, onChange(next) }` | number input; the result is clamped to min/max |
-| `value: 'text'` | read-only figure on the right, like 累计点击数 |
-| `render: () => HTMLElement` | anything else; the mod builds the element (the app's classes `setting-btn`, `setting-input`, `setting-range`, `setting-value` are available) |
+## The MOD page
 
-- Any field may be a plain value **or a function returning one**. The page is redrawn from the
-  entry each time, so use a function for whatever changes (`value: () => enabled`).
-- Keep the state in the mod and call `window.modkit.changed()` after it changes; that
-  redraws the page (scroll position is kept). While another page is showing, nothing is drawn.
-- A row is removed automatically when its mod is unloaded, including a mod that throws
-  partway through: whatever it had already added is undone, and the error shows on the page.
+The settings panel has a **MOD** entry in its left navigation. It is part of the framework
+(`src/runtime/panel-tab.js`), not a mod: it is injected into every window before any mod runs,
+and it cannot be removed by deleting something from `mods/`.
 
-### Loading and unloading
+The page opens with the same header the 联机 page has, the one place the app puts a title beside
+a count: `MOD（3）` (3 mods loaded), and under it the overall state — `全部正常`, or `1 个出错`.
+Below it, for each mod: its own row (name, description or the error, and the master switch), then
+— while it is on — its settings in the order the manifest lists them. Mods are told apart by
+spacing only: the app has no section headings, no red and no green, and the page invents none.
+Everything uses the app's own classes, so fonts, colours and scrollbar match without a mod
+writing any HTML or CSS.
 
-Editing a mod file reloads it in every open window: the old copy is disposed first
-(its cards, styles and anything registered with `mod.onDispose` go), then the new one
-runs. Deleting a mod file unloads it the same way on the next pass of `watch` (or
-the next `run`). Register timers and listeners with `mod.onDispose` or they will keep
-running after a reload.
+## Loading and unloading
 
-Mods run **once per window**, not once per app. There are seven windows:
-`main`, `panel`, `login`, `update`, `toast`, `about`, `oss-notice`. Most mods
-should start with a guard:
+Editing a mod file reloads it: the old copy is disposed first, then the new one runs. Editing one
+window's script reloads only that window's copy. Deleting a mod unloads it on the next pass of
+`watch` (or the next `run`). Register timers and listeners with `mod.onDispose` (the
+`mod.config.onChange` and `mod.css` helpers do it for you), or they keep running after a reload.
+
+A mod script's top level may `await` and `return`. A mod runs **once per window that has a script
+for it**, not once per app; a single-file mod has one for all seven windows, so start it with a
+guard:
 
 ```js
 if (location.hash !== '#/panel') return;   // this mod only cares about the panel
@@ -129,14 +200,14 @@ over CDP:
 node src/cli.js eval 'document.getElementById("modkit-tab")?.innerText'
 ```
 
-Check what is actually installed, per window:
+Check what is actually installed, per window (`idle` means the mod has no script for that window):
 
 ```sh
 node src/cli.js state
 ```
 
-A mod that throws does not break the others: its failure is recorded as
-`{ status: 'error' }` and logged, and the remaining mods still run.
+A mod that throws does not break the others: its failure is shown on the MOD page and logged,
+and the remaining mods still run.
 
 ## Reload behaviour
 
@@ -151,7 +222,8 @@ A mod lives in the page's JavaScript world. That gives it:
 
 - full DOM/CSS control over every window;
 - every registered Tauri backend command, with the app's privileges;
-- `localStorage` of the test profile (remember: separate from the real install);
+- `localStorage`, shared by every window of the app (it is where the login and the modkit's
+  settings live), and `BroadcastChannel` between windows;
 - network requests from the page, with the user's session cookies.
 
 It does **not** give it: Rust-side logic, the input hook, the scheduled task, the
@@ -160,9 +232,8 @@ updater, or anything else outside the webview. Those need native work (see
 
 ## Rules of thumb
 
-- Start with a `location.hash` guard.
-- Keep timers in a module-scope variable and clear them on `hashchange` if the
-  window reuses the document.
-- Anything user-visible: make it off by default with a toggle.
-- Anything that spends in-game resources or reaches the server: treat as real and
-  test deliberately, not in a loop.
+- A single-file mod starts with a `location.hash` guard; a package names its windows in `scripts`.
+- Anything user-visible: off by default.
+- Anything that acts on the account (clicks, chests, requests): a feature switch with
+  `"persist": false`, so it only ever runs because the user turned it on this session. Treat it
+  as real, and test it deliberately rather than in a loop.

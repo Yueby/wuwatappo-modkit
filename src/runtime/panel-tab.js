@@ -23,7 +23,6 @@ const BLOCK_SELECTOR = '.module-block';
 const TAB_ID = 'modkit-tab';
 const VIEW_ID = 'modkit-view';
 const BODY_ID = 'modkit-view-body';
-const CORE_PREFIX = '@core/';
 
 // Two images, like the app's own icons: a light one for the unselected tab (it has to
 // read on the dark sidebar) and a dark one for the selected tab (it sits on the bright
@@ -192,11 +191,9 @@ function controlFor(entry) {
 
 // --- sections ----------------------------------------------------------------
 
-// User mods only: framework scripts are not something the user installed.
+// User mods only (kit.mods never holds framework scripts), by the name the user sees.
 function loadedMods() {
-  return Object.entries(window.__wuwaMods ?? {})
-    .filter(([name]) => !name.startsWith(CORE_PREFIX))
-    .sort(([a], [b]) => a.localeCompare(b));
+  return [...kit.mods.entries()].sort(([, a], [, b]) => a.name.localeCompare(b.name));
 }
 
 // The page title is the room page's own header (div.room-info), which is the one place
@@ -204,7 +201,7 @@ function loadedMods() {
 // under it. Ours reads MOD（3） with the overall state underneath. 20px / 18px, colours and
 // line heights all come from those classes.
 function renderHeader(body, mods) {
-  const failed = mods.filter(([, state]) => state?.status === 'error').length;
+  const failed = mods.filter(([id]) => kit.stateOf(id).status === 'error').length;
   const head = el('div', 'room-info');
   head.appendChild(el('div', 'room-qty', `MOD（${mods.length}）`));
   head.appendChild(el('div', 'room-number',
@@ -216,37 +213,84 @@ function renderHeader(body, mods) {
   body.appendChild(head);
 }
 
-// One row per loaded mod: its name, and on the right whether it is working. A failure
-// shows its message as the row's subtitle. State is said in words, not colour — the app's
-// palette has no red or green to borrow.
-function renderMods(body, mods) {
-  for (const [name, state] of mods) {
-    const status = state?.status ?? 'unknown';
-    const failed = status === 'error';
-    body.appendChild(row({
-      title: name,
-      description: failed ? state.error : null,
-      control: controls.value(status === 'ok' ? '正常' : failed ? '出错' : '加载中'),
-    }));
+// A mod is a group of rows: its own row first — name, what it does, and the master switch on
+// the right — then, while it is switched on, the settings it declares and any rows it added
+// from code. A failure replaces the subtitle with its message; it is said in words, not
+// colour, because the app's palette has no red or green to borrow.
+//
+// The groups are told apart by spacing alone (the 28px the room page puts under its header),
+// since the app has no section headings and the page does not invent them.
+const GROUP_GAP = '28px';
+
+function renderMod(body, id, manifest) {
+  const state = kit.stateOf(id);
+  const enabled = kit.isEnabled(id);
+
+  const rows = [row({
+    title: manifest.name,
+    description: state.status === 'error' ? `出错：${state.error}` : manifest.description,
+    control: controls.toggle({ value: enabled, onChange: on => kit.setEnabled(id, on) }),
+  })];
+
+  if (enabled) {
+    for (const def of manifest.settings) rows.push(settingRow(id, def));
+    for (const entry of kit.entries.filter(e => e.owner === id)) rows.push(entryRow(entry));
   }
+
+  rows[rows.length - 1].style.marginBottom = GROUP_GAP;
+  body.append(...rows);
 }
 
-function renderEntries(body) {
-  for (const entry of kit.entries) {
-    let control = null;
-    let failure = null;
-    try {
-      control = controlFor(entry);
-    } catch (err) {
-      failure = `渲染失败：${err.message ?? err}`;
-      console.warn('[modkit] entry render failed', entry.title, err);
-    }
-    body.appendChild(row({
-      title: resolve(entry.title),
-      description: failure ?? resolve(entry.description),
-      control,
-    }));
+// A row for something the mod declared in mod.json. Values are read and written through the
+// framework, which is what makes them persist and reach the window the mod runs in.
+function settingRow(id, def) {
+  let control;
+  if (def.type === 'toggle') {
+    control = controls.toggle({
+      value: () => kit.getConfig(id, def.key),
+      onChange: next => kit.setConfig(id, def.key, next),
+    });
+  } else if (def.type === 'number') {
+    control = controls.number({
+      value: () => kit.getConfig(id, def.key),
+      min: def.min, max: def.max, step: def.step,
+      onChange: next => kit.setConfig(id, def.key, next),
+    });
+  } else {
+    control = controls.value(liveText(id, def));
+    control.dataset.modkitId = id;
+    control.dataset.modkitKey = def.key;
   }
+  return row({ title: def.title, description: def.description, control });
+}
+
+const liveText = (id, def) => String(kit.live.get(id)?.get(def.key) ?? def.default ?? '—');
+
+// A figure a running mod publishes changes often; patch just that text instead of redrawing
+// the page, which would also take focus away from an input the user is typing in.
+kit.onLive = (id, key) => {
+  const manifest = kit.mods.get(id);
+  const def = manifest?.settings.find(s => s.key === key);
+  if (!def) return;
+  for (const node of document.querySelectorAll('#' + BODY_ID + ' [data-modkit-id]')) {
+    if (node.dataset.modkitId === id && node.dataset.modkitKey === key) node.textContent = liveText(id, def);
+  }
+};
+
+function entryRow(entry) {
+  let control = null;
+  let failure = null;
+  try {
+    control = controlFor(entry);
+  } catch (err) {
+    failure = `渲染失败：${err.message ?? err}`;
+    console.warn('[modkit] entry render failed', entry.title, err);
+  }
+  return row({
+    title: resolve(entry.title),
+    description: failure ?? resolve(entry.description),
+    control,
+  });
 }
 
 function renderView() {
@@ -259,8 +303,7 @@ function renderView() {
   body.textContent = '';
   const mods = loadedMods();
   renderHeader(body, mods);
-  renderMods(body, mods);
-  renderEntries(body);
+  for (const [id, manifest] of mods) renderMod(body, id, manifest);
   body.scrollTop = scrolled;
 }
 
@@ -294,6 +337,7 @@ function showModView() {
   // replace that layout. Dropping the inline value lets the app's own rule apply.
   view.style.removeProperty('display');
   renderView();
+  kit.hello();   // the windows running the mods answer with their state, which redraws
 }
 
 function hideModView() {
@@ -454,7 +498,7 @@ mod.onDispose(() => observer.disconnect());
 mod.onDispose(() => classWatcher.disconnect());
 mod.onDispose(() => { for (const [btn, handler] of boundTabs) btn.removeEventListener('click', handler); boundTabs.clear(); });
 mod.onDispose(() => clearInterval(retry));
-mod.onDispose(() => { kit.onChange = null; });
+mod.onDispose(() => { kit.onChange = null; kit.onLive = null; });
 mod.onDispose(() => document.getElementById(TAB_ID)?.remove());
 mod.onDispose(() => document.getElementById(VIEW_ID)?.remove());
 mod.onDispose(() => document.getElementById(STYLE_ID)?.remove());

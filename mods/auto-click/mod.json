@@ -1,0 +1,28 @@
+{
+  "name": "自动点击",
+  "version": "0.2.0",
+  "description": "按设定间隔模拟按键，增加点击数",
+  "scripts": { "main": "main.js" },
+  "settings": [
+    {
+      "key": "running",
+      "type": "toggle",
+      "title": "开始点击",
+      "description": "开启后按设定间隔模拟按键。重启或重载后恢复为关闭，不会自己再开",
+      "default": false,
+      "persist": false
+    },
+    {
+      "key": "interval",
+      "type": "number",
+      "title": "点击间隔（毫秒）",
+      "description": "50–5000，越小点得越快",
+      "default": 200,
+      "min": 50,
+      "max": 5000,
+      "step": 10
+    },
+    { "key": "state", "type": "value", "title": "状态", "default": "未运行" },
+    { "key": "sent", "type": "value", "title": "本次已发送", "default": "0 次" }
+  ]
+}
