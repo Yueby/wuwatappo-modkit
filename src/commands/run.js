@@ -12,6 +12,11 @@ export default async function run(argv) {
   const mods = await discoverAll(options.modsDir);
   if (!mods.some(m => !m.core)) log(style.dim(`no mods in ${options.modsDir} — injecting the framework only`));
 
+  const withNodePart = mods.filter(m => m.hostFile).map(m => m.name);
+  if (withNodePart.length) {
+    log(style.yellow(`${withNodePart.join(', ')}: Node part not started (it runs only under watch, which keeps it alive)`));
+  }
+
   const injector = new Injector({ port: options.port, log: () => {} });
   injector.setMods(mods);
 

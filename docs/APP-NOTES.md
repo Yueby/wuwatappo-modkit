@@ -302,3 +302,18 @@ Measured on the running app, because the mod system's cross-window design rests 
   are only sent over the channel, so a restart cannot leave stale ones behind.
 - The profile is the app's own, so `clear_all_browsing_data` (which wipes the login) wipes the
   stored settings with it.
+
+## Calling out of a window
+
+The loader can be called by the pages, not only the other way round: `Runtime.addBinding` adds a
+function to every window (the app's WebView2 supports it), and a call to it arrives as a
+`Runtime.bindingCalled` event on the DevTools session. This is how a mod's Node part is reached
+(see docs/MODDING.md). Measured on the running app:
+
+- on `main` and `panel` the call arrives with its payload intact;
+- **the function stays in the window after the session that added it has closed** (a new session
+  still finds `typeof binding === 'function'`). Its being there therefore says nothing about
+  whether anyone is listening, which is why the loader beats every 2 s and a page only calls out
+  within 6 s of the last beat;
+- `Runtime.removeBinding`, sent from another session, did not take it out of the page that was
+  already open; `delete window.<name>` did. Probes that add a binding must clean up like that.

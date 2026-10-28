@@ -20,6 +20,9 @@
 //               BroadcastChannel. Never stored, so a restart cannot leave stale ones behind.
 //   entries     rows a mod adds from its own code (mod.entry), for the cases a manifest
 //               cannot describe. Only visible if the mod runs in the panel window.
+//   host        the line to a mod's Node part (src/lib/host.js), which runs in the loader's
+//               process: calls to it, what it sends back, and telling it when the switch or a
+//               setting changes. It exists only while the loader is resident.
 //
 // The registry outlives a reload of this script (`??=`), so what mods already did is not
 // lost while the framework is being edited. Methods are always called as kit.x(), never
@@ -33,6 +36,9 @@ kit.units ??= new Map();      // id -> this window's installation of it
 kit.reports ??= new Map();    // id -> Map(window label -> { status, error }), from every window
 kit.live ??= new Map();       // id -> Map(key -> value), from every window
 kit.watchers ??= [];          // { id, key, fn }: mods listening for a setting to change
+kit.hostCalls ??= new Map();  // callId -> { resolve, reject, timer }: calls to a Node part, unanswered
+kit.hostListeners ??= [];     // { id, name, fn }: mod.host.on
+kit.callSeq ??= 0;
 kit.onChange ??= null;        // redraw hook: set by whatever draws the MOD page
 kit.onLive ??= null;          // (id, key, value): a live figure moved; cheaper than a redraw
 
@@ -175,6 +181,7 @@ function notify(id, key, value, previous) {
       console.warn(`[${id}] onChange(${key}) threw`, err);
     }
   }
+  if (kit.mods.get(id)?.host) kit.toHost({ t: 'config', mod: id, key, value });
   kit.changed();
 }
 
@@ -206,6 +213,9 @@ kit.isEnabled = id => {
 
 kit.setEnabled = (id, enabled) => {
   localStorage.setItem(storageKey('on', id), enabled ? '1' : '0');
+  // The Node part first: the page script that apply() starts may call it at once, and a call
+  // to a part that has not been told it is wanted would fail.
+  kit.units.get(id)?.tellHost?.('enabled');
   kit.units.get(id)?.apply();
   kit.changed();
 };
@@ -216,6 +226,7 @@ function onStorage(event) {
   const [, kind, id] = event.key.split(':');
 
   if (kind === 'on') {
+    kit.units.get(id)?.tellHost?.('enabled');     // before apply(), for the reason in setEnabled()
     kit.units.get(id)?.apply();
     kit.changed();
     return;
@@ -246,6 +257,81 @@ kit.setLive = (id, key, value) => {
   kit.onLive?.(id, key, value ?? null);
 };
 
+// --- the Node part --------------------------------------------------------------
+
+// Added to this window by the loader's CDP session; spelled the same in src/lib/host.js.
+// The function outlives the session that added it (measured), so its being there does not mean
+// the loader is: the loader says so every few seconds (hostBeat), and a call is only made while
+// that was recent. Otherwise it would wait out its timeout for nobody.
+const HOST_BINDING = '__modkitHost';
+const HOST_CALL_TIMEOUT_MS = 30_000;
+const HOST_STALE_MS = 6_000;
+
+kit.resetTransient = resetTransient;
+
+kit.hostBeat = () => { kit.hostSeen = Date.now(); };
+kit.hostAlive = () => typeof window[HOST_BINDING] === 'function' && Date.now() - (kit.hostSeen ?? 0) < HOST_STALE_MS;
+
+kit.toHost = message => {
+  if (typeof window[HOST_BINDING] !== 'function') return false;
+  try {
+    window[HOST_BINDING](JSON.stringify(message));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// mod.host.call(): resolves with what the handler returned, rejects with its message.
+kit.hostCall = (id, name, arg, label) => new Promise((resolve, reject) => {
+  const callId = `${id}#${++kit.callSeq}`;
+  const timer = setTimeout(() => {
+    kit.hostCalls.delete(callId);
+    reject(new Error(`the Node part did not answer "${name}" in ${HOST_CALL_TIMEOUT_MS / 1000} s`));
+  }, HOST_CALL_TIMEOUT_MS);
+  kit.hostCalls.set(callId, { resolve, reject, timer });
+
+  if (!kit.hostAlive() || !kit.toHost({ t: 'call', mod: id, window: label, name, arg, callId })) {
+    clearTimeout(timer);
+    kit.hostCalls.delete(callId);
+    reject(new Error('the Node part is not running (the loader only runs it while "watch" is running)'));
+  }
+});
+
+// The loader's answer, evaluated in this window.
+kit.hostReply = (callId, ok, value) => {
+  const call = kit.hostCalls.get(callId);
+  if (!call) return;
+  kit.hostCalls.delete(callId);
+  clearTimeout(call.timer);
+  if (ok) call.resolve(value);
+  else call.reject(new Error(String(value)));
+};
+
+// The Node part says something: mod.host.on(name, fn).
+kit.fromHost = (id, name, arg) => {
+  for (const listener of [...kit.hostListeners]) {
+    if (listener.id !== id || listener.name !== name) continue;
+    try {
+      listener.fn(arg);
+    } catch (err) {
+      console.warn(`[${id}] host.on(${name}) threw`, err);
+    }
+  }
+};
+
+// How the Node part is doing, shown on the MOD page like any window's state. null clears it.
+kit.hostReport = (id, status, error) => {
+  if (status == null) kit.reports.get(id)?.delete('host');
+  else setReport(id, 'host', { status, error });
+  kit.changed();
+};
+
+// The loader has just started watching: every mod with a Node part says where it stands.
+kit.hostHello = () => {
+  for (const unit of kit.units.values()) unit.tellHost?.('hello');
+};
+
 // --- installing a mod -----------------------------------------------------------
 
 // `run` is the mod's code as an async function of `mod`, or null when the mod has nothing to
@@ -262,7 +348,7 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
   try { previous?.dispose?.(); } catch (err) { console.warn('dispose failed', err); }
 
   const record = { status: 'idle', error: null, version, dispose: null };
-  const unit = { live: new Map(), apply, announce };
+  const unit = { live: new Map(), apply, announce, tellHost };
   let session = null;   // the running copy: { disposers, dead }, or null while not running
 
   function report(status, error = null) {
@@ -280,6 +366,20 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
     if (!run && !loadError) return;
     kit.post({ type: 'status', id, window: label, status: record.status, error: record.error });
     for (const [key, value] of unit.live) kit.post({ type: 'live', id, key, value });
+  }
+
+  // Tell the mod's Node part where it stands: the master switch and the settings (hello, which
+  // every window sends and the loader sorts out), or only the switch.
+  function tellHost(kind) {
+    if (!manifest.host) return;
+    if (kind === 'enabled') {
+      kit.toHost({ t: 'enabled', mod: id, enabled: kit.isEnabled(id) });
+      return;
+    }
+    const config = Object.fromEntries(manifest.settings
+      .filter(s => s.type !== 'value')
+      .map(s => [s.key, kit.getConfig(id, s.key)]));
+    kit.toHost({ t: 'hello', mod: id, window: label, enabled: kit.isEnabled(id), config });
   }
 
   function teardown() {
@@ -367,6 +467,26 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
         kit.setLive(id, key, value);
       },
 
+      // The mod's Node part ("modkit.host" in package.json), which runs in the loader's process.
+      //   call(name, arg)  asks it something; resolves with its answer, rejects with its error
+      //   on(name, fn)     hears what it sends with host.emit(name, arg)
+      host: {
+        call(name, arg) {
+          if (!manifest.host) return Promise.reject(new Error(`${id} has no Node part (set "modkit.host" in package.json)`));
+          return kit.hostCall(id, name, arg, label);
+        },
+        on(name, fn) {
+          const listener = { id, name, fn };
+          kit.hostListeners.push(listener);
+          const remove = () => {
+            const i = kit.hostListeners.indexOf(listener);
+            if (i >= 0) kit.hostListeners.splice(i, 1);
+          };
+          onDispose(remove);
+          return remove;
+        },
+      },
+
       // A row added from code, for what a manifest cannot say. Only drawn when the mod runs
       // in the panel window.
       //   { title, description?, <one control> }, control being one of
@@ -420,6 +540,7 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
   registry[id] = record;
   kit.mods.set(id, manifest);
   kit.units.set(id, unit);
+  tellHost('hello');
 
   if (loadError) report('error', loadError);
   else await apply();

@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import vm from 'node:vm';
 import { ManifestError, parseManifest } from '../src/lib/manifest.js';
 import { discoverCore, discoverMods, unitFor } from '../src/lib/mods.js';
@@ -70,6 +71,8 @@ test('the manifest of a mod is rejected for the mistakes that would otherwise go
     [{ modkit: { windows: { main: '../x.js' } } }, /inside the mod's folder/],
     [{ modkit: { windows: { main: 'C:\\x.js' } } }, /inside the mod's folder/],
     [{ modkit: { windows: {} } }, /windows is empty/],
+    [{ modkit: { host: '../outside.js' } }, /modkit\.host.*inside the mod's folder/],
+    [{ modkit: { host: 3 } }, /modkit\.host/],
     [{ modkit: { defaultEnabled: 'no' } }, /defaultEnabled/],
     ...[
       [[{ key: 'a', type: 'toggle', title: 'A' }, { key: 'a', type: 'toggle', title: 'A' }], /used twice/],
@@ -141,6 +144,59 @@ test('mods are found as single files and as folders; helpers and plain folders a
   }
 });
 
+test('a Node part: only the page is told, a mod may have no page script, and one without it is unchanged', () => {
+  const withHost = parseManifest({ modkit: { host: 'host.js' } }, 'demo');
+  assert.equal(withHost.host, 'host.js');
+  assert.equal(withHost.manifest.host, true);
+  assert.deepEqual(withHost.windows, {}, 'no page script is needed when there is a Node part');
+  assert.deepEqual(parseManifest({ modkit: { host: 'host.js', windows: {} } }, 'demo').windows, {});
+
+  // A manifest without one must stay byte-identical to what it was before the feature existed,
+  // or every installed mod would count as changed and be reloaded.
+  const without = parseManifest({}, 'demo');
+  assert.equal(without.host, null);
+  assert.equal('host' in without.manifest, false);
+});
+
+test('the Node part of a package: found, fingerprinted by what it can import, and checked to exist', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'modkit-host-mods-'));
+  const pause = () => new Promise(resolve => setTimeout(resolve, 1100));     // file times are only so fine
+  try {
+    const mod = path.join(dir, 'tool');
+    await fs.mkdir(path.join(mod, 'lib'), { recursive: true });
+    await fs.mkdir(path.join(mod, 'node_modules', 'dep'), { recursive: true });
+    await fs.writeFile(path.join(mod, 'package.json'), JSON.stringify({
+      type: 'module', modkit: { host: 'host.js', windows: { main: 'main.js' } },
+    }));
+    await fs.writeFile(path.join(mod, 'host.js'), 'export default () => {}');
+    await fs.writeFile(path.join(mod, 'lib', 'helper.js'), 'export const x = 1');
+    await fs.writeFile(path.join(mod, 'main.js'), 'return 1;');
+    await fs.writeFile(path.join(mod, 'node_modules', 'dep', 'index.js'), 'x');
+
+    await fs.mkdir(path.join(dir, 'missing'));
+    await fs.writeFile(path.join(dir, 'missing', 'package.json'), JSON.stringify({ modkit: { host: 'nope.js' } }));
+
+    const first = await discoverMods(dir);
+    const tool = first.find(m => m.name === 'tool');
+    assert.equal(tool.hostFile, path.join(mod, 'host.js'));
+    assert.equal(tool.manifest.host, true);
+    assert.match(first.find(m => m.name === 'missing').loadError, /modkit\.host: cannot read nope\.js/);
+
+    await pause();
+    await fs.writeFile(path.join(mod, 'main.js'), 'return 2;');                   // a page script
+    await fs.writeFile(path.join(mod, 'node_modules', 'dep', 'index.js'), 'y');    // something installed
+    const afterPageEdit = (await discoverMods(dir)).find(m => m.name === 'tool');
+    assert.equal(afterPageEdit.hostVersion, tool.hostVersion, 'neither restarts the Node part');
+    assert.notEqual(afterPageEdit.signature, tool.signature, 'though the page script did change');
+
+    await fs.writeFile(path.join(mod, 'lib', 'helper.js'), 'export const x = 2');  // something it imports
+    const afterImport = (await discoverMods(dir)).find(m => m.name === 'tool');
+    assert.notEqual(afterImport.hostVersion, tool.hostVersion, 'a file it can import changed: restart');
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('every mod in mods/ loads cleanly, and the page code generated for it parses', async () => {
   const mods = await discoverMods(MODS_DIR);
   for (const mod of mods) {
@@ -151,13 +207,27 @@ test('every mod in mods/ loads cleanly, and the page code generated for it parse
   }
 });
 
-test('the template mod is valid once the underscore is dropped, so copying it works', async () => {
-  const folder = path.join(MODS_DIR, '_template');
-  const raw = JSON.parse(await fs.readFile(path.join(folder, 'package.json'), 'utf8'));
-  const { manifest, windows } = parseManifest(raw, 'template');
-  for (const file of Object.values(windows)) {
-    const code = await fs.readFile(path.join(folder, file), 'utf8');
-    new vm.Script(compileMod({ name: 'template', manifest, code, version: '1' }, 'main'));
+test('the templates are valid once the underscore is dropped, so copying one works', async () => {
+  const templates = (await fs.readdir(MODS_DIR, { withFileTypes: true }))
+    .filter(e => e.isDirectory() && e.name.startsWith('_template'));
+  assert.ok(templates.length >= 2, 'a template with a Node part, and one without');
+
+  for (const { name: folderName } of templates) {
+    const folder = path.join(MODS_DIR, folderName);
+    const id = folderName.slice(1);                              // what it is called once copied and renamed
+    const raw = JSON.parse(await fs.readFile(path.join(folder, 'package.json'), 'utf8'));
+    const { manifest, windows, host } = parseManifest(raw, id);
+
+    for (const file of Object.values(windows)) {
+      const code = await fs.readFile(path.join(folder, file), 'utf8');
+      new vm.Script(compileMod({ name: id, manifest, code, version: '1' }, 'main'), { filename: `${folderName}/${file}` });
+    }
+    if (host) {
+      // Importing runs nothing but the module's top level; the function is only called by the loader.
+      const module = await import(pathToFileURL(path.join(folder, host)).href);
+      assert.equal(typeof (module.default ?? module.start), 'function', `${folderName}/${host} exports a function`);
+      assert.equal(raw.type, 'module', `${folderName} says "type": "module", or Node warns on every start`);
+    }
   }
 });
 

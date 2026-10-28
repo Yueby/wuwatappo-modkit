@@ -44,7 +44,8 @@ the window-to-file map is `modkit.windows`).
 | `displayName` | what the MOD page shows (defaults to `name`) |
 | `description`, `version` | shown on the MOD page |
 | `modkit.defaultEnabled` | whether the master switch starts on; default `true` |
-| `modkit.windows` | which file runs in which window: `{ "main": "main.js", "panel": "ui.js" }`, or `"*"` for all of them. Default: `index.js` in every window |
+| `modkit.windows` | which file runs in which window: `{ "main": "main.js", "panel": "ui.js" }`, or `"*"` for all of them. Default: `index.js` in every window, or none when there is a Node part |
+| `modkit.host` | the mod's Node part, an ES module in the folder: `"host.js"` (see [The Node part](#the-node-part)) |
 | `modkit.settings` | what the MOD page shows under the mod, in order (below) |
 
 Other top-level fields (`author`, `license`, `private`, ...) are allowed and ignored. An
@@ -102,6 +103,8 @@ mod.config.get(key)            // current value of a declared setting
 mod.config.set(key, value)     // change it (stored, and every window is told)
 mod.config.onChange(key, fn)   // fn(next, previous), whichever window changed it
 mod.live(key, value)           // publish the text of a `value` row; null clears it
+mod.host.call(name, arg)       // ask the mod's Node part something; a promise of its answer
+mod.host.on(name, fn)          // hear what the Node part sends
 mod.invoke(cmd, args?)         // call a backend Tauri command, returns a promise
 mod.onEvent(name, fn)          // subscribe to a backend event
 mod.css(text)                  // inject a stylesheet; returns a remover function
@@ -158,6 +161,79 @@ user leaves the MOD page. Values a running mod publishes with `mod.live` update 
 Everything uses the app's own classes, so fonts, colours and scrollbar match without a mod
 writing any HTML or CSS. The app has no section headings, no red and no green, and the page
 invents none.
+
+## The Node part
+
+A page cannot write a file, open a socket without CORS, start a program, or use a package from
+npm. A mod that needs any of that has a second half that runs in Node, in the loader's process:
+
+```json
+{
+  "name": "notes",
+  "type": "module",
+  "modkit": { "host": "host.js", "windows": { "main": "main.js" } }
+}
+```
+
+```js
+// host.js: runs in Node, in a worker thread of its own
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+export default async function (host) {
+  const file = path.join(host.dataDir, 'notes.txt');          // a folder for this mod; it exists
+  host.handle('save', async text => { await fs.appendFile(file, text + '\n'); return 'ok'; });
+  host.log('started');
+  return () => host.log('stopped');                            // optional: runs when it stops
+}
+```
+
+```js
+// main.js: the page half
+const answer = await mod.host.call('save', 'hello');           // 'ok'
+mod.host.on('saved', info => mod.log(info));                   // what host.emit('saved', ...) sends
+```
+
+Copy `mods/_template-node/` to start. A package with a Node part needs **`"type": "module"`** in its
+package.json (Node treats the folder as a package, and warns on every start otherwise).
+
+**It only exists while `watch` is running.** The loader process is what hosts it, so a one-shot
+`run` does not start it (and says so), and it stops with `watch`, or when the app is closed. The page
+half keeps working without it; `mod.host.call` then rejects with a message that says why (within
+a few seconds of the loader going: it tells the pages it is alive every 2 s, and a page does not
+wait for a loader it has not heard from).
+
+**When it runs.** While the mod's master switch is on. Switching the mod off stops it (its dispose
+hooks run first; one that does not finish within 2 s is killed), switching it on starts a fresh
+copy. Editing any source file of the mod's folder that the Node part could import (`.js`, `.mjs`,
+`.cjs`, `.json`, not `node_modules`, not the page scripts) restarts it with the new code, imported
+files included. A page script edit does not. If it throws on start or crashes later it is
+marked broken on the MOD page with the message, and stays stopped until its files change or the
+switch is turned off and on. It is a thread, so stopping it ends every timer, socket and child process
+it left behind. Settings with `"persist": false` are reset when it starts, as for a page script.
+
+### `host` in host.js
+
+```js
+host.id, host.dir, host.dataDir           // the mod's name, its folder, a folder to keep files in
+host.log(...), host.warn(...)             // to the loader's output, prefixed with the mod name
+host.handle(name, (arg, { window }) => value)   // answers mod.host.call(name, arg); may be async
+host.emit(name, arg, { window? })         // to mod.host.on(name, fn): every window, or one
+host.evaluate(window, javascript)         // run JavaScript in a window ('main', 'panel', ...) and get the value back
+host.config.get(key)                      // the mod's settings, as the MOD page shows them; immediate
+host.config.set(key, value)               // store one (through the page, so every window hears of it)
+host.config.onChange(key, (next, previous) => ...)
+host.onDispose(fn)                        // runs when it stops
+```
+
+Arguments, answers and events are copied between threads and windows as JSON-able data. A call that
+the Node part does not answer within 30 s rejects. A call made while the part is still starting
+waits for it.
+
+**Trust.** The Node part is ordinary Node with no sandbox: it can do anything your user account can.
+That is the same standing a page script has (it can call any command the app has), but it is worth
+remembering when installing someone else's mod. The usual rule applies to it as to a page script:
+anything that acts on the account is behind a `"persist": false` switch.
 
 ## Loading and unloading
 

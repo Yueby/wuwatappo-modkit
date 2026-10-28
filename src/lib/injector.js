@@ -8,6 +8,7 @@ import { CDPSession } from './cdp.js';
 import { targetList, windowLabel } from './targets.js';
 import { compileCore, compileMod, retireMissing } from './page-scripts.js';
 import { modsSignature, unitFor } from './mods.js';
+import { HOST_BINDING } from './host.js';
 
 // What is worth a line in the log. 'idle' (the mod has no script for this window) and
 // 'already-installed' would be noise: every mod is installed in every window.
@@ -20,9 +21,29 @@ export class Injector {
   #signature = '';
   #sessions = new Map(); // target id -> { target, session, needsInject }
 
+  // Set to receive what the pages send to their mods' Node parts: (windowLabel, jsonText).
+  // While it is null the pages have no way to call out (see HOST_BINDING in host.js).
+  onHostMessage = null;
+
   constructor({ port, log = () => {} }) {
     this.#port = port;
     this.#log = log;
+  }
+
+  // Run something in one window (by label), or in the first one when `label` is null.
+  async evaluate(label, expression) {
+    const entry = [...this.#sessions.values()].find(e => label === null || windowLabel(e.target) === label);
+    if (!entry) throw new Error(label === null ? 'no app window is attached' : `no ${label} window is attached`);
+    return entry.session.evaluate(expression);
+  }
+
+  // Run something in every window. Never rejects: a window that fails is just skipped.
+  async evaluateAll(expression) {
+    await Promise.all([...this.#sessions.values()].map(e => e.session.evaluate(expression).catch(() => {})));
+  }
+
+  get attached() {
+    return this.#sessions.size;
   }
 
   // Returns true when the set of mods actually changed.
@@ -55,13 +76,21 @@ export class Injector {
         const session = await CDPSession.connect(target);
         await session.enable(['Page', 'Runtime']);
         const entry = { target, session, needsInject: true };
+        const label = windowLabel(target);
         session.on(msg => {
           if (msg.method === 'Page.loadEventFired' || msg.method === 'Page.frameNavigated') {
             entry.needsInject = true;
+          } else if (msg.method === 'Runtime.bindingCalled' && msg.params.name === HOST_BINDING) {
+            this.onHostMessage?.(label, msg.params.payload);
           }
         });
+        if (this.onHostMessage) {
+          await session.send('Runtime.addBinding', { name: HOST_BINDING });
+          // Mods that were installed before this session existed announce themselves again.
+          await session.evaluate('window.modkit?.hostHello?.()').catch(() => {});
+        }
         this.#sessions.set(target.id, entry);
-        this.#log(`${windowLabel(target)}: attached`);
+        this.#log(`${label}: attached`);
       } catch (err) {
         this.#log(`${windowLabel(target)}: attach failed (${err.message})`);
       }
@@ -114,13 +143,16 @@ export class Injector {
   // placeholder that carries the message.
   async #install(session, mod, label) {
     const unit = mod.core ? null : unitFor(mod, label);
+    // Whatever is installed may call its Node part at once, so the page is told the loader is here
+    // first (this is only the case while watching: that is when onHostMessage is set).
+    const beat = this.onHostMessage ? 'window.modkit?.hostBeat?.();' : '';
     try {
-      return await session.evaluate(mod.core ? compileCore(mod) : compileMod(unit, label));
+      return await session.evaluate(beat + (mod.core ? compileCore(mod) : compileMod(unit, label)));
     } catch (err) {
       if (session.closed || mod.core) throw err;
       const message = err.message.split('\n')[0];
       try {
-        await session.evaluate(compileMod({ ...unit, code: null, loadError: message }, label));
+        await session.evaluate(beat + compileMod({ ...unit, code: null, loadError: message }, label));
       } catch { /* the report below is what matters */ }
       return { status: 'error', error: message };
     }

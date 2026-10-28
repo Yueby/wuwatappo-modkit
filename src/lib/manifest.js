@@ -28,7 +28,7 @@ export const WINDOWS = ['main', 'panel', 'login', 'update', 'toast', 'about', 'o
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const KEY = /^[A-Za-z][A-Za-z0-9_]*$/;
 const SETTING_TYPES = ['toggle', 'number', 'value'];
-const MODKIT_KEYS = ['defaultEnabled', 'windows', 'settings'];
+const MODKIT_KEYS = ['defaultEnabled', 'windows', 'host', 'settings'];
 
 export class ManifestError extends Error {
   constructor(problems) {
@@ -38,9 +38,10 @@ export class ManifestError extends Error {
   }
 }
 
-// Returns { manifest, windows }: `manifest` is what the page gets (no file names), `windows`
-// maps a window label (or '*' for all of them) to a path relative to the mod's folder.
-// `folder` is the directory name, which is the mod's id.
+// Returns { manifest, windows, host }: `manifest` is what the page gets (no file names),
+// `windows` maps a window label (or '*' for all of them) to a path relative to the mod's
+// folder, and `host` is the path of its Node part, or null. `folder` is the directory name,
+// which is the mod's id.
 export function parseManifest(raw, folder) {
   const problems = [];
   const bad = message => problems.push(message);
@@ -70,7 +71,8 @@ export function parseManifest(raw, folder) {
   }
   if (kit.defaultEnabled != null && typeof kit.defaultEnabled !== 'boolean') bad('modkit.defaultEnabled must be true or false');
 
-  const windows = parseWindows(kit.windows, bad);
+  const host = parseHost(kit.host, bad);
+  const windows = parseWindows(kit.windows, bad, host !== null);
   const settings = parseSettings(kit.settings, bad);
 
   if (problems.length) throw new ManifestError(problems);
@@ -82,14 +84,29 @@ export function parseManifest(raw, folder) {
       version: raw.version ?? null,
       description: raw.description ?? null,
       defaultEnabled: kit.defaultEnabled ?? true,
+      ...(host !== null ? { host: true } : {}),      // absent otherwise: a mod without one keeps its manifest as it was
       settings,
     },
     windows,
+    host,
   };
 }
 
-function parseWindows(raw, bad) {
-  if (raw == null) return { '*': 'index.js' };
+const outsideFolder = file => /^([\\/]|[A-Za-z]:)|(^|[\\/])\.\.([\\/]|$)/.test(file);
+
+// The mod's Node part: an ES module that runs in the loader's own process (see host.js).
+function parseHost(raw, bad) {
+  if (raw == null) return null;
+  if (typeof raw !== 'string' || !raw.trim() || outsideFolder(raw)) {
+    bad(`modkit.host: "${raw}" must be a file inside the mod's folder`);
+    return null;
+  }
+  return raw;
+}
+
+// A mod with a Node part may have no page script at all; one without must have some.
+function parseWindows(raw, bad, hasHost) {
+  if (raw == null) return hasHost ? {} : { '*': 'index.js' };
   if (typeof raw !== 'object' || Array.isArray(raw)) {
     bad('modkit.windows must map a window name to a file, e.g. { "main": "main.js" }');
     return {};
@@ -99,13 +116,13 @@ function parseWindows(raw, bad) {
   for (const [windowName, file] of Object.entries(raw)) {
     if (windowName !== '*' && !WINDOWS.includes(windowName)) {
       bad(`modkit.windows: unknown window "${windowName}" (windows: ${WINDOWS.join(', ')}, or "*")`);
-    } else if (typeof file !== 'string' || !file.trim() || /^([\\/]|[A-Za-z]:)|(^|[\\/])\.\.([\\/]|$)/.test(file)) {
+    } else if (typeof file !== 'string' || !file.trim() || outsideFolder(file)) {
       bad(`modkit.windows.${windowName}: "${file}" must be a file inside the mod's folder`);
     } else {
       windows[windowName] = file;
     }
   }
-  if (!Object.keys(windows).length) bad('modkit.windows is empty');
+  if (!Object.keys(windows).length && !hasHost) bad('modkit.windows is empty');
   return windows;
 }
 

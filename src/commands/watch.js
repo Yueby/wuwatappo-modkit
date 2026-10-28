@@ -5,7 +5,11 @@
 //   * a mod file changed on disk            -> re-inject everywhere
 // Polling the filesystem is what lets you edit a mod and see it applied without
 // restarting this process; the cost is one directory stat every interval.
+//
+// This is also the process a mod's Node part runs in (see host.js): it exists only while this
+// command does, and stops with it.
 
+import { HostManager } from '../lib/host.js';
 import { Injector } from '../lib/injector.js';
 import { discoverAll, modsSignature } from '../lib/mods.js';
 import { DebugPortUnavailable } from '../lib/targets.js';
@@ -18,19 +22,21 @@ const INJECT_POLL_MS = 1500;
 export default async function watch(argv) {
   const options = parseOptions(argv);
 
-  const injector = new Injector({
-    port: options.port,
-    log: msg => log(style.dim(`  ${msg}`)),
-  });
+  const say = msg => log(style.dim(`  ${msg}`));
+  const injector = new Injector({ port: options.port, log: say });
+  const hosts = new HostManager({ log: say });
+  hosts.connect(injector);
+  injector.onHostMessage = (window, text) => hosts.onPageMessage(window, text);
 
   let signature = '';
   let stopped = false;
   let lastError = '';
 
-  const stop = signal => {
+  const stop = async signal => {
     if (stopped) return;
     stopped = true;
-    log(`\n${style.dim(`${signal} — stopping, waiting for the app to be closed`)}`);
+    log(`\n${style.dim(`${signal} — stopping`)}`);
+    await hosts.close();         // their dispose hooks run before the process goes
     injector.close();
     process.exit(0);
   };
@@ -52,6 +58,7 @@ export default async function watch(argv) {
         if (next !== signature) {
           signature = next;
           injector.setMods(mods);
+          hosts.setMods(mods);
           const user = mods.filter(m => !m.core).map(m => m.name);
           log(`${style.cyan('mods')} ${user.join(', ') || style.dim('(none)')}  ${style.dim(`+ ${mods.length - user.length} framework`)}`);
         }
@@ -75,6 +82,7 @@ export default async function watch(argv) {
         if (message !== lastError) {
           log(style.yellow(`waiting: ${message}`));
           lastError = message;
+          hosts.stopAll();       // the app is gone: nothing for a Node part to serve
         }
       } else {
         log(style.red(`inject: ${err.message}`));

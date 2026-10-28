@@ -1,0 +1,16 @@
+{
+  "name": "template-node",
+  "displayName": "示例 mod（带 Node 部分）",
+  "version": "0.1.0",
+  "description": "复制这个文件夹，去掉名字前的下划线。页面部分在 main.js，Node 部分在 host.js",
+  "private": true,
+  "type": "module",
+  "modkit": {
+    "host": "host.js",
+    "windows": { "main": "main.js" },
+    "settings": [
+      { "key": "keep", "type": "number", "title": "保留条数", "description": "文件里最多保留多少条记录", "default": 20, "min": 1, "max": 200, "step": 1 },
+      { "key": "count", "type": "value", "title": "已记录", "default": "0 条" }
+    ]
+  }
+}

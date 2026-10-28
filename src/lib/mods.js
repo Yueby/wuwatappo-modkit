@@ -60,7 +60,7 @@ async function readScripts(dir, { prefix = '', core = false } = {}) {
 //   mods/name/package.json    a package: manifest + one script per window (see manifest.js)
 //   mods/name/<scripts>       (package.json may be left out if there is an index.js)
 //
-// { name, manifest, scripts: { <window|'*'>: code }, loadError?, signature, core: false }
+// { name, manifest, scripts: { <window|'*'>: code }, hostFile?, hostVersion?, loadError?, signature, core: false }
 //
 // A package that cannot be read or fails validation is still returned, with `loadError`, so
 // it shows up on the MOD page as broken instead of vanishing.
@@ -130,7 +130,37 @@ async function readPackage(folder) {
       return brokenMod(id, manifestFile, `modkit.windows.${windowName}: cannot read ${relative} (${err.code ?? err.message})`);
     }
   }
-  return makeMod({ name: id, file: manifestFile, manifest: parsed.manifest, scripts });
+
+  // The Node part: it has to exist, and what decides whether it is restarted is every file of
+  // the folder it could import from, other than the page scripts (editing those must not
+  // restart it).
+  let hostFile = null;
+  let hostVersion = null;
+  if (parsed.host) {
+    hostFile = path.join(folder, parsed.host);
+    if (!await exists(hostFile)) return brokenMod(id, manifestFile, `modkit.host: cannot read ${parsed.host}`);
+    hostVersion = await fingerprint(folder, new Set(Object.values(parsed.windows).map(f => path.normalize(f))));
+  }
+  return makeMod({ name: id, file: manifestFile, manifest: parsed.manifest, scripts, hostFile, hostVersion });
+}
+
+// Changes whenever a source file under `folder` is added, removed or modified. Size and
+// modification time, not contents: this runs every second while watching.
+async function fingerprint(folder, skip) {
+  const parts = [];
+  const walk = async (dir, prefix) => {
+    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+      if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+      const relative = path.join(prefix, entry.name);
+      if (entry.isDirectory()) await walk(path.join(dir, entry.name), relative);
+      else if (/.(m?js|cjs|json)$/i.test(entry.name) && !skip.has(relative)) {
+        const stat = await fs.stat(path.join(dir, entry.name));
+        parts.push(`${relative}:${stat.size}:${Math.round(stat.mtimeMs)}`);
+      }
+    }
+  };
+  await walk(folder, '');
+  return hash(parts.sort().join('|'));
 }
 
 // A mod that could not be loaded. It has no scripts and a manifest with just a name, so the
@@ -145,9 +175,10 @@ function brokenMod(id, file, loadError) {
   });
 }
 
-function makeMod({ name, file, manifest, scripts, loadError = null }) {
-  const digest = hash(JSON.stringify([manifest, scripts, loadError]));
-  return { name, file, core: false, manifest, scripts, loadError, version: digest, signature: digest };
+// `hostFile` / `hostVersion`: the Node part's entry (absolute) and what decides a restart of it.
+function makeMod({ name, file, manifest, scripts, loadError = null, hostFile = null, hostVersion = null }) {
+  const digest = hash(JSON.stringify([manifest, scripts, loadError, hostVersion]));
+  return { name, file, core: false, manifest, scripts, loadError, hostFile, hostVersion, version: digest, signature: digest };
 }
 
 async function exists(file) {
