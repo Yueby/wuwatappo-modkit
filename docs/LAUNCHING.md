@@ -80,7 +80,7 @@ Verified byte-for-byte: the restored file's SHA-256 matches the stock build
 E:\Programs\WuwaTappo\
   WuwaTappo.exe           patched in place
   WuwaTappo.exe.orig      pristine stock backup
-  .wuwa-modkit.json       what was patched, when, and the hash
+  .wuwatappo-modkit.json  what was patched, when, and the hash
 ```
 
 ## Install once, then just run the app
@@ -133,7 +133,7 @@ node src/cli.js autostart status
 node src/cli.js autostart remove
 ```
 
-`autostart` (which `setup` does for you) writes one file, `wuwa-modkit.vbs`, in your own Startup folder (no administrator, nothing
+`autostart` (which `setup` does for you) writes one file, `wuwatappo-modkit.vbs`, in your own Startup folder (no administrator, nothing
 in the registry or the task scheduler); deleting it is removing it.
 
 - **The app has a logon task of its own** (`\WuwaTappo\ElevatedAutostart`, made while it still ran as

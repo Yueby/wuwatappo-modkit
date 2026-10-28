@@ -20,7 +20,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { APP_EXE, APP_EXE_BACKUP, PATCH_MARKER } from './paths.js';
+import { APP_EXE, APP_EXE_BACKUP, LEGACY_PATCH_MARKER, PATCH_MARKER } from './paths.js';
 
 const EDITS = [
   {
@@ -181,15 +181,17 @@ async function recordMarker(file) {
     sha256: hash,
     backup: APP_EXE_BACKUP,
   }, null, 2));
+  await fs.rm(LEGACY_PATCH_MARKER, { force: true });
 }
 
-// Reads the marker written by the last patch.
-export async function readMarker() {
-  try {
-    return JSON.parse(await fs.readFile(PATCH_MARKER, 'utf8'));
-  } catch {
-    return null;
+// Reads the marker written by the last patch (under its old name if it was written before the rename).
+export async function readMarker({ file = PATCH_MARKER, legacy = LEGACY_PATCH_MARKER } = {}) {
+  for (const candidate of [file, legacy]) {
+    try {
+      return JSON.parse(await fs.readFile(candidate, 'utf8'));
+    } catch { /* not there, or not readable: try the other */ }
   }
+  return null;
 }
 
 // Restore the stock exe from the backup.

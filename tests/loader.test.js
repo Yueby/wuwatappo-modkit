@@ -132,18 +132,41 @@ test('the logon script starts the loader hidden, from the project folder, and qu
 
 test('installing, reading back and removing the logon script', () => {
   const startup = path.join(dir, 'Startup');
-  assert.deepEqual(status({ dir: startup }), { installed: false, file: path.join(startup, 'wuwa-modkit.vbs') });
+  assert.deepEqual(status({ dir: startup }), { installed: false, file: path.join(startup, 'wuwatappo-modkit.vbs') });
 
   const file = install({ dir: startup, node: 'C:\\node.exe', cli: 'E:\\p\\src\\cli.js', cwd: 'E:\\p' });
-  assert.equal(file, path.join(startup, 'wuwa-modkit.vbs'));
+  assert.equal(file, path.join(startup, 'wuwatappo-modkit.vbs'));
   const now = status({ dir: startup });
   assert.equal(now.installed, true);
   assert.equal(now.command, '"C:\\node.exe" "E:\\p\\src\\cli.js" start --no-launch --log-file');
 
   install({ dir: startup, node: 'C:\\node.exe', cli: 'E:\\p\\src\\cli.js', cwd: 'E:\\p' });       // again: the same file, not a second one
-  assert.deepEqual(fs.readdirSync(startup), ['wuwa-modkit.vbs']);
+  assert.deepEqual(fs.readdirSync(startup), ['wuwatappo-modkit.vbs']);
 
   assert.deepEqual(remove({ dir: startup }), { file, existed: true });
   assert.deepEqual(remove({ dir: startup }), { file, existed: false }, 'removing twice is not an error');
   assert.equal(status({ dir: startup }).installed, false);
+});
+
+// Before the project was renamed the script was called wuwa-modkit.vbs. One that is still there is the
+// same thing under its old name: found, replaced by the new one on install (a logon that ran both would
+// start two loaders), and taken away by remove.
+test('a logon script under the old name is found, replaced by install, and removed by remove', () => {
+  const startup = path.join(dir, 'StartupOld');
+  const old = path.join(startup, 'wuwa-modkit.vbs');
+  fs.mkdirSync(startup);
+  fs.writeFileSync(old, scriptText({ node: 'C:\\node.exe', cli: 'E:\\p\\src\\cli.js', cwd: 'E:\\p' }));
+
+  const found = status({ dir: startup });
+  assert.deepEqual([found.installed, found.file, found.command], [true, old, '"C:\\node.exe" "E:\\p\\src\\cli.js" start --no-launch --log-file']);
+
+  install({ dir: startup, node: 'C:\\node.exe', cli: 'E:\\q\\src\\cli.js', cwd: 'E:\\q' });
+  assert.deepEqual(fs.readdirSync(startup), ['wuwatappo-modkit.vbs'], 'the old one is gone, there is one script');
+
+  fs.writeFileSync(old, 'old again');
+  assert.equal(remove({ dir: startup }).existed, true);
+  assert.deepEqual(fs.readdirSync(startup), [], 'remove takes both');
+
+  fs.writeFileSync(old, 'only the old one');
+  assert.equal(remove({ dir: startup }).existed, true, 'and an old one alone counts as installed');
 });

@@ -29,7 +29,7 @@ const quoted = text => `'${text.replaceAll("'", "''")}'`;
 export default async function openWindow() {
   if (process.platform !== 'win32') throw new Error('the window is for Windows');
 
-  const dir = path.join(os.tmpdir(), 'wuwa-modkit-window');
+  const dir = path.join(os.tmpdir(), 'wuwatappo-modkit-window');
   await fs.mkdir(dir, { recursive: true });
   const file = path.join(dir, 'window.ps1');
   await fs.writeFile(file, BOM + await windowScript());

@@ -59,8 +59,8 @@ const UAC_HINT =
 // empty node REPL on the desktop.)
 export async function runElevated(commands) {
   const stamp = `${process.pid}-${Date.now()}`;
-  const script = path.join(os.tmpdir(), `wuwa-modkit-${stamp}.ps1`);
-  const result = path.join(os.tmpdir(), `wuwa-modkit-${stamp}.result`);
+  const script = path.join(os.tmpdir(), `wuwatappo-modkit-${stamp}.ps1`);
+  const result = path.join(os.tmpdir(), `wuwatappo-modkit-${stamp}.result`);
 
   const body = [
     'try {',

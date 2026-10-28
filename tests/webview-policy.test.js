@@ -11,8 +11,8 @@ import { runningLoader } from '../src/lib/lock.js';
 import { APP_NAME, POLICY_KEY, portOf, readArguments, removeArguments, setArguments } from '../src/lib/webview-policy.js';
 
 const exec = promisify(execFile);
-const key = `HKCU\\Software\\wuwa-modkit-test-${process.pid}\\AdditionalBrowserArguments`;
-const root = `HKCU\\Software\\wuwa-modkit-test-${process.pid}`;
+const key = `HKCU\\Software\\wuwatappo-modkit-test-${process.pid}\\AdditionalBrowserArguments`;
+const root = `HKCU\\Software\\wuwatappo-modkit-test-${process.pid}`;
 
 const exists = async k => exec('reg', ['query', k], { windowsHide: true }).then(() => true, () => false);
 

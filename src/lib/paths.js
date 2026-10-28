@@ -27,7 +27,9 @@ export function resolveInstallDir({ env = process.env, packaged = sea.isSea(), e
 export const INSTALL_DIR = resolveInstallDir();
 export const APP_EXE = path.join(INSTALL_DIR, 'WuwaTappo.exe');
 export const APP_EXE_BACKUP = path.join(INSTALL_DIR, 'WuwaTappo.exe.orig');
-export const PATCH_MARKER = path.join(INSTALL_DIR, '.wuwa-modkit.json');
+export const PATCH_MARKER = path.join(INSTALL_DIR, '.wuwatappo-modkit.json');
+// What it was called before the project was renamed: still read, and replaced the next time something is patched.
+export const LEGACY_PATCH_MARKER = path.join(INSTALL_DIR, '.wuwa-modkit.json');
 
 // The mods that run, and a folder for each mod's Node part to keep its files in.
 export const MODS_DIR = path.join(INSTALL_DIR, 'mods');

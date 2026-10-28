@@ -18,7 +18,10 @@ import { INSTALL_DIR, LOADER_EXE, PROJECT_ROOT } from './paths.js';
 
 const run = promisify(execFile);
 
-export const SCRIPT_NAME = 'wuwa-modkit.vbs';
+export const SCRIPT_NAME = 'wuwatappo-modkit.vbs';
+// What it was called before the project was renamed. One that is still there is found, and replaced by
+// `install`, so the loader is never started twice at logon.
+export const LEGACY_SCRIPT_NAME = 'wuwa-modkit.vbs';
 export const APP_TASK = '\\WuwaTappo\\ElevatedAutostart';
 
 export function startupDir() {
@@ -42,7 +45,7 @@ export function scriptText({ node, cli = null, cwd }) {
   // --no-launch: the loader waits for the app, however it is started; it does not start it.
   const command = [`"${node}"`, cli ? `"${cli}"` : null, 'start --no-launch --log-file'].filter(Boolean).join(' ');
   return [
-    `' Starts wuwa-modkit when you log on. Written by: node src/cli.js autostart install`,
+    `' Starts wuwatappo-modkit when you log on. Written by: node src/cli.js autostart install`,
     `' Remove it with: node src/cli.js autostart remove   (or just delete this file)`,
     `Set shell = CreateObject("WScript.Shell")`,
     `shell.CurrentDirectory = "${vb(cwd)}"`,
@@ -52,23 +55,27 @@ export function scriptText({ node, cli = null, cwd }) {
 }
 
 const fileIn = dir => path.join(dir, SCRIPT_NAME);
+const legacyIn = dir => path.join(dir, LEGACY_SCRIPT_NAME);
 
 export function install({ dir = startupDir(), node = launcher().node, cli = launcher().cli, cwd = launcher().cwd } = {}) {
   fs.mkdirSync(dir, { recursive: true });
   const file = fileIn(dir);
   fs.writeFileSync(file, scriptText({ node, cli, cwd }));
+  fs.rmSync(legacyIn(dir), { force: true });
   return file;
 }
 
 export function remove({ dir = startupDir() } = {}) {
   const file = fileIn(dir);
-  const existed = fs.existsSync(file);
+  const existed = fs.existsSync(file) || fs.existsSync(legacyIn(dir));
   fs.rmSync(file, { force: true });
+  fs.rmSync(legacyIn(dir), { force: true });
   return { file, existed };
 }
 
 export function status({ dir = startupDir() } = {}) {
-  const file = fileIn(dir);
+  let file = fileIn(dir);
+  if (!fs.existsSync(file) && fs.existsSync(legacyIn(dir))) file = legacyIn(dir);
   if (!fs.existsSync(file)) return { installed: false, file };
   const command = fs.readFileSync(file, 'utf8').match(/shell\.Run "(.*)", 0/)?.[1].replaceAll('""', '"') ?? null;
   return { installed: true, file, command };

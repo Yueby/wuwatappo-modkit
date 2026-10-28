@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { ensureFolders, installLoaderCopy, removeLoaderCopy } from '../src/lib/layout.js';
 import { EXAMPLES_DIR, INSTALL_DIR, LOCK_FILE, LOG_FILE, MODS_DIR, MOD_DATA_DIR, resolveInstallDir } from '../src/lib/paths.js';
+import { readMarker } from '../src/lib/patch.js';
 import { write } from './app-helpers.js';
 
 let root;
@@ -72,4 +73,19 @@ test('the loader runs from a copy, so the program in the app folder is never the
   await removeLoaderCopy({ file: copy });
   await assert.rejects(fs.stat(copy));
   await removeLoaderCopy({ file: copy });                                      // twice is fine
+});
+
+// --- the marker of a patch ----------------------------------------------------------------------
+
+test('the patch marker is read under its new name, and under the old one from before the rename', async () => {
+  const dir = fresh();
+  const file = path.join(dir, '.wuwatappo-modkit.json');
+  const legacy = path.join(dir, '.wuwa-modkit.json');
+  assert.equal(await readMarker({ file, legacy }), null, 'none at all');
+
+  await write(legacy, JSON.stringify({ sha256: 'old' }));
+  assert.equal((await readMarker({ file, legacy })).sha256, 'old', 'an old one still says the exe is patched');
+
+  await write(file, JSON.stringify({ sha256: 'new' }));
+  assert.equal((await readMarker({ file, legacy })).sha256, 'new', 'the new name wins');
 });
