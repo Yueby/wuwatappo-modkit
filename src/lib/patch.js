@@ -117,39 +117,72 @@ export async function patchInPlace(file = ORIGINAL_EXE) {
   }
 
   // Write beside the target then rename: an interrupted write must not leave a
-  // half-patched executable in the install directory.
+  // half-patched executable in the install directory. If the rename fails the
+  // staging file is removed, otherwise a 77 MB orphan is left next to the exe.
   const staging = `${file}.modkit-tmp`;
-  await fs.writeFile(staging, patched);
-  await fs.rename(staging, file);
+  try {
+    await fs.writeFile(staging, patched);
+    await fs.rename(staging, file);
+  } catch (err) {
+    await fs.rm(staging, { force: true });
+    if (err.code === 'EPERM' || err.code === 'EBUSY' || err.code === 'EACCES') {
+      throw new Error(
+        `cannot overwrite ${path.basename(file)}: it is in use or locked (${err.code}).\n` +
+        `  Close the app first:  node src/cli.js stop`,
+      );
+    }
+    throw err;
+  }
 
   return { file, applied, changed: true, bytes: patched.length };
 }
 
 // Back up the pristine exe once, then patch. Safe to call repeatedly.
-export async function ensurePatched({ file = ORIGINAL_EXE, log = () => {} } = {}) {
+//
+// `force` re-applies the patch even when the exe already looks patched, by going
+// back to the stock backup first. That is what `lab --rebuild` means: recover from
+// a patch that was applied by an older version of this tool.
+export async function ensurePatched({ file = ORIGINAL_EXE, force = false, log = () => {} } = {}) {
   if (!(await exists(file))) {
     throw new Error(`installed executable not found at ${file}`);
   }
 
-  if (await isPatched(file)) {
+  const alreadyPatched = await isPatched(file);
+
+  if (alreadyPatched && !force) {
     await recordMarker(file);
     return { patched: true, changed: false };
   }
 
-  // Keep a pristine copy for restoration and for re-patching after an update.
-  // If a backup already exists the exe has been updated since we made it, so the
-  // backup is refreshed — it must always be the current stock binary.
-  const currentHash = await fileHash(file);
-  const backupHash = (await exists(BACKUP_EXE)) ? await fileHash(BACKUP_EXE) : null;
+  if (alreadyPatched && force) {
+    // The stock bytes live in the backup; start from those so the result does not
+    // depend on whatever state the installed file is in.
+    if (!(await exists(BACKUP_EXE))) {
+      throw new Error(`cannot rebuild: no backup at ${BACKUP_EXE} to start from`);
+    }
+    await fs.copyFile(BACKUP_EXE, file).catch(err => {
+      if (['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) {
+        throw new Error(`cannot overwrite ${path.basename(file)}: it is in use. Close the app first:  node src/cli.js stop`);
+      }
+      throw err;
+    });
+    log('  reset to stock from backup');
+  } else {
+    // Keep a pristine copy for restoration and for re-patching after an update.
+    // If a backup already exists but differs, the exe has been updated since it
+    // was made, so refresh it — it must always be the current stock binary.
+    const currentHash = await fileHash(file);
+    const backupHash = (await exists(BACKUP_EXE)) ? await fileHash(BACKUP_EXE) : null;
 
-  if (backupHash !== currentHash) {
-    await fs.copyFile(file, BACKUP_EXE);
-    log(`  backed up original -> ${BACKUP_EXE}`);
+    if (backupHash !== currentHash) {
+      await fs.copyFile(file, BACKUP_EXE);
+      log(`  backed up original -> ${BACKUP_EXE}`);
+    }
   }
 
   const result = await patchInPlace(file);
   for (const edit of result.applied) {
-    if (edit.already) log(`  ${edit.label} ${'(already applied)'}`);
+    if (edit.already) log(`  ${edit.label} (already applied)`);
     else log(`  patched ${edit.label}`);
   }
 
@@ -181,6 +214,13 @@ export async function restoreOriginal({ file = ORIGINAL_EXE } = {}) {
   if (!(await exists(BACKUP_EXE))) {
     throw new Error(`no backup at ${BACKUP_EXE} — nothing to restore from`);
   }
-  await fs.copyFile(BACKUP_EXE, file);
+  try {
+    await fs.copyFile(BACKUP_EXE, file);
+  } catch (err) {
+    if (['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) {
+      throw new Error(`cannot overwrite ${path.basename(file)}: it is in use. Close the app first:  node src/cli.js stop`);
+    }
+    throw err;
+  }
   return { file, restoredFrom: BACKUP_EXE };
 }

@@ -85,10 +85,14 @@ E:\Programs\WuwaTappo\
 
 ## Caveats
 
-- **The patch removes the admin requirement.** The app runs with your normal user
-  token. It previously ran elevated (it also writes a logon-triggered scheduled task,
-  `wuwatappo.global`, when "start with Windows" is on — that task would launch the
-  patched exe elevated).
+- **The patch removes the admin requirement** — for launches by hand. The app then
+  runs with your normal user token. The existing logon task
+  (`\WuwaTappo\ElevatedAutostart`, `RunLevel = Highest`) is unaffected and still
+  starts the patched exe elevated at login.
+- **The "start with Windows" toggle stops working.** Unelevated, the app cannot create
+  or delete that task, so flipping the switch changes nothing and each start logs a
+  harmless `schtasks create failed`. To change it, `lab --restore`, change the
+  setting, then `lab` again. Details in docs/APP-NOTES.md.
 - **Running from `lab` also sets a DevTools port.** Anyone on the machine who can
   reach `127.0.0.1:9222` can drive the app. Start it normally (without `lab`) when
   you are not developing.

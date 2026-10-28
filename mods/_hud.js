@@ -1,5 +1,6 @@
 // Diagnostic HUD: shows live backend state in every window.
-// Read-only by design — a safe thing to keep loaded while developing others.
+// Disabled by default (leading underscore) because it sits over the UI. Rename to
+// hud.js to enable. Read-only by design.
 
 mod.css(`
 #wuwa-hud {
@@ -23,13 +24,10 @@ const [insets, elevated, keyPresses] = await Promise.all([
 ]);
 
 hud.innerHTML =
-  `<b>wuwa-modkit v2</b>\n` +
+  `<b>wuwa-modkit</b>\n` +
   `<span class="route">${location.hash || '/'}</span>\n` +
   `taskbar  ${insets ? insets.bottom + 'px' : '?'}\n` +
   `autostart ${elevated}\n` +
   `keypress ` + `${keyPresses}`;
 
 mod.log('HUD up on', location.hash || 'main');
-// touched 1793096872
-
-// hot reload probe

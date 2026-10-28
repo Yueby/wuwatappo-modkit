@@ -28,7 +28,7 @@ Windows are separate webviews, one route each:
 | route | window |
 |---|---|
 | `/` | main pet window |
-| `#/panel` | settings / bag panel |
+| `#/panel` | settings / bag panel (see "The panel only renders while open") |
 | `#/login` | login |
 | `#/update` | update overlay |
 | `#/toast` | toast host |
@@ -121,3 +121,60 @@ before the next one counts).
 These are all outside the webview and therefore outside what the mod loader can
 change. Reaching them means a native hook (proxy DLL + MinHook) or a binary patch,
 both of which need disassembly work first.
+
+## The panel only renders while it is open
+
+The panel window (`#/panel`) is created at startup and sits on a static
+`Loading…` until the **main window** tells it to render. The protocol, read from the
+1.0.2 bundle:
+
+- main -> panel: event `cat-panel-state`, a full snapshot; sent by the main window
+  only while its own flag for "panel is open" is true
+- panel -> main: event `cat-panel-action`; on mount the panel sends `{type:"ready"}`
+- the flag is set by the pet toolbar's settings button (`.settings-btn`); calling the
+  Rust command `open_panel_window` directly only shows the window and does **not** set
+  it
+
+Consequences when tooling:
+
+- right after launch the panel has no `.tab-btn` elements at all; that is normal, not
+  a hang — it appears when the user opens the panel
+- reloading the panel (`Page.reload`, `location.reload()`) renders it again only if the
+  main window currently thinks it is open; otherwise it stays on `Loading…` until the
+  settings button is clicked. Re-sending `ready` by hand does not help
+- anything that needs the panel's DOM must wait for it (`mod.waitFor`, or a
+  `MutationObserver`), and must survive the panel being closed and reopened
+
+Measured with a control experiment: reload while closed -> stays on `Loading…`;
+click the settings button -> renders in 0.25 s; reload again (now open) -> renders in
+0.25 s by itself. Network latency to the app's servers is not involved (the dictionary
+and config requests return in well under 200 ms).
+
+## Autostart under the patch
+
+The app registers a logon task, `\WuwaTappo\ElevatedAutostart` (trigger: logon + 5 s,
+`RunLevel = Highest`, action: the installed exe). That task was created while the app
+was still running as administrator, and it keeps working after patching: it launches the
+patched exe with a highest-privilege token, so the app comes up elevated at logon.
+
+What the patch does take away is the app's ability to *manage* the task. Started as a
+normal user, `schtasks /Create` and `/Delete` are refused, so toggling "start with
+Windows" in the settings page no longer changes anything, and the app logs an
+`unhandled_rejection` ("schtasks create failed") on each start while that setting is on.
+This is harmless to rendering — the failure is not awaited — but the toggle is inert.
+To change autostart, run `lab --restore` (back to the administrator build), change the
+setting, then `lab` again.
+
+## Frontend assets change with every app version
+
+The extracted bundle (`work/assets`) is specific to the build it came from: chunk file
+names carry content hashes and all of them change on an update. After the app updates,
+re-extract from the stock backup before reading any code:
+
+```sh
+node src/cli.js extract-assets "E:\Programs\WuwaTappo\WuwaTappo.exe.orig" work/assets
+```
+
+Reading a stale bundle misleads: an earlier pass of this investigation analysed the
+1.0.1 sources against a running 1.0.2 app.
+

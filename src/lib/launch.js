@@ -13,16 +13,21 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 
-import { ORIGINAL_EXE } from './patch.js';
-
 const EOL = '\r\n';
 
-// Start a process without making the caller wait for it. The child gets its own
-// console-less window and does not keep our event loop alive.
+// Start a process without making the caller wait for it.
+//
+// windowsHide matters here: without it, a GUI app launched with detached:true
+// still gets an attached console window, because the child inherits ours. That
+// leaves a stray terminal behind after `lab` exits. With it, the app runs with no
+// console at all — which is also how it behaves when started from Explorer.
+//
+// The child also must not keep our event loop alive, hence unref().
 export function launchDetached(exe, { cwd, env }) {
   const child = spawn(exe, [], {
     cwd,
     detached: true,
+    windowsHide: true,
     stdio: 'ignore',
     env,
   });
@@ -37,7 +42,10 @@ export function launchDetached(exe, { cwd, env }) {
 // what lets the environment variables reach the app; Start-Process on the exe
 // itself does not raise UAC and fails for a requireAdministrator binary.
 //
-// The script waits for the app, so the elevated helper lives as long as the app.
+// With an `exe`, the script waits for the app, so the elevated helper lives as long
+// as the app. With `exe: null` it only runs `prelude` and finishes — that is what
+// `stop` needs. Passing a placeholder exe there is a bug: the script would start
+// it, and an unexpected elevated process (e.g. an empty node REPL) appears.
 //
 // Progress is reported through a small status file rather than stdout: an
 // elevated process gets its own console, so its output never reaches our pipe.
@@ -57,11 +65,15 @@ export async function launchElevated(exe, { cwd, extraEnv = {}, prelude = [] }) 
       .filter(([, value]) => value != null && value !== '')
       .map(([key, value]) => `[Environment]::SetEnvironmentVariable(${psQuote(key)}, ${psQuote(value)})`),
     '__report "stage=env-set"',
-    `Set-Location -LiteralPath ${psQuote(cwd)}`,
-    `$p = Start-Process -FilePath ${psQuote(exe)} -PassThru`,
-    '__report ("app-pid=" + $p.Id)',
-    '$p.WaitForExit()',
-    '__report "stage=exited"',
+    ...(exe
+      ? [
+        `Set-Location -LiteralPath ${psQuote(cwd)}`,
+        `$p = Start-Process -FilePath ${psQuote(exe)} -PassThru`,
+        '__report ("app-pid=" + $p.Id)',
+        '$p.WaitForExit()',
+        '__report "stage=exited"',
+      ]
+      : ['__report "stage=done"']),
   ];
 
   // Wrap the body so a thrown error is recorded instead of vanishing.
@@ -130,19 +142,19 @@ export async function launchElevated(exe, { cwd, extraEnv = {}, prelude = [] }) 
   // Read back what the elevated side managed to do. Poll briefly: the service
   // writes these lines as it goes, so a failure point is visible even when the
   // app never starts.
-  const status = await readStatus(statusPath);
+  const status = await readStatus(statusPath, { want: exe ? 'app-pid=' : 'stage=done' });
   return { helperPid: helperPid || null, scriptPath, statusPath, status };
 }
 
 // Parse the "key=value" status lines the elevated script appends.
-async function readStatus(statusPath, { timeoutMs = 20_000, want = 'app-pid' } = {}) {
+async function readStatus(statusPath, { timeoutMs = 20_000, want = 'app-pid=' } = {}) {
   const deadline = Date.now() + timeoutMs;
   let lines = [];
   while (Date.now() < deadline) {
     try {
       const raw = await fs.readFile(statusPath, 'utf8');
       lines = raw.split(/\r?\n/).filter(Boolean);
-      if (lines.some(l => l.startsWith(want + '=')) || lines.some(l => l.startsWith('error='))) break;
+      if (lines.some(l => l.startsWith(want)) || lines.some(l => l.startsWith('error='))) break;
     } catch {
       // not written yet
     }
@@ -174,12 +186,3 @@ export async function findDebugPortOwner(port) {
     return null;
   }
 }
-
-// Default WebView2 profile for an install, so a native-mode launch reuses the
-// real app's cookies and localStorage (and therefore its login).
-export function defaultWebViewDataDir(bundleId) {
-  const localAppData = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local');
-  return path.join(localAppData, bundleId, 'EBWebView');
-}
-
-export { ORIGINAL_EXE };

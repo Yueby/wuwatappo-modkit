@@ -15,6 +15,7 @@ import {
 } from '../lib/patch.js';
 import { launchDetached, findDebugPortOwner } from '../lib/launch.js';
 import { browserVersion } from '../lib/targets.js';
+import { countInstances } from '../lib/ps.js';
 import { parseOptions } from './options.js';
 import { field, log, section, style } from '../lib/output.js';
 
@@ -35,18 +36,19 @@ export default async function lab(argv) {
       `  Stop it with: node src/cli.js stop`);
   }
 
-  section(rebuild ? 'Patching (forced)' : 'Patching');
-  const patched = await ensurePatched({ log });
-  if (!patched.changed && !rebuild) {
-    field('status', style.dim('already patched'));
-  }
-
-  // The app must not be running while we clone its profile: the cookie store is
-  // locked and a half-read store produces a corrupt clone.
+  // Check this *before* touching the exe. A running app holds WuwaTappo.exe open,
+  // so patching it fails midway — and the app may be running without a debug port
+  // (started by double-click), which the port check above cannot see.
   if (await isRunning()) {
-    log(`\n  ${style.yellow('the app is running')} — stop it first so the profile can be cloned:`);
+    log(`${style.yellow('the app is running')} — it has to be closed before the exe can be patched:`);
     log(`  ${style.bold('node src/cli.js stop')}`);
     return 1;
+  }
+
+  section(rebuild ? 'Patching (forced)' : 'Patching');
+  const patched = await ensurePatched({ force: rebuild, log });
+  if (!patched.changed) {
+    field('status', style.dim('already patched'));
   }
 
   section('Starting');
@@ -96,13 +98,7 @@ async function isPortFree(port) {
 }
 
 async function isRunning() {
-  try {
-    const { runPS } = await import('../lib/ps.js');
-    const out = await runPS('(Get-Process WuwaTappo -ErrorAction SilentlyContinue | Measure-Object).Count');
-    return Number(out.trim()) > 0;
-  } catch {
-    return false;
-  }
+  return (await countInstances()) > 0;
 }
 
 async function waitForDevTools(port, timeoutMs) {
