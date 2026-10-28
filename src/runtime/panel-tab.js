@@ -39,6 +39,8 @@ const ICON_ACTIVE = '__MOD_ICON_ACTIVE__';
 // rather than last.
 const ICON_CLASS = 'tab-btn__icon--mod';
 
+// The text under a title shares its line with these buttons (they are drawn over its right end), so it
+// has to stay short: 18px, and about 450px before the first button. Longer is hidden behind them.
 // The title row has room for the app's one button in its corner (.leave-room-btn is "position: absolute;
 // right: 0; bottom: 0", and .common-btn is 135px wide). The second sits one button and a gap from the edge.
 const INSTALL_BUTTON_RIGHT = 147;
@@ -231,7 +233,7 @@ function renderHeader(body, mods) {
   const head = el('div', 'room-info');
   head.appendChild(el('div', 'room-qty', `MOD（${mods.length}）`));
   head.appendChild(el('div', 'room-number',
-    !mods.length ? '还没有 mod：点右边的“安装”，或放进软件目录的 mods 文件夹'
+    !mods.length ? '还没有 mod，点“安装”获取'
       : failed ? `${failed} 个出错`
         : '全部正常'));
   head.appendChild(headerButton('日志', openLog));
@@ -490,7 +492,7 @@ function renderPluginsDialog() {
   redraw(body, next => {
     const head = el('div', 'room-info');
     head.appendChild(el('div', 'room-qty', '插件'));
-    head.appendChild(el('div', 'room-number', '来自插件仓库。装之前会告诉您它要做什么，问您同意'));
+    head.appendChild(el('div', 'room-number', '来自插件仓库'));
     if (state.phase === 'list') head.appendChild(headerButton('刷新', loadPlugins));
     head.style.marginBottom = '28px';
     next.appendChild(head);
