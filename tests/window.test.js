@@ -256,7 +256,7 @@ test('安装 says what the plugin declares first, and installs only on a yes; th
   for (const part of ['安装「Alpha」1.0.0？', 'does alpha', '后台程序：有', '不受限制', '作者声明的权限：读写文件、联网', 'beta ^1.0.0', 'left-pad', '插件的脚本会在软件窗口里运行']) {
     assert.ok(report.question.includes(part), `the question has "${part}":\n${report.question}`);
   }
-  assert.deepEqual(report.calls, ['mods browse --json', 'mods get alpha --yes', 'mods browse --json']);
+  assert.deepEqual(report.calls, ['mods browse --json', 'mods get alpha --expect 1.0.0 --yes', 'mods browse --json']);
 });
 
 test('a plugin without a Node part says so, and a no runs nothing', { skip }, async () => {
@@ -275,7 +275,7 @@ test('更新 updates the one that has a newer version, and 卸载 removes after 
     Pick 'Beta'; $w.Act.PerformClick()
     Pick 'Gamma'; $w.Remove.PerformClick()
     $report.questions = $script:questions`);
-  assert.deepEqual(report.calls, ['mods browse --json', 'mods update beta --yes', 'mods browse --json', 'mods remove gamma', 'mods browse --json']);
+  assert.deepEqual(report.calls, ['mods browse --json', 'mods update beta --expect 1.1.0 --yes', 'mods browse --json', 'mods remove gamma', 'mods browse --json']);
   assert.ok(report.questions[1].startsWith('卸载「Gamma」？'));
 });
 
@@ -343,7 +343,7 @@ test('ticking the box with no folder yet asks for one, and then switches it on w
     Click-Box $devBox; Wait-Idle
     $report.asked = $script:folderAsked`);
   assert.equal(report.asked, 1);
-  assert.ok(report.calls.includes('dev on "D:\\work\\my plugins"'), `the folder, quoted, without its trailing backslash (which would eat the quote): ${report.calls}`);
+  assert.ok(report.calls.includes('dev on "D:\\work\\my plugins\\"'), `one argument, with its trailing backslash kept (it is doubled on the way, or it would eat the quote): ${report.calls}`);
   assert.deepEqual(report.calls.slice(-2), ['dev status --json', 'setup status'], 'and it shows where things stand after');
 });
 
@@ -374,4 +374,18 @@ test('选择文件夹… picks another folder and switches dev mode on with it; 
 
   const cancelled = await drive(`$script:folderAnswer = $null; $devFolder.PerformClick(); Wait-Idle`);
   assert.ok(!cancelled.calls.some(call => call.startsWith('dev on')));
+});
+
+test('the drive root is passed as itself, not as a drive-relative E:, and a trailing backslash does not eat the quote', { skip }, async () => {
+  const root = await drive(`$script:folderAnswer = 'E:\\'; $devFolder.PerformClick(); Wait-Idle`);
+  assert.ok(root.calls.includes('dev on E:\\'), `E:\\ stayed E:\\: ${root.calls.join(' | ')}`);
+
+  const folder = await drive(`$script:folderAnswer = 'D:\\my work\\'; $devFolder.PerformClick(); Wait-Idle`);
+  assert.ok(folder.calls.includes('dev on "D:\\my work\\"'), folder.calls.join(' | '));
+});
+
+test('the box for dev mode is off while a command runs, like the buttons, so a second command cannot take the first one\'s place', { skip }, async () => {
+  const report = await drive(`$install.PerformClick(); $report.whileRunning = [ordered]@{ box = $devBox.Enabled; folder = $devFolder.Enabled }; Wait-Idle; $report.after = [ordered]@{ box = $devBox.Enabled; folder = $devFolder.Enabled }`);
+  assert.deepEqual(report.whileRunning, { box: false, folder: false });
+  assert.deepEqual(report.after, { box: true, folder: true });
 });

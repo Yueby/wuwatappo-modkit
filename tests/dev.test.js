@@ -12,7 +12,8 @@ import path from 'node:path';
 // The command keeps its state in the app folder; this test's is a temporary one.
 const app = await fs.mkdtemp(path.join(os.tmpdir(), 'modkit-dev-app-'));
 process.env.WUWA_INSTALL_DIR = app;
-const { readDev, setDev, writeDev } = await import('../src/lib/devmode.js');
+const { developing, readDev, readDevOr, setDev, writeDev } = await import('../src/lib/devmode.js');
+const { default: modsCommand } = await import('../src/commands/mods.js');
 const { discoverAll, discoverDev, discoverMods, modsSignature } = await import('../src/lib/mods.js');
 const { default: devCommand } = await import('../src/commands/dev.js');
 const { write } = await import('./app-helpers.js');
@@ -203,4 +204,73 @@ test('the dev command switches the mode, says where things stand, and JSON is fo
 
   assert.match(await run('status'), /off: the plugins installed/);
   await assert.rejects(devCommand(['sideways']), /unknown action/);
+});
+
+test('a folder is the same folder in any case: it is kept once, and removed by any spelling', async () => {
+  const dir = fresh();
+  const file = path.join(dir, 'dev.json');
+  const folder = path.join(dir, 'Work');
+  await fs.mkdir(folder, { recursive: true });
+
+  await setDev({ action: 'add', dir: folder }, { file });
+  await setDev({ action: 'add', dir: folder.toUpperCase() }, { file });
+  await setDev({ action: 'on', dir: folder.toLowerCase() }, { file });
+  assert.equal((await readDev({ file })).dirs.length, 1);
+
+  await write(file, JSON.stringify({ enabled: true, dirs: [folder, folder.toLowerCase()] }));
+  assert.equal((await readDev({ file })).dirs.length, 1, 'and one that was saved twice is read once');
+
+  await setDev({ action: 'remove', dir: folder.toUpperCase() }, { file });
+  assert.deepEqual((await readDev({ file })).dirs, []);
+});
+
+test('a read that fails is not "off": the loop keeps what it had, and goes on with what it reads next', async () => {
+  const dir = fresh();
+  const file = path.join(dir, 'dev.json');
+  const folder = path.join(dir, 'plugins');
+  await fs.mkdir(folder, { recursive: true });
+  await writeDev({ enabled: true, dirs: [folder] }, { file });
+
+  const first = await readDevOr(null, { file });
+  assert.deepEqual([first.state.enabled, first.kept], [true, false]);
+
+  // The file cannot be read (here it is a folder where the file was; busy, on Windows, comes out the same way).
+  await fs.rm(file);
+  await fs.mkdir(file);
+  const failed = await readDevOr(first.state, { file });
+  assert.deepEqual([failed.state, failed.kept], [first.state, true], 'it still has what it had: dev mode stays on');
+  await assert.rejects(readDev({ file, strict: true }), { code: 'EISDIR' });
+  assert.equal((await readDev({ file })).enabled, false, 'whereas anyone not watching is told "off", as before');
+
+  await fs.rm(file, { recursive: true });
+  const back = await readDevOr(first.state, { file });
+  assert.deepEqual([back.state.enabled, back.kept], [false, false], 'a file that is not there is off: that is read, not a failure');
+});
+
+test('what the command line may not touch: a plugin that is in use from a dev folder is not installed, updated or removed from here', async () => {
+  const dir = fresh();
+  await writeDev({ enabled: false, dirs: [] });                              // what the tests before this one left in the app folder
+  const modsDir = path.join(dir, 'mods');
+  const devFolder = await plugin(path.join(dir, 'mine'), 'alpha', { version: '9.9.9' });
+  await plugin(modsDir, 'alpha', { version: '1.0.0' });
+  await plugin(modsDir, 'beta', { version: '1.0.0' });
+  const quiet = async (...args) => {
+    const original = process.stdout.write;
+    process.stdout.write = () => true;
+    try { return await modsCommand(args); } finally { process.stdout.write = original; }
+  };
+
+  await setDev({ action: 'on', dir: devFolder });
+  assert.deepEqual([...await developing()], ['alpha']);
+  for (const action of ['remove', 'update', 'get']) {
+    await assert.rejects(quiet(action, 'alpha', '--mods-dir', modsDir), /alpha is in use from a dev folder/, action);
+  }
+  assert.deepEqual((await fs.readdir(modsDir)).sort(), ['alpha', 'beta'], 'the installed copy is as it was');
+
+  await quiet('remove', 'beta', '--mods-dir', modsDir);                      // another plugin is not in the way
+  assert.deepEqual(await fs.readdir(modsDir), ['alpha']);
+
+  await setDev({ action: 'off' });
+  await quiet('remove', 'alpha', '--mods-dir', modsDir);
+  assert.deepEqual(await fs.readdir(modsDir), [], 'with dev mode off it can be removed');
 });

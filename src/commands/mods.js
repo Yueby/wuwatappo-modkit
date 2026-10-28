@@ -21,6 +21,7 @@
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { InstallDeclined, checkMod, installMod, listMods, readSource, removeMod, updateMod } from '../lib/install.js';
+import { developing } from '../lib/devmode.js';
 import { discoverMods } from '../lib/mods.js';
 import { browse, getFromRegistry, updateFromRegistry } from '../lib/registry.js';
 import { field, log, section, style } from '../lib/output.js';
@@ -40,10 +41,12 @@ export default async function mods(argv) {
 
     case 'get': {
       if (!rest[0]) throw new Error('get which? (node src/cli.js mods browse shows the names)');
+      await refuseIfDeveloping([rest[0]], 'get');
       try {
         const result = await getFromRegistry(rest[0], {
           ...common,
           force: options.force,
+          expect: options.expect,
           confirm: info => ask(info, options),
         });
         done(result, 'installed');
@@ -74,7 +77,8 @@ export default async function mods(argv) {
     }
 
     case 'update': {
-      const ids = rest.length ? rest : await installedFromSomewhere(common.modsDir);
+      await refuseIfDeveloping(rest, 'update');
+      const ids = rest.length ? rest : (await installedFromSomewhere(common.modsDir)).filter(id => !developingNow.has(id));
       if (!ids.length) {
         log('nothing to update: no installed mod knows where it came from');
         return 0;
@@ -95,6 +99,7 @@ export default async function mods(argv) {
 
     case 'remove': {
       if (!rest[0]) throw new Error('remove which? (node src/cli.js mods list shows the names)');
+      await refuseIfDeveloping([rest[0]], 'remove');
       const { removed, purged } = await removeMod(rest[0], { ...common, purge: options.purge });
       log(`removed ${removed}`);
       if (purged) log('and the files its Node part kept');
@@ -107,11 +112,20 @@ export default async function mods(argv) {
   }
 }
 
+// A plugin that is in use from a dev folder is not the installed copy: installing, updating or removing it here
+// would be about a copy that is not the one in use. (The page is held to the same rule: lib/manager.js.)
+let developingNow = new Set();
+async function refuseIfDeveloping(ids, action) {
+  developingNow = await developing();
+  const found = ids.filter(id => developingNow.has(id));
+  if (found.length) throw new Error(`${found.join(', ')} is in use from a dev folder, so it is not ${action === 'get' ? 'installed' : action === 'update' ? 'updated' : 'removed'} here: node src/cli.js dev off first`);
+}
+
 // One installed mod, fetched again from where it came from: the registry, or what it was installed from.
 async function updateOne(id, common, options) {
   const source = await readSource(path.join(common.modsDir, id));
   if (source?.type === 'registry') {
-    return updateFromRegistry(id, { ...common, confirm: info => ask(info, options, { updating: true }) });
+    return updateFromRegistry(id, { ...common, expect: options.expect, confirm: info => ask(info, options, { updating: true }) });
   }
   return updateMod(id, { ...common, noDeps: options.noDeps, allowScripts: options.allowScripts, report: () => {} });
 }

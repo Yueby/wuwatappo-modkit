@@ -168,6 +168,24 @@ test('a package that declares more than the index says (a Node part, permissions
   assert.deepEqual(await ids(mods), ['alpha']);
 });
 
+test('what is installed is the version the person was asked about: if the registry has moved on, nothing is installed', async () => {
+  const { dir, mods } = await fresh();
+  const v1 = await release(dir, await plugin(dir, 'alpha', '1.0.0'));
+  const v2 = await release(dir, await plugin(dir, 'alpha', '2.0.0'));
+
+  // Asked about 1.0.0; by the time it runs the registry has 2.0.0.
+  await assert.rejects(getFromRegistry('alpha', { modsDir: mods, fetch: github([v2]).fetch, expect: '1.0.0' }), /now has 2\.0\.0 of alpha, not the 1\.0\.0 you were asked about/);
+  assert.deepEqual(await ids(mods), []);
+
+  const done = await getFromRegistry('alpha', { modsDir: mods, fetch: github([v1]).fetch, expect: '1.0.0' });
+  assert.equal(done.version, '1.0.0');
+
+  // And an update asked about 2.0.0 does not take 3.0.0.
+  const v3 = await release(dir, await plugin(dir, 'alpha', '3.0.0'));
+  await assert.rejects(updateFromRegistry('alpha', { modsDir: mods, fetch: github([v3]).fetch, expect: '2.0.0' }), /not the 2\.0\.0 you were asked about/);
+  assert.equal(JSON.parse(await fs.readFile(path.join(mods, 'alpha', 'package.json'), 'utf8')).version, '1.0.0', 'still the old one');
+});
+
 test('a name the registry does not have is said, and a plugin already installed needs --force or an update', async () => {
   const { dir, mods } = await fresh();
   const rel = await release(dir, await plugin(dir, 'alpha'));

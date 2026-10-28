@@ -69,6 +69,11 @@ const config = (key) => panel(`modkit.getConfig(${json(ID)}, ${json(key)})`);
 before(async () => {
   app = await openWindows();
 
+  // Precondition, read-only: these tests retire the real plugins in the panel and put them back after, and
+  // reloading scripts is not for the moment a plugin that acts on the account (auto-click, auto-chest) is on.
+  const on = await panel(`JSON.stringify(['auto-click', 'auto-chest'].filter(id => window.modkit?.mods.has(id) && modkit.isEnabled(id)))`);
+  assert.deepEqual(JSON.parse(on), [], 'a plugin that acts on the account is switched on: switch it off before running this test');
+
   const strip = await panel(`document.querySelectorAll('.tab-btn').length`);
   assert.ok(strip > 0, 'the panel has not rendered its tab strip: open the settings panel once, then run this');
   tabBefore = await panel(`[...document.querySelectorAll('.tab-btn')].findIndex(b => b.classList.contains('tab-btn--active'))`);

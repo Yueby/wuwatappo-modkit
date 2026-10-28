@@ -89,7 +89,8 @@ $hint.ForeColor = [System.Drawing.Color]::DimGray
 $form.Controls.Add($hint)
 $form.ClientSize = New-Object System.Drawing.Size(580, 440)
 
-$buttons = @($install, $uninstall, $refresh, $pluginsButton, $devFolder)
+# Everything that starts a command is off while one runs (the box too: a second command would take the first one's place).
+$buttons = @($install, $uninstall, $refresh, $pluginsButton, $devFolder, $devBox)
 $script:dev = $null          # what `dev status --json` said: { enabled, dirs }
 $script:process = $null
 $script:lines = $null        # what the program has said so far, but for progress
@@ -231,6 +232,14 @@ function Check-Update {
 
 # --- dev mode ---------------------------------------------------------------------------------------------
 
+# A path as one command line argument. In quotes, a backslash before the closing quote would swallow it
+# ("D:\work\" is not a path in quotes), so a trailing one is doubled: that is how Windows reads it back as one.
+# (Taking it off instead turns the root of a drive, E:\, into E:, which is a different place.)
+function ConvertTo-Argument([string]$Path) {
+  if ($Path.EndsWith('\')) { $Path = $Path + '\' }
+  return '"' + $Path + '"'
+}
+
 # Asks the person for the folder a plugin is written in. A function of its own so that a test can answer.
 function Select-DevFolder {
   $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
@@ -265,12 +274,12 @@ $devBox.Add_Click({
     $dir = Select-DevFolder
     if (-not $dir) { $devBox.Checked = $false; return }
   }
-  if ($dir) { Set-Dev ('dev on "' + $dir.TrimEnd('\') + '"') "正在打开开发模式…" } else { Set-Dev 'dev on' "正在打开开发模式…" }
+  if ($dir) { Set-Dev ('dev on ' + (ConvertTo-Argument $dir)) "正在打开开发模式…" } else { Set-Dev 'dev on' "正在打开开发模式…" }
 })
 
 $devFolder.Add_Click({
   $dir = Select-DevFolder
-  if ($dir) { Set-Dev ('dev on "' + $dir.TrimEnd('\') + '"') "正在打开开发模式…" }
+  if ($dir) { Set-Dev ('dev on ' + (ConvertTo-Argument $dir)) "正在打开开发模式…" }
 })
 
 # What happens when the window opens, and on 刷新: where dev mode stands, the status, then the check.
@@ -450,8 +459,10 @@ function Invoke-PluginAct($Window) {
   $verb = '安装'
   if ($update) { $verb = '更新' }
   if (-not (Confirm-Action (Get-PluginQuestion $plugin $verb))) { return }
-  $command = "mods get $($plugin.id) --yes"
-  if ($update) { $command = "mods update $($plugin.id) --yes" }
+  # --expect: the version the person was just asked about. --yes says the question has been asked, and
+  # without it the registry could have moved on to another version by the time this runs.
+  $command = "mods get $($plugin.id) --expect $($plugin.version) --yes"
+  if ($update) { $command = "mods update $($plugin.id) --expect $($plugin.version) --yes" }
   $Window.Form.Enabled = $false
   $Window.Details.Text = "正在$verb「$($plugin.name)」…"
   $result = Invoke-Modkit $command

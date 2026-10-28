@@ -43,6 +43,12 @@ The registry repository publishes `index.json` as the asset of a release called 
 4. The person says yes. For the MOD page that is a message from the panel window only; a mod running in another window
    cannot ask for an install.
 
+What this does not stop: a script that runs in the **panel window** can send the loader the same requests the MOD page does,
+including a removal (which has no question), or an install together with its own "yes". The question is there so that
+nobody installs something by mistake, not against code that is already running inside the app, and such code can do
+whatever the app can anyway (a plugin's page script is not sandboxed). That is one more reason a plugin that runs in the
+panel window gets a close look from the reviewer.
+
 What this does not do: it does not make a plugin safe. The registry is reviewed by hand, and the index pins the exact
 bytes, so a changed file cannot slip in under a version someone has already looked at, but a reviewer can miss things.
 Whoever can change the registry repository can publish plugins.

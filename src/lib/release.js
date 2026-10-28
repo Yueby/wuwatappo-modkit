@@ -60,9 +60,31 @@ export function parseChecksum(text) {
 // with the hash.
 // `onProgress(received, total)` hears of it as it comes (about five times a second, and once at the end);
 // `total` is what the server said or what `size` is, and 0 when neither is known.
-export async function downloadVerified(url, file, { expected, size = null, fetch = globalThis.fetch, onProgress = null }) {
-  const response = await fetch(url, { headers: { 'user-agent': USER_AGENT } });
+//
+// A download that goes quiet for `idleMs` is given up on, wherever it is: the connection, the headers, or
+// half way through the body. (There is no limit on how long a download that keeps coming may take.)
+export async function downloadVerified(url, file, { expected, size = null, fetch = globalThis.fetch, onProgress = null, idleMs = 30_000 }) {
+  const controller = new AbortController();
+  let idle;
+  const watch = () => {
+    clearTimeout(idle);
+    idle = setTimeout(() => controller.abort(new Error(`nothing came from ${url} for ${idleMs / 1000} s`)), idleMs);
+  };
+  watch();
+  try {
+    return await download(url, file, { expected, size, fetch, onProgress, signal: controller.signal, watch });
+  } catch (err) {
+    if (controller.signal.aborted) throw controller.signal.reason;      // say why it was given up, not just that it was
+    throw err;
+  } finally {
+    clearTimeout(idle);
+  }
+}
+
+async function download(url, file, { expected, size, fetch, onProgress, signal, watch }) {
+  const response = await fetch(url, { headers: { 'user-agent': USER_AGENT }, signal });
   if (!response.ok) throw new Error(`${url} answered ${response.status}`);
+  watch();
 
   const part = `${file}.part`;
   const hash = createHash('sha256');
@@ -74,6 +96,7 @@ export async function downloadVerified(url, file, { expected, size = null, fetch
       Readable.fromWeb(response.body),
       async function* (chunks) {
         for await (const chunk of chunks) {
+          watch();
           hash.update(chunk);
           received += chunk.length;
           if (onProgress && Date.now() - reported >= 200) {
@@ -84,6 +107,7 @@ export async function downloadVerified(url, file, { expected, size = null, fetch
         }
       },
       fs.createWriteStream(part),
+      { signal },
     );
     onProgress?.(received, total);
     const announced = Number(response.headers.get('content-length'));

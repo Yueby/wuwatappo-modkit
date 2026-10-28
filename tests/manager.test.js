@@ -258,3 +258,28 @@ test('a plugin that is being developed is marked in the list, and cannot be inst
   assert.deepEqual(await installed(modsDir), ['alpha'], 'the installed copy is as it was');
   assert.equal(JSON.parse(await fs.readFile(path.join(modsDir, 'alpha', 'package.json'), 'utf8')).version, '1.0.0');
 });
+
+test('an operation reads the registry\'s index once, and the list sent back after it is made from that, not from another trip', async () => {
+  const { dir, modsDir, talk } = await setup();
+  const rel = await alpha(dir);
+  let indexReads = 0;
+  const served = github([rel]).fetch;
+  const counting = async (url, options) => {
+    if (url.endsWith('/index.json')) indexReads += 1;
+    return served(url, options);
+  };
+  const page = talk([rel], { fetch: counting });
+
+  page.send({ id: 'o1', action: 'get', mod: 'alpha' });
+  await page.asked('o1');
+  page.send({ id: 'o1', action: 'answer', ok: true });
+  const done = await page.finished('o1');
+  assert.equal(done.done, 'installed');
+  assert.equal(indexReads, 1, 'one read for the install and the list that comes back');
+  assert.equal(done.mods.find(m => m.id === 'alpha').installed, true, 'and the list is already the new one');
+
+  page.send({ id: 'o2', action: 'remove', mod: 'alpha' });
+  await page.finished('o2');
+  assert.equal(indexReads, 2, 'one more for the removal, and no more');
+  assert.deepEqual(await installed(modsDir), []);
+});

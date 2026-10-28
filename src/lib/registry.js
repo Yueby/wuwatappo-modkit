@@ -121,10 +121,15 @@ export async function browse({ modsDir, repo = REGISTRY_REPO, fetch, index = nul
 
 // Download a plugin and install it. `confirm(info)` is asked with what the package itself declares, after
 // it has been checked against the index, and before it is put in place. `replace` is for an update.
-export async function getFromRegistry(id, { modsDir, repo = REGISTRY_REPO, fetch, index = null, confirm = null, force = false, replace = null, tools }) {
+// `expect`: the version the person was asked about. A window that has asked and then runs this with no
+// question of its own (--yes) would otherwise install whatever the registry holds by then.
+export async function getFromRegistry(id, { modsDir, repo = REGISTRY_REPO, fetch, index = null, confirm = null, force = false, replace = null, tools, expect = null }) {
   const { entries } = index ?? await fetchIndex({ repo, fetch });
   const entry = entries.find(candidate => candidate.id.toLowerCase() === String(id).toLowerCase());
   if (!entry) throw new Error(`the registry has no plugin called "${id}"`);
+  if (expect !== null && entry.version !== expect) {
+    throw new Error(`the registry now has ${entry.version} of ${entry.id}, not the ${expect} you were asked about: nothing was installed`);
+  }
 
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'modkit-registry-'));
   try {
@@ -164,7 +169,7 @@ export async function updateFromRegistry(id, { modsDir, ...options }) {
   if (!entry) throw new Error(`the registry no longer has a plugin called "${source.spec}"`);
   if (mod?.version && compareVersions(entry.version, mod.version) <= 0) return { unchanged: true, version: mod.version };
 
-  const done = await getFromRegistry(entry.id, { modsDir, ...options, index, replace: id });
+  const done = await getFromRegistry(entry.id, { modsDir, ...options, index, replace: id });   // (expect, if given, is checked there)
   return { ...done, before: mod?.version ?? null, unchanged: false };
 }
 

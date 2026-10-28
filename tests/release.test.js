@@ -208,3 +208,34 @@ test('what the update command says while it downloads: lines for a window that a
 
   assert.equal(progressWriter({ machine: false, stream: { isTTY: false, write() {} } }), null, 'a pipe that did not ask hears nothing');
 });
+
+test('a download that goes quiet is given up, wherever it stalls, and leaves nothing; one that keeps coming is not', async () => {
+  const file = path.join(root, `stall-${++counter}.bin`);
+  const bytes = Buffer.alloc(1000, 3);
+
+  // Quiet from the start: the fetch itself never answers (it hears of the abort, as a real one does).
+  const silent = (url, { signal }) => new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason)));
+  await assert.rejects(downloadVerified('https://github.com/x/y/z', file, { expected: sha(bytes), fetch: silent, idleMs: 80 }), /nothing came from/);
+
+  // Quiet half way: some of the body comes, and then no more.
+  const half = (url, { signal }) => new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(bytes.subarray(0, 400));
+      signal.addEventListener('abort', () => controller.error(signal.reason));
+    },
+  }));
+  await assert.rejects(downloadVerified('https://github.com/x/y/z', file, { expected: sha(bytes), fetch: half, idleMs: 80 }), /nothing came from/);
+  assert.deepEqual((await fs.readdir(root)).filter(name => name.startsWith('stall-')), [], 'neither the file nor its part is left');
+
+  // Slow but steady: longer in all than the limit, with something coming inside it each time.
+  const steady = () => new Response(new ReadableStream({
+    async start(controller) {
+      for (let i = 0; i < 5; i++) {
+        controller.enqueue(bytes.subarray(i * 200, (i + 1) * 200));
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      controller.close();
+    },
+  }));
+  assert.equal(await downloadVerified('https://github.com/x/y/z', file, { expected: sha(bytes), fetch: steady, idleMs: 120 }), sha(bytes));
+});

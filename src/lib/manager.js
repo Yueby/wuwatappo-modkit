@@ -10,13 +10,15 @@
 //     install another by sending the same message.
 //   * nothing is put in place until the person has seen what it is and said yes: an install or an update
 //     sends a `confirm` event with what the package declares, and waits for { action: 'answer' }. No answer
-//     within three minutes is a no. A mod in the panel window could still send the answer itself, which is
-//     why the plugins on offer are the registry's, reviewed by hand, and not anything a message names.
+//     within three minutes is a no.
+// Neither is a defence against a script that runs in the panel window itself: it can send any of these
+// requests, remove a plugin (which has no question), or answer its own question. That script already has all
+// the app's powers, so this is about mistakes, not about it; the plugins on offer are the registry's,
+// reviewed by hand, and not anything a message names. (docs/REGISTRY.md says the same.)
 
 import path from 'node:path';
-import { readDev } from './devmode.js';
+import { developing } from './devmode.js';
 import { InstallDeclined, listMods, removeMod } from './install.js';
-import { discoverDev } from './mods.js';
 import { MOD_DATA_DIR } from './paths.js';
 import { REGISTRY_REPO, browse, fetchIndex, getFromRegistry, updateFromRegistry } from './registry.js';
 
@@ -37,6 +39,7 @@ const REASONS = [
   [/no longer has a plugin/, '仓库里已经没有这个插件了。'],
   [/did not come from the registry/, '这个插件不是从仓库安装的，没法在这里更新。'],
   [/is in use from a dev folder/, '这个插件正在开发模式里用本地文件夹，不能在这里安装、更新或卸载。先在启动器里关掉开发模式。'],
+  [/the registry now has/, '仓库里这个插件的版本刚刚变了，不是您看到的那一个，没有安装。请刷新列表再看一遍。'],
   [/is already installed/, '这个插件已经装过了。'],
   [/does not match its checksum/, '下载的文件和仓库登记的校验值对不上，已丢弃，没有安装。'],
   [/stopped at \d+|bytes, not the/, '下载得不完整，已丢弃，请再试一次。'],
@@ -111,10 +114,11 @@ export class ModManager {
     if (this.#busy) throw new Error('另一项操作还没做完，请稍等一下。');
     this.#busy = true;
     try {
-      const result = await this.#run(id, message);
+      const index = await fetchIndex({ repo: this.#repo, fetch: this.#fetch });
+      const result = await this.#run(id, message, index);
       this.#log(`${action} ${message.mod}: ${result.summary}`);
       // The list as it is now, so that the page can draw it again. Not worth failing for: it was done.
-      const fresh = await this.#plugins().catch(() => null);
+      const fresh = await this.#plugins(index).catch(() => null);
       this.#reply(id, { type: 'result', ...result, mods: fresh?.entries ?? null, problems: fresh?.problems ?? [] });
     } finally {
       this.#busy = false;
@@ -124,22 +128,22 @@ export class ModManager {
   // The registry's plugins and where each stands here. In dev mode the ones that are being developed are
   // marked: they come from a folder on this machine, and installing, updating or removing them here would
   // be about a copy that is not the one in use.
-  async #plugins() {
-    const { entries, problems } = await browse({ modsDir: this.#modsDir, repo: this.#repo, fetch: this.#fetch });
-    const developing = await this.#developing();
-    return { entries: entries.map(entry => ({ ...entry, dev: developing.has(entry.id) })), problems };
+  // `index`: the registry's index as it was read for this request, so that the list drawn after an
+  // install is made from it and costs no second trip to the network.
+  async #plugins(index = null) {
+    const { entries, problems } = await browse({ modsDir: this.#modsDir, repo: this.#repo, fetch: this.#fetch, index });
+    const beingDeveloped = await this.#developing();
+    return { entries: entries.map(entry => ({ ...entry, dev: beingDeveloped.has(entry.id) })), problems };
   }
 
-  async #developing() {
-    const dev = await readDev({ ...(this.#devFile ? { file: this.#devFile } : {}) });
-    if (!dev.enabled) return new Set();
-    return new Set((await discoverDev(dev.dirs)).map(mod => mod.name));
+  #developing() {
+    return developing(this.#devFile ? { file: this.#devFile } : {});
   }
 
-  async #run(id, message) {
+  async #run(id, message, index) {
     const target = this.#idOf(message.mod);
     if ((await this.#developing()).has(target)) throw new Error(`${target} is in use from a dev folder`);
-    const common = { modsDir: this.#modsDir, repo: this.#repo, fetch: this.#fetch, tools: this.#tools };
+    const common = { modsDir: this.#modsDir, repo: this.#repo, fetch: this.#fetch, tools: this.#tools, index };
 
     if (message.action === 'get') {
       try {
@@ -153,9 +157,8 @@ export class ModManager {
 
     if (message.action === 'update') {
       try {
-        const index = await fetchIndex({ repo: this.#repo, fetch: this.#fetch });
         const before = (await listMods(this.#modsDir)).find(mod => mod.id === target)?.version ?? null;
-        const done = await updateFromRegistry(target, { ...common, index, confirm: info => this.#ask(id, { ...info, before }) });
+        const done = await updateFromRegistry(target, { ...common, confirm: info => this.#ask(id, { ...info, before }) });
         if (done.unchanged) return { done: 'current', id: target, version: done.version, summary: `${target} is current` };
         return { done: 'updated', id: target, version: done.version, summary: `updated ${target} to ${done.version ?? '?'}` };
       } catch (err) {
