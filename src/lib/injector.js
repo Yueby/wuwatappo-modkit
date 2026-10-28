@@ -6,7 +6,7 @@
 
 import { CDPSession } from './cdp.js';
 import { targetList, windowLabel, DebugPortUnavailable } from './targets.js';
-import { compileMod } from './inject.js';
+import { compileMod, retireMissing } from './inject.js';
 import { modsSignature } from './mods.js';
 
 export class Injector {
@@ -88,6 +88,13 @@ export class Injector {
 
       const thisWindow = [];
       try {
+        // First drop anything whose file is gone, so a deleted mod's UI does not
+        // outlive it.
+        const retired = await session.evaluate(retireMissing(this.#mods.map(m => m.name)));
+        for (const name of retired ?? []) {
+          thisWindow.push({ window: label, mod: name, status: 'removed' });
+        }
+
         for (const mod of this.#mods) {
           const report = await session.evaluate(compileMod(mod));
           if (report?.status === 'ok' || report?.status === 'error') {

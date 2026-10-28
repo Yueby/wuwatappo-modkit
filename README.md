@@ -41,12 +41,15 @@ src/lib/cdp.js          Chrome DevTools Protocol client (no dependencies)
 src/lib/targets.js      window discovery over the DevTools HTTP endpoint
 src/lib/inject.js       in-page mod runtime (compiled to source text)
 src/lib/injector.js     session management + re-injection on navigation
-src/lib/mods.js         mod discovery and change detection
+src/lib/mods.js         discovery of framework scripts and user mods, change detection
+src/runtime/            framework scripts injected into every window before any mod
+                        (the MOD tab and page in the settings panel)
 src/lib/patch.js        patches the installed exe in place (with backup)
 src/lib/launch.js       launching: detached, and through UAC
 src/lib/ps.js           one-off PowerShell (elevation, process control)
 scripts/                standalone asset/command extraction tools
-mods/                   your mods (files starting with _ are not loaded)
+mods/                   your mods (files starting with _ are not loaded); the MOD page
+                        lists them, so the framework itself is deliberately not in here
 docs/                   launch and modding notes
 work/                   generated: extracted assets (git-ignored)
 ```

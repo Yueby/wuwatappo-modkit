@@ -12,11 +12,51 @@ around without them loading.
 ```js
 mod.invoke(cmd, args?)      // call a backend Tauri command, returns a promise
 mod.css(text)               // inject a stylesheet; returns a remover function
+mod.entry({ title, description?, render? })   // add a card to the MOD page (see below)
+mod.onDispose(fn)           // run fn when this mod is unloaded (reload, delete, failure)
 mod.onEvent(name, fn)       // subscribe to a backend event
 mod.waitFor(selector, opts) // resolve when an element appears (MutationObserver)
 mod.log(...args)            // console.log, prefixed with the mod name
 mod.warn(...args)           // same, as a warning
 ```
+
+### The MOD page
+
+The settings panel has a **MOD** entry in its left navigation. It is part of the
+framework (`src/runtime/panel-tab.js`), not a mod: it is injected into every window
+before any mod runs, so `mod.entry` is always available, and it cannot be removed by
+deleting something from `mods/`.
+
+The page lists the mods that are loaded (with an "error" row and the message if one
+failed) and, below that, every card added through `mod.entry`:
+
+```js
+mod.entry({
+  title: '自动点击',
+  description: '一句话说明',
+  render() {                       // optional; called each time the page is drawn
+    const b = document.createElement('button');
+    b.textContent = running ? '停止' : '开始';
+    b.onclick = () => { toggle(); window.modkit.changed(); };   // ask for a redraw
+    return b;
+  },
+});
+```
+
+- `render()` runs on every redraw, so build the element from the mod's current state
+  instead of caching it.
+- Call `window.modkit.changed()` after the state behind a card changes.
+- A card is removed automatically when its mod is unloaded. That includes a mod that
+  throws partway through: whatever it had already added is undone, and the error shows
+  on the MOD page.
+
+### Loading and unloading
+
+Editing a mod file reloads it in every open window: the old copy is disposed first
+(its cards, styles and anything registered with `mod.onDispose` go), then the new one
+runs. Deleting a mod file unloads it the same way on the next pass of `watch` (or
+the next `run`). Register timers and listeners with `mod.onDispose` or they will keep
+running after a reload.
 
 Mods run **once per window**, not once per app. There are seven windows:
 `main`, `panel`, `login`, `update`, `toast`, `about`, `oss-notice`. Most mods

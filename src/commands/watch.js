@@ -7,7 +7,7 @@
 // restarting this process; the cost is one directory stat every interval.
 
 import { Injector } from '../lib/injector.js';
-import { discoverMods, modsSignature } from '../lib/mods.js';
+import { discoverAll, modsSignature } from '../lib/mods.js';
 import { DebugPortUnavailable } from '../lib/targets.js';
 import { parseOptions } from './options.js';
 import { log, statusWord, style } from '../lib/output.js';
@@ -47,12 +47,13 @@ export default async function watch(argv) {
     if (modsTick-- <= 0) {
       modsTick = Math.max(1, Math.round(MODS_POLL_MS / INJECT_POLL_MS));
       try {
-        const mods = await discoverMods(options.modsDir);
+        const mods = await discoverAll(options.modsDir);
         const next = modsSignature(mods);
         if (next !== signature) {
           signature = next;
           injector.setMods(mods);
-          log(`${style.cyan('mods')} ${mods.map(m => m.name).join(', ') || style.dim('(none)')}`);
+          const user = mods.filter(m => !m.core).map(m => m.name);
+          log(`${style.cyan('mods')} ${user.join(', ') || style.dim('(none)')}  ${style.dim(`+ ${mods.length - user.length} framework`)}`);
         }
       } catch (err) {
         log(`${style.red('mods')} ${err.message}`);
@@ -63,7 +64,7 @@ export default async function watch(argv) {
       const reports = await injector.injectAll({ force: options.force });
       for (const r of reports) {
         const detail = r.status === 'error' ? `  ${style.red(r.error)}` : '';
-        log(`  ${r.window.padEnd(10)} ${r.mod.padEnd(20)} ${statusWord(r.status)}${detail}`);
+        log(`  ${r.window.padEnd(10)} ${r.mod.padEnd(26)} ${statusWord(r.status)}${detail}`);
       }
       // --force is for a single pass; after that, normal change detection.
       options.force = false;

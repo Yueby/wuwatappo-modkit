@@ -50,6 +50,23 @@ export function compileMod({ name, code, version }) {
       disposers.push(fn);
       return fn;
     },
+    // Put a card on the MOD page of the settings panel. The argument is
+    //   { title, description?, render?() -> HTMLElement }
+    // render() is called every time the page is drawn, so build the element from the
+    // mod's own state rather than keeping it around. The card is removed again when
+    // this mod is disposed (hot reload, or the mod failing).
+    entry(def) {
+      const kit = window.modkit;
+      if (!kit) {
+        console.warn('[%s] mod.entry: the framework is not loaded in this window'.replace('%s', ${nameLiteral}));
+        return () => {};
+      }
+      const entry = { ...def, owner: ${nameLiteral} };
+      kit.addEntry(entry);
+      const remove = () => kit.removeEntry(entry);
+      disposers.push(remove);
+      return remove;
+    },
     onEvent(event, handler) {
       return T.invoke('plugin:event|listen', {
         event,
@@ -85,8 +102,13 @@ export function compileMod({ name, code, version }) {
       version: ${versionLiteral},
       dispose: registry[${nameLiteral}]?.dispose,
     };
+    window.modkit?.changed?.();
     return { status: 'ok' };
   } catch (err) {
+    // A mod that dies halfway has usually already added a card, a style, a timer.
+    // Leaving that behind gives a half-working UI that is harder to diagnose than
+    // none, so undo it; the error itself stays visible in the registry.
+    try { registry[${nameLiteral}]?.dispose?.(); } catch {}
     registry[${nameLiteral}] = {
       status: 'error',
       error: String(err),
@@ -94,6 +116,7 @@ export function compileMod({ name, code, version }) {
       dispose: registry[${nameLiteral}]?.dispose,
     };
     console.error('[%s] failed'.replace('%s', ${nameLiteral}), err);
+    window.modkit?.changed?.();
     return { status: 'error', error: String(err) };
   }
 })()`;
@@ -106,3 +129,24 @@ export const PROBE_MODS = `(() => {
     Object.entries(registry).map(([name, state]) => [name, state?.status ?? 'unknown'])
   );
 })()`;
+
+// Dispose every mod registered in the page that is not in `keep` (names still on
+// disk). Without this, deleting or renaming a mod file leaves its UI and timers
+// running in windows that are already open until the app is restarted.
+// Returns the names that were retired.
+export function retireMissing(keep) {
+  return `(() => {
+  const keep = new Set(${JSON.stringify(keep)});
+  const registry = window.${MOD_STATE_KEY} ?? {};
+  const retired = [];
+  for (const [name, state] of Object.entries(registry)) {
+    if (keep.has(name)) continue;
+    try { state?.dispose?.(); } catch (err) { console.warn('dispose failed for', name, err); }
+    delete registry[name];
+    retired.push(name);
+  }
+  if (retired.length) window.modkit?.changed?.();
+  return retired;
+})()`;
+}
+

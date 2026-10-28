@@ -1,4 +1,11 @@
-// Loading mods from disk.
+// Loading scripts from disk: the framework runtime, and the user's mods.
+//
+//   src/runtime/*.js   framework — injected first, into every window, always
+//   mods/*.js          user mods — injected after the framework
+//
+// They share one pipeline (same wrapper, same hot reload), but they are kept apart
+// on purpose: the manager page lists the user's mods, so the code that draws that
+// page must not be one of them.
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -6,12 +13,17 @@ import { fileURLToPath } from 'node:url';
 
 export const PROJECT_ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 export const DEFAULT_MODS_DIR = path.join(PROJECT_ROOT, 'mods');
+export const RUNTIME_DIR = path.join(PROJECT_ROOT, 'src', 'runtime');
 
-// Files starting with "_" are helpers/fragments and are not loaded.
-const MOD_FILE = /\.(m?js)$/i;
+// Framework scripts are registered under this prefix so they can never collide with a
+// user mod's name, and so the manager can tell them apart.
+export const CORE_PREFIX = '@core/';
+
+// Files starting with "_" or "." are helpers/fragments and are not loaded.
+const SCRIPT_FILE = /\.(m?js)$/i;
 const IGNORED = /^[_.]/;
 
-export async function discoverMods(dir = DEFAULT_MODS_DIR) {
+async function readScripts(dir, { prefix = '', core = false } = {}) {
   let entries;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
@@ -21,26 +33,40 @@ export async function discoverMods(dir = DEFAULT_MODS_DIR) {
   }
 
   const files = entries
-    .filter(e => e.isFile() && MOD_FILE.test(e.name) && !IGNORED.test(e.name))
+    .filter(e => e.isFile() && SCRIPT_FILE.test(e.name) && !IGNORED.test(e.name))
     .map(e => e.name)
     .sort();
 
-  const mods = [];
+  const scripts = [];
   for (const file of files) {
     const fullPath = path.join(dir, file);
     const code = await fs.readFile(fullPath, 'utf8');
-    const digest = hash(code);
-    mods.push({
-      name: path.basename(file, path.extname(file)),
+    const digest = `${code.length}:${hash(code)}`;
+    scripts.push({
+      name: prefix + path.basename(file, path.extname(file)),
       file: fullPath,
       code,
-      // `version` is what the page compares against to decide whether a change
-      // is a no-op retry or a genuine reload of a modified file.
-      version: `${code.length}:${digest}`,
-      signature: `${code.length}:${digest}`,
+      core,
+      // `version` is what the page compares against to decide whether a change is a
+      // no-op retry or a genuine reload of a modified file.
+      version: digest,
+      signature: digest,
     });
   }
-  return mods;
+  return scripts;
+}
+
+export function discoverMods(dir = DEFAULT_MODS_DIR) {
+  return readScripts(dir);
+}
+
+export function discoverCore() {
+  return readScripts(RUNTIME_DIR, { prefix: CORE_PREFIX, core: true });
+}
+
+// Everything to inject, in the order to inject it: framework first.
+export async function discoverAll(modsDir = DEFAULT_MODS_DIR) {
+  return [...await discoverCore(), ...await discoverMods(modsDir)];
 }
 
 // FNV-1a; we only need change detection, not cryptographic strength.
