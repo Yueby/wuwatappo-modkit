@@ -38,6 +38,12 @@ function readPid(file) {
   }
 }
 
+// The pid of a loader that is running, or null.
+export function runningLoader({ file = LOCK_FILE, alive = isAlive } = {}) {
+  const pid = readPid(file);
+  return pid !== null && alive(pid) ? pid : null;
+}
+
 // Take the lock or throw LoaderRunning. Released at exit, and by release() for a caller that wants
 // to say so earlier. `pid` and `alive` are for tests.
 export function acquireLock({ file = LOCK_FILE, pid = process.pid, alive = isAlive } = {}) {

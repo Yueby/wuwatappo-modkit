@@ -29,7 +29,8 @@ export function startupDir() {
 const vb = text => String(text).replaceAll('"', '""');
 
 export function scriptText({ node, cli, cwd }) {
-  const command = `"${node}" "${cli}" start --log-file`;
+  // --no-launch: the loader waits for the app, however it is started; it does not start it.
+  const command = `"${node}" "${cli}" start --no-launch --log-file`;
   return [
     `' Starts wuwa-modkit when you log on. Written by: node src/cli.js autostart install`,
     `' Remove it with: node src/cli.js autostart remove   (or just delete this file)`,

@@ -10,8 +10,17 @@ length-preserving byte edit (it stops demanding administrator) and nothing else.
 ## Quick start
 
 ```sh
+node src/cli.js setup        # once (one UAC prompt). From then on just run WuwaTappo.exe: the mods start with it
+node src/cli.js uninstall    # takes that away again
+```
+
+`setup` has the app open its DevTools port by itself on every start, and has the loader start at every
+logon, waiting for the app. Nothing has to launch the app for you.
+
+Without installing anything, for one session:
+
+```sh
 node src/cli.js start        # patch if needed, start the app with DevTools, keep mods applied (stays running)
-node src/cli.js autostart install   # ...and do that by itself when you log on to Windows
 ```
 
 or in two steps, which is what to use while writing a mod:
@@ -32,6 +41,7 @@ To write a mod, copy `mods/_template/` (see [docs/MODDING.md](docs/MODDING.md)).
 | `lab` | Patch the installed app in place, then start it with DevTools |
 | `lab --rebuild` | Re-apply the patch from the stock backup |
 | `lab --restore` | Put the unpatched original back |
+| `setup` / `setup status` / `uninstall` | One-time install: the app opens its DevTools port on every start, the loader starts at logon. After it, run `WuwaTappo.exe` any way you like |
 | `start` | Start the app with DevTools if it is not running, then stay resident (`--no-launch`, `--log-file`) |
 | `autostart install` / `remove` / `status` | Run `start` at logon, from a script in your Startup folder |
 | `mods list` / `install <source>` / `update [id]` / `remove <id>` | Install a mod from a folder, `.zip`/`.tgz`, git URL, npm package or `.js` file |
@@ -61,6 +71,7 @@ src/
     host.js               a mod's Node part: starting and stopping it, carrying messages between pages and mods
     host-runner.js        what runs inside its child process (the `host` object a mod gets)
     app.js                is the app up, with a DevTools port; starting it
+    webview-policy.js     the registry value that makes the app open its DevTools port by itself
     lock.js               one loader at a time
     autostart.js          the logon script in the Startup folder
     install.js            installing, updating, removing and listing mods

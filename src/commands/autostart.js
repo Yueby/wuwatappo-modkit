@@ -17,8 +17,9 @@ export default async function autostart(argv) {
     field('script', file);
     field('runs', status().command);
     field('log', LOG_FILE);
-    log(`\n  From the next logon the loader starts by itself, starts the app with DevTools if it is not`);
-    log(`  running, and keeps your mods applied. ${style.bold('node src/cli.js autostart remove')} undoes it.`);
+    log(`\n  From the next logon the loader starts by itself and waits for the app (it does not start it),`);
+    log(`  and keeps your mods applied. ${style.bold('node src/cli.js autostart remove')} undoes it.`);
+    log(style.dim('  The app needs its DevTools port: node src/cli.js setup does that and this together.'));
     await warnAboutAppTask();
     return 0;
   }

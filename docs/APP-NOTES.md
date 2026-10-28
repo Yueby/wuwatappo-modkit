@@ -303,6 +303,19 @@ Measured on the running app, because the mod system's cross-window design rests 
 - The profile is the app's own, so `clear_all_browsing_data` (which wipes the login) wipes the
   stored settings with it.
 
+## DevTools port from the registry
+
+WebView2 reads extra browser arguments from the registry as well as from `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`
+(the environment is checked first, the registry if none is set). From the WebView2 docs, and observed here:
+
+- the registry arguments are **appended** to the app's own, never substituted: after the app was restarted
+  with only the registry value in place, its login and local storage were as before;
+- the value name is the program (`WuwaTappo.exe`, which worked as written); `*` applies to every WebView2 app;
+- **an elevated process ignores the environment variable but honours the registry**, which is why a
+  `--elevated` launch had no port when only the variable was used;
+- `HKCU\Software\Policies` is owned by SYSTEM: this user (an administrator, not elevated) has read access
+  only, and `reg add` there is "access denied". Writing it needs UAC. The key did not exist before `setup`.
+
 ## Processes the loader starts
 
 Measured on Windows: a child process Node starts without `detached` is gone within 1.5 s of its parent

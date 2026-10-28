@@ -12,7 +12,7 @@
     "lab": "node src/cli.js lab",
     "watch": "node src/cli.js watch",
     "run": "node src/cli.js run",
-    "test": "node --test --test-timeout=120000 tests/mods.test.js tests/semver.test.js tests/auto-click.test.js tests/host.test.js tests/host-page.test.js tests/click-journal.test.js tests/loader.test.js tests/install.test.js",
+    "test": "node --test --test-timeout=120000 tests/mods.test.js tests/semver.test.js tests/auto-click.test.js tests/host.test.js tests/host-page.test.js tests/click-journal.test.js tests/loader.test.js tests/install.test.js tests/webview-policy.test.js",
     "test:app": "node --test --test-concurrency=1 --test-timeout=120000 tests/modkit-runtime.test.js tests/mod-dialog.test.js tests/modkit-host.test.js && node tests/panel-tab.test.js"
   },
   "engines": {

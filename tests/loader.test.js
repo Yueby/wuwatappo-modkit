@@ -125,7 +125,7 @@ test('the logon script starts the loader hidden, from the project folder, and qu
   assert.match(text, /CurrentDirectory = "E:\\my mods"/);
   const run = text.match(/shell\.Run "(.*)", 0, False/)[1];
   // VBScript doubles a quote inside a string; undone, it is a command line with each path quoted.
-  assert.equal(run.replaceAll('""', '"'), '"C:\\Program Files\\nodejs\\node.exe" "E:\\my mods\\src\\cli.js" start --log-file');
+  assert.equal(run.replaceAll('""', '"'), '"C:\\Program Files\\nodejs\\node.exe" "E:\\my mods\\src\\cli.js" start --no-launch --log-file');
   assert.match(text, /, 0, False/, 'window style 0: hidden, and do not wait');
   assert.ok(text.includes('\r\n'), 'Windows line endings');
 });
@@ -138,7 +138,7 @@ test('installing, reading back and removing the logon script', () => {
   assert.equal(file, path.join(startup, 'wuwa-modkit.vbs'));
   const now = status({ dir: startup });
   assert.equal(now.installed, true);
-  assert.equal(now.command, '"C:\\node.exe" "E:\\p\\src\\cli.js" start --log-file');
+  assert.equal(now.command, '"C:\\node.exe" "E:\\p\\src\\cli.js" start --no-launch --log-file');
 
   install({ dir: startup, node: 'C:\\node.exe', cli: 'E:\\p\\src\\cli.js', cwd: 'E:\\p' });       // again: the same file, not a second one
   assert.deepEqual(fs.readdirSync(startup), ['wuwa-modkit.vbs']);

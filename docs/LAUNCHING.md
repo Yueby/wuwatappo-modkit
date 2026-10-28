@@ -83,6 +83,35 @@ E:\Programs\WuwaTappo\
   .wuwa-modkit.json       what was patched, when, and the hash
 ```
 
+## Install once, then just run the app
+
+```sh
+node src/cli.js setup            # one UAC prompt, once
+node src/cli.js setup status     # what is in place
+node src/cli.js uninstall        # takes it away (one UAC prompt); --restore-exe also puts the original exe back
+```
+
+After `setup`, start `WuwaTappo.exe` however you like (its shortcut, a double-click, its own logon task)
+and the mods start with it. Three pieces make that so:
+
+1. **The exe is patched** (the existing one-byte edit: it no longer demands administrator).
+2. **The app opens its DevTools port by itself**, from a registry value:
+   `HKCU\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments` →
+   `WuwaTappo.exe = --remote-debugging-port=9222`. This is WebView2's documented override. It is
+   appended to the app's own arguments (its profile and login are untouched; checked: login and click count
+   were intact across a restart), it is named for this program only (a `*` would open a port in every
+   WebView2 program on the machine), and unlike an environment variable it is honoured by a process
+   running elevated. Writing under `Software\Policies` needs administrator rights (it belongs to SYSTEM):
+   that is the UAC prompt of `setup` and of `uninstall`, and the only time this tool asks for one.
+3. **The loader runs at every logon**, from a script in the Startup folder, waiting for the app
+   (`start --no-launch`). It attaches whenever the app has a port, injects, and runs the mods' Node parts.
+
+So the app's own logon task (`\WuwaTappo\ElevatedAutostart`) no longer gets in the way: the app it starts has
+the port too. The port is on `127.0.0.1` only, but any program on this machine can drive the app through
+it for as long as it is there; `uninstall` closes it.
+
+A running app has to be restarted once after `setup`: it was started before, without the port.
+
 ## Always on
 
 `start` is `lab` and `watch` in one: it patches the exe if that is needed, starts the app with the
@@ -97,14 +126,13 @@ node src/cli.js autostart status
 node src/cli.js autostart remove
 ```
 
-`autostart` writes one file, `wuwa-modkit.vbs`, in your own Startup folder (no administrator, nothing
+`autostart` (which `setup` does for you) writes one file, `wuwa-modkit.vbs`, in your own Startup folder (no administrator, nothing
 in the registry or the task scheduler); deleting it is removing it.
 
 - **The app has a logon task of its own** (`\WuwaTappo\ElevatedAutostart`, made while it still ran as
-  administrator). If it starts the app before the loader does, the app has no DevTools port and the
-  loader cannot attach; `start` says so and waits. `autostart status` tells you whether that task exists.
-  Deleting it needs an administrator: `schtasks /Delete /TN "\WuwaTappo\ElevatedAutostart" /F` in an
-  elevated terminal. (The app's "start with Windows" switch no longer works under the patch anyway.)
+  administrator). Without `setup`, if it starts the app before the loader does, the app has no DevTools
+  port and the loader cannot attach. With `setup` it does not matter. (The app's "start with Windows"
+  switch no longer works under the patch anyway.)
 - The loader launches the app **once**, when it starts. If you close the app, it does not start it again;
   start it with `start` (the loader already running just carries on and attaches).
 - The log is kept to about 1 MB, plus the previous one as `modkit.log.1`.

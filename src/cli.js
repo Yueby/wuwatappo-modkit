@@ -11,6 +11,8 @@ ${style.bold('Usage')}
   node src/cli.js <command> [options]
 
 ${style.bold('Commands')}
+  setup [status]      One-time install: after it, just run WuwaTappo.exe and the mods start with it
+  uninstall           Take setup away again (--restore-exe also puts the original exe back)
   start               Keep mods always on: start the app with DevTools if needed, then stay resident
     --no-launch         do not start the app, wait for one
     --log-file          also write to work/logs/modkit.log
