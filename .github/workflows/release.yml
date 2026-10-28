@@ -1,0 +1,70 @@
+# Tests on every push and pull request; and when `version` in package.json is one that has no release yet,
+# builds the exe and publishes the release the exe's update check looks for (docs/RELEASING.md).
+#
+# So making a release is: raise "version" in package.json, push to main. Nothing else.
+
+name: build and release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write          # to create the release (the tag is made with it)
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The exe is a copy of this node.exe with the program put into it, so this is the Node it ships with.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # The offline tests (the ones that need the running app, or a desktop, are `npm run test:app`).
+      - run: npm test
+
+      # Only a push to main publishes; anything else stops here, after the tests.
+      - name: Is there a release for this version yet?
+        id: version
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" > /dev/null 2>&1; then
+            echo "v$version is already released: nothing to publish"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$version has no release yet"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Makes dist/modkit.exe and dist/modkit.exe.sha256, runs the exe's own selftest, and fails if the
+      # exe does not say the version it was built as.
+      - name: Build the exe
+        if: steps.version.outputs.publish == 'true'
+        run: npm run build
+
+      - name: Publish the release
+        if: steps.version.outputs.publish == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          gh release create "v$version" dist/modkit.exe dist/modkit.exe.sha256 \
+            --target "$GITHUB_SHA" --title "v$version" --generate-notes

@@ -6,16 +6,26 @@ loader that is running), and opens a new window. The window shows the version it
 
 ## Making a release
 
-1. Raise `version` in `package.json` (the one place a version is written; the build puts it into the exe).
-2. `npm run build`. It makes `dist/modkit.exe` and `dist/modkit.exe.sha256`, runs the exe's selftest, and checks that
-   the exe says the version it was built as.
-3. Create a GitHub release whose **tag is the version** (`v0.2.0` or `0.2.0`), with both files attached:
+Raise `version` in `package.json` (the one place a version is written; the build puts it into the exe) and push to
+`main`. That is all: `.github/workflows/release.yml` runs the tests, and when there is no release called `v<version>`
+yet it builds the exe and publishes it, tag included, with generated notes. A push that does not change the version
+only runs the tests (the release is already there); a pull request only runs the tests.
 
-   ```sh
-   gh release create v0.2.0 dist/modkit.exe dist/modkit.exe.sha256 --title v0.2.0 --notes "what changed"
-   ```
+What the build does (`npm run build`, the same thing you can run by hand): it makes `dist/modkit.exe` and
+`dist/modkit.exe.sha256`, runs the exe's selftest, and checks that the exe says the version it was built as. The
+release has both files, and the tag is the version (`v0.2.0`).
+
+By hand, if it ever has to be:
+
+```sh
+npm run build
+gh release create v0.2.0 dist/modkit.exe dist/modkit.exe.sha256 --title v0.2.0 --generate-notes
+```
 
 The asset names matter: they are fetched from `releases/download/<tag>/modkit.exe` and `modkit.exe.sha256`.
+
+The exe is a copy of the `node.exe` of the runner that built it (Node 24, set in the workflow), with the program put
+into it. A release is never replaced: to fix one, raise the version again.
 
 ## How it checks
 
