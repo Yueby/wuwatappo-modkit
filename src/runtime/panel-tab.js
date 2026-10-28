@@ -210,6 +210,16 @@ function loadedMods() {
 // the app puts a title next to a count: 房间（3/5）, with the room number as a quieter line
 // under it. Ours reads MOD（3） with the overall state underneath. 20px / 18px, colours and
 // line heights all come from those classes.
+// A button at the right end of a title row, the way the room page puts its 离开房间: the app's
+// own button (common-btn) with the class that places it (leave-room-btn is only "absolute, right
+// 0, bottom 0" inside .room-info). The empty space beside a title is used, not a row of the list.
+function headerButton(label, onClick) {
+  const button = el('button', 'common-btn leave-room-btn', label);
+  button.type = 'button';
+  button.addEventListener('click', onClick);
+  return button;
+}
+
 function renderHeader(body, mods) {
   const failed = mods.filter(([id]) => kit.stateOf(id).status === 'error').length;
   const head = el('div', 'room-info');
@@ -218,6 +228,7 @@ function renderHeader(body, mods) {
     !mods.length ? '把脚本放进 mods/ 文件夹，保存后自动加载'
       : failed ? `${failed} 个出错`
         : '全部正常'));
+  head.appendChild(headerButton('日志', openLog));
   // The room page puts 28px between this header and its list (.room-members margin-top).
   head.style.marginBottom = '28px';
   body.appendChild(head);
@@ -245,14 +256,6 @@ function renderMod(body, id, manifest) {
     description: state.status === 'error' ? `出错：${state.error}` : manifest.description,
     control: controlsOfRow,
   }));
-}
-
-// The way into the log, after the mods: a row like theirs, with a button where theirs has a 设置.
-function renderLogEntry(body) {
-  const open = el('button', 'setting-btn', '查看');
-  open.type = 'button';
-  open.addEventListener('click', openLog);
-  body.appendChild(row({ title: '日志', description: 'mod 和它们的 Node 部分输出的内容', control: open }));
 }
 
 // --- the dialog ----------------------------------------------------------------
@@ -379,13 +382,9 @@ function renderLogDialog() {
     const head = el('div', 'room-info');
     head.appendChild(el('div', 'room-qty', `日志（${kit.logs.length}）`));
     head.appendChild(el('div', 'room-number', '最近 500 条，新的在下面'));
+    head.appendChild(headerButton('清空', () => kit.clearLogs()));      // in every window
     head.style.marginBottom = '28px';
     next.appendChild(head);
-
-    const clear = el('button', 'setting-btn', '清空');
-    clear.type = 'button';
-    clear.addEventListener('click', () => kit.clearLogs());
-    next.appendChild(row({ title: '清空日志', description: '各窗口记下的都会清掉', control: clear }));
 
     const block = el('div', 'setting-item');
     const lines = el('div', 'setting-label');
@@ -499,7 +498,6 @@ function renderView() {
   redraw(body, next => {
     renderHeader(next, mods);
     for (const [id, manifest] of mods) renderMod(next, id, manifest);
-    renderLogEntry(next);
   });
 }
 

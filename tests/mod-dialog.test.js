@@ -134,17 +134,30 @@ test('the list has one row per mod; only a mod with settings has a 设置 button
   assert.ok(mine.buttonX < mine.switchX, 'the button sits left of the switch');
   assert.equal(rows.find(r => r.title === 'zz-plain').button, null, 'no settings, no button');
   const mods = await panel(`modkit.mods.size`);
-  assert.equal(rows.length, mods + 1, 'one row per mod, and the log: no settings rows in the list');
-  assert.equal(rows.at(-1).title, '日志', 'the log is the last row');
-  assert.equal(rows.at(-1).button, '查看');
+  assert.equal(rows.length, mods, 'one row per mod and nothing else: no settings rows, no row for the log');
 });
 
-test('the log opens from its row and shows what mods wrote, oldest first, newest at the bottom', async () => {
+test('the way into the log is a button at the right end of the title row, beside the title and not in the list', async () => {
+  const geometry = JSON.parse(await panel(`(() => {
+    const head = document.querySelector('#modkit-view-body .room-info');
+    const button = head.querySelector('button');
+    const title = head.querySelector('.room-qty');
+    const h = head.getBoundingClientRect(), b = button.getBoundingClientRect(), q = title.getBoundingClientRect();
+    return JSON.stringify({ label: button.textContent, appClasses: button.className, inHead: head.contains(button),
+      right: Math.round(h.right - b.right), beside: b.left > q.left + 80, within: b.top >= h.top - 1 && b.bottom <= h.bottom + 1 });
+  })()`));
+  assert.equal(geometry.label, '日志');
+  assert.equal(geometry.appClasses, 'common-btn leave-room-btn', "the app's own button and the class that places it");
+  assert.equal(geometry.right, 0, 'flush with the right edge of the title row');
+  assert.ok(geometry.beside && geometry.within, 'beside the title, inside the row');
+});
+
+test('the log opens from that button and shows what mods wrote, oldest first, newest at the bottom', async () => {
   const write = (level, text) => panel(`modkit.addLog(${json(ID)}, ${json(level)}, 'main', ${json(text)})`);
   await write('log', 'first line');
   await write('warn', 'second line');
 
-  await click('.setting-btn', '日志');
+  await click('#modkit-view-body .room-info .leave-room-btn');
   await until('the dialog is open', popupOpen);
   const lines = () => panel(`[...document.querySelectorAll('#modkit-popup-body .setting-label .setting-sub')].map(n => n.textContent)`);
   await until('both lines shown', async () => (await lines()).length >= 2);
@@ -161,7 +174,14 @@ test('the log opens from its row and shows what mods wrote, oldest first, newest
   const atEnd = await panel(`(() => { const b = document.getElementById('modkit-popup-body'); return b.scrollHeight - b.scrollTop - b.clientHeight < 12 })()`);
   assert.equal(atEnd, true, 'scrolled to the newest line');
 
-  await click('#modkit-popup .setting-btn');           // 清空
+  const clearAt = JSON.parse(await panel(`(() => {
+    const head = document.querySelector('#modkit-popup-body .room-info');
+    const button = head.querySelector('.leave-room-btn');
+    const h = head.getBoundingClientRect(), b = button.getBoundingClientRect();
+    return JSON.stringify({ label: button.textContent, right: Math.round(h.right - b.right) });
+  })()`));
+  assert.deepEqual(clearAt, { label: '清空', right: 0 }, 'the clear button is in the title row too, at its right end');
+  await click('#modkit-popup-body .room-info .leave-room-btn');           // 清空
   await until('cleared', async () => (await panel('modkit.logs.length')) === 0);
   // (That clearing reaches the other windows is covered offline, in tests/host-page.test.js.)
   await click('#modkit-popup .popup-close');

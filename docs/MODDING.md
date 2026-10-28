@@ -158,11 +158,12 @@ button — headed by the mod's name and description, then its settings in the or
 lists them. It closes with the close button, Escape, or a click on the dimmed part, and when the
 user leaves the MOD page. Values a running mod publishes with `mod.live` update in place.
 
-The last row of the list is **日志**, the way into the log: a dialog of what mods have written with
+A **日志** button at the right end of the title row (the empty space beside `MOD（3）`, where the room page
+puts its 离开房间) opens the log: a dialog of what mods have written with
 `mod.log` / `mod.warn` and a Node part with `host.log` / `host.warn` / `host.error`. One line each,
 oldest first and the newest at the bottom, as `time  mod name（window or Node）  text`; a warning or an
 error says so in words, since the app's palette has no colour for it. The view follows new lines unless
-it has been scrolled up to read, and 清空 clears it in every window. It keeps the latest 500 lines and
+it has been scrolled up to read, and 清空, at the right end of the dialog's own title row, clears it in every window. It keeps the latest 500 lines and
 nothing is stored: each window keeps what it wrote and the panel collects it, so lines written before
 the panel was opened are still there, and a restart starts empty. A mod that fails to load or throws
 while starting leaves its error there too.
