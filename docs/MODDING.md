@@ -72,7 +72,7 @@ Mods run in the page, so their `console.log` goes to the webview console. Watch 
 over CDP:
 
 ```sh
-node src/cli.js eval 'document.getElementById("wuwa-hud")?.innerText'
+node src/cli.js eval 'document.getElementById("modkit-tab")?.innerText'
 ```
 
 Check what is actually installed, per window:
