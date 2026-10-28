@@ -296,6 +296,7 @@ await host.call('notes', 'append', { text: 'hello' });
 ## Installing mods
 
 ```sh
+node src/cli.js mods browse               # the plugin registry (docs/REGISTRY.md); `mods get <name>` installs one
 node src/cli.js mods install <source>     # a folder, a .zip / .tgz, a git URL (add #branch), an npm package name, or a .js file
 node src/cli.js mods list                 # what is installed, where from, whether it loads
 node src/cli.js mods update [id]          # ask the same place again (every installed mod if no id)

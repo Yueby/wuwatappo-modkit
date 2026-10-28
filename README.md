@@ -37,8 +37,9 @@ node src/cli.js lab          # patch the installed app, start it with DevTools o
 node src/cli.js watch        # inject the mods of the app folder and keep them applied
 ```
 
-Mods live in `<app folder>\mods` (empty to begin with: the program carries none, they are installed with
-`mods install`). Edit a file there and it is re-injected within a couple of seconds. Stop with Ctrl+C.
+Mods live in `<app folder>\mods` (empty to begin with: the program carries none. Install one from the plugin
+registry with the launcher's 插件… window or `mods get <name>`, see [docs/REGISTRY.md](docs/REGISTRY.md); or unpack
+a mod's folder there; or `mods install`). Edit a file there and it is re-injected within a couple of seconds. Stop with Ctrl+C.
 To write a mod, copy `examples/_template/` into it (see [docs/MODDING.md](docs/MODDING.md)).
 `node src/cli.js --help` lists everything.
 
@@ -136,4 +137,5 @@ exe, `dist/modkit.exe` (see [docs/PACKAGING.md](docs/PACKAGING.md)); that needs 
 - [docs/MODDING.md](docs/MODDING.md) — mod API, backend command reference, gotchas
 - [docs/PACKAGING.md](docs/PACKAGING.md) — the one exe: how it is built, what was checked for it
 - [docs/RELEASING.md](docs/RELEASING.md) — making a release, and how the exe updates itself from it
+- [docs/REGISTRY.md](docs/REGISTRY.md) — the plugin registry: listing, installing, what is checked
 - [docs/APP-NOTES.md](docs/APP-NOTES.md) — what the app does, where its state lives
