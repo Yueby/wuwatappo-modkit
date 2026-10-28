@@ -165,7 +165,7 @@ test('pressing 安装 on a plugin asks first, over the list: what it declares, n
   await click('.setting-btn', 'zz-plugin');
   await until('the question is shown', overlayOpen);
   const asked = await overlayText();
-  for (const part of ['安装「', '1.0.0', 'Node 部分：有', '没有沙盒', '它声明要用：files', '网页脚本会在软件的窗口里运行']) {
+  for (const part of ['安装「', '1.0.0', '后台程序：有', '不受限制', '作者声明的权限：读写文件', '插件的脚本会在软件窗口里运行']) {
     assert.ok(asked.includes(part), `the question says "${part}":\n${asked}`);
   }
   assert.equal(await rowTitled('zz-plugin'), true, 'the list is still there under it: the page did not change');
@@ -191,7 +191,7 @@ test('安装 then yes installs it, a bubble says so and goes by itself, and the 
   await until('the question is shown', overlayOpen);
   await click('#modkit-overlay .role-switch-emote-overlay__confirm');
   await until('it is installed', async () => (await fs.readdir(modsDir)).includes('zz-plugin'), 8000);
-  await until('the bubble says so', async () => /已安装 zz-plugin/.test((await toastText()) ?? ''));
+  await until('the bubble says so', async () => /已安装「/.test((await toastText()) ?? ''));
   await until('the prompt is gone', async () => !(await overlayOpen()));
   assert.equal(await panel(`document.querySelector('#modkit-popup-body').textContent.includes('已装 1.0.0')`), true, 'the row says it is installed');
   await until('the bubble has gone by itself', async () => (await toastText()) === null, 6000);
@@ -204,7 +204,7 @@ test('卸载 asks (with the box for its data), and removes it; the bubble says s
   assert.equal(await panel(`!!document.querySelector('#modkit-overlay .role-switch-emote-overlay__checkbox input')`), true, 'the box for the plugin\'s data');
   await click('#modkit-overlay .role-switch-emote-overlay__confirm');
   await until('it is gone', async () => !(await fs.readdir(modsDir)).includes('zz-plugin'), 8000);
-  await until('the bubble says so', async () => /已卸载 zz-plugin/.test((await toastText()) ?? ''));
+  await until('the bubble says so', async () => /已卸载「/.test((await toastText()) ?? ''));
 });
 
 test('closing the dialog while it is asking is a no', async () => {

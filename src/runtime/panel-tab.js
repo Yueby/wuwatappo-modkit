@@ -233,7 +233,7 @@ function renderHeader(body, mods) {
   const head = el('div', 'room-info');
   head.appendChild(el('div', 'room-qty', `MOD（${mods.length}）`));
   head.appendChild(el('div', 'room-number',
-    !mods.length ? '还没有 mod，点“安装”获取'
+    !mods.length ? '还没有插件，点“安装”获取'
       : failed ? `${failed} 个出错`
         : '全部正常'));
   head.appendChild(headerButton('日志', openLog));
@@ -392,7 +392,7 @@ const infoRow = (title, text, description) => row({ title, description, control:
 //   { type: 'busy', text }                          waiting for the loader; nothing to press
 //   { type: 'confirm', info }                       an install or an update, with what the package declares
 //   { type: 'confirm-remove', plugin, purge }       a removal
-//   { type: 'error', message }                      it did not work; 好 closes it
+//   { type: 'error', verb, message }                it did not work; 好 closes it
 
 const OVERLAY_ID = 'modkit-overlay';
 const TOAST_ID = 'modkit-toast';
@@ -415,18 +415,23 @@ function notify(text) {
   toastTimer = setTimeout(() => wrapper.remove(), TOAST_MS);
 }
 
-// What each kind of prompt says and has to press.
+// What a permission word in a plugin's package.json is called to the person. Anything else is shown as it is.
+const PERMISSION_LABELS = { files: '读写文件', network: '联网', clipboard: '读写剪贴板', run: '运行其他程序' };
+const permissionText = list => list.map(word => PERMISSION_LABELS[word] ?? word).join('、');
+
+// What each kind of prompt says and has to press. Plain words: it is read by someone deciding whether to
+// let somebody's code onto their computer.
 function promptFor(op) {
   if (op.type === 'busy') return { lines: [op.text], buttons: [] };
 
   if (op.type === 'error') {
-    return { lines: ['没有成功', op.message], buttons: [{ label: '好', kind: 'confirm', onClick: () => setOp(dialog, null) }] };
+    return { lines: [`${op.verb}没有成功`, op.message], buttons: [{ label: '好', kind: 'confirm', onClick: () => setOp(dialog, null) }] };
   }
 
   if (op.type === 'confirm-remove') {
     return {
-      lines: [`卸载「${op.plugin.name}」？`, '删掉它的文件夹。它在软件里存的设置还在，装回来还能用。'],
-      checkbox: { label: '同时删除它在 moddata 里的数据', checked: op.purge, onChange: on => { op.purge = on; } },
+      lines: [`卸载「${op.plugin.name}」？`, '会删除它的文件夹。它在软件里保存的设置会保留，以后再装回来还能用。'],
+      checkbox: { label: '同时删除它保存的数据', checked: op.purge, onChange: on => { op.purge = on; } },
       buttons: [
         { label: '取消', kind: 'cancel', onClick: () => setOp(dialog, null) },
         { label: '卸载', kind: 'confirm', onClick: () => pluginRequest('remove', op.plugin, { purge: op.purge }) },
@@ -435,18 +440,21 @@ function promptFor(op) {
   }
 
   const info = op.info;
+  const name = info.name ?? info.id;
   const update = Boolean(info.before);
-  const lines = [update ? `把「${info.name ?? info.id}」从 ${info.before} 更新到 ${info.version}？` : `安装「${info.name ?? info.id}」${info.version ?? ''}？`];
+  const lines = [update ? `将「${name}」从 ${info.before} 更新到 ${info.version}？` : `安装「${name}」${info.version ?? ''}？`];
   if (info.description) lines.push(info.description);
+  lines.push('');
+  lines.push(info.permissions.length ? `作者声明的权限：${permissionText(info.permissions)}` : '作者没有声明需要特别的权限');
   lines.push(info.nodePart
-    ? 'Node 部分：有。它作为单独的程序运行，用您账号的权限，能读写文件、联网，没有沙盒。'
-    : 'Node 部分：没有。');
-  lines.push(`它声明要用：${info.permissions.length ? info.permissions.join('、') : '没写'}`);
-  const requires = Object.entries(info.requires ?? {}).map(([name, range]) => `${name} ${range}`);
-  if (requires.length) lines.push(`需要别的插件：${requires.join('、')}`);
-  if (info.dependencies.length) lines.push(`依赖包 ${info.dependencies.length} 个：${info.dependencies.join('、')}（用 npm 取，不运行它们的安装脚本）`);
-  if (info.warning) lines.push(`注意：${info.warning}`);
-  lines.push('它的网页脚本会在软件的窗口里运行，能做软件自己能做的一切。');
+    ? '后台程序：有。它会作为独立程序在电脑上运行，权限和您的账号一样，不受限制。'
+    : '后台程序：无');
+  const requires = Object.entries(info.requires ?? {}).map(([required, range]) => `${required} ${range}`);
+  if (requires.length) lines.push(`需要先装好：${requires.join('、')}`);
+  if (info.dependencies.length) lines.push(`会一并下载 ${info.dependencies.length} 个组件：${info.dependencies.join('、')}`);
+  if (info.warning) lines.push(`提示：${info.warning}`);
+  lines.push('');
+  lines.push('插件的脚本会在软件窗口里运行，软件能做的它都能做。请只安装信得过的插件。');
   return {
     lines,
     buttons: [
@@ -527,20 +535,21 @@ function cancelPrompt() {
 // --- one request to the loader -----------------------------------------------------------------------------
 
 const DONE_TEXT = {
-  installed: r => `已安装 ${r.id}${r.version ? ` ${r.version}` : ''}`,
-  updated: r => `已更新到 ${r.version ?? '新版本'}`,
-  current: r => `已经是最新${r.version ? `（${r.version}）` : ''}`,
-  removed: r => `已卸载 ${r.id}${r.purged ? '，它的数据也删了' : ''}`,
+  installed: (r, name) => `已安装「${name}」${r.version ? ` ${r.version}` : ''}`,
+  updated: (r, name) => `已将「${name}」更新到 ${r.version ?? '新版本'}`,
+  current: (r, name) => `「${name}」已经是最新版${r.version ? `（${r.version}）` : ''}`,
+  removed: (r, name) => `已卸载「${name}」${r.purged ? '，保存的数据也已删除' : ''}`,
 };
 
-const WORKING_TEXT = { get: '正在下载并核对', update: '正在下载并核对', remove: '正在卸载' };
+const VERB = { get: '安装', update: '更新', remove: '卸载' };
 
 // The dialog is the one that was open when the request was made: if it has been closed since, a plugin
 // waiting for its yes gets a no, and what comes of the rest is only said in a bubble.
 function pluginRequest(action, plugin, args = {}) {
   const mine = dialog;
   mine.cancelled = false;
-  setOp(mine, { type: 'busy', text: `${WORKING_TEXT[action]}「${plugin.name}」…` });
+  // Before the question it is only fetching; "installing" starts once the person has said yes.
+  setOp(mine, { type: 'busy', text: action === 'remove' ? `正在卸载「${plugin.name}」…` : `正在获取「${plugin.name}」…` });
   const { id, done } = kit.manage(action, { mod: plugin.id, ...args }, {
     onConfirm: info => {
       if (dialog !== mine) return void kit.manageAnswer(id, false);
@@ -549,7 +558,7 @@ function pluginRequest(action, plugin, args = {}) {
   });
   mine.requestId = id;
   done.then(result => {
-    const said = DONE_TEXT[result.done]?.(result);
+    const said = DONE_TEXT[result.done]?.(result, plugin.name);
     if (said) notify(said);
     if (dialog !== mine) return;
     if (result.mods) {
@@ -558,9 +567,9 @@ function pluginRequest(action, plugin, args = {}) {
     }
     setOp(mine, null);
   }, err => {
-    if (dialog !== mine) return notify(err.message);
+    if (dialog !== mine) return notify(`${VERB[action]}没有成功：${err.message}`);
     if (mine.cancelled) return;
-    setOp(mine, { type: 'error', message: err.message });
+    setOp(mine, { type: 'error', verb: VERB[action], message: err.message });
   });
 }
 
@@ -572,7 +581,8 @@ function answerPlugin(ok) {
     setOp(state, null);
     return;
   }
-  setOp(state, { type: 'busy', text: `正在安装「${state.op.info.name ?? state.op.info.id}」…` });   // until the loader says it is done
+  const { info } = state.op;
+  setOp(state, { type: 'busy', text: `正在${info.before ? '更新' : '安装'}「${info.name ?? info.id}」…` });   // until the loader says it is done
 }
 
 function loadPlugins() {
@@ -595,11 +605,11 @@ function loadPlugins() {
 
 // What a plugin's row says about where it stands, and the buttons that go with it.
 function pluginRow(plugin) {
-  const flags = [plugin.author ? `作者 ${plugin.author}` : null, plugin.nodePart ? '有 Node 部分' : null].filter(Boolean).join(' · ');
+  const flags = [plugin.author ? `作者 ${plugin.author}` : null, plugin.nodePart ? '带后台程序' : null].filter(Boolean).join(' · ');
   const state = !plugin.installed ? null
-    : !plugin.fromRegistry ? '已有（不是从这里装的）'
-      : plugin.update ? `已装 ${plugin.installedVersion ?? '?'}，可更新`
-        : `已装 ${plugin.installedVersion ?? ''}`.trim();
+    : !plugin.fromRegistry ? '已有同名插件（不是从这里安装的）'
+      : plugin.update ? `已安装 ${plugin.installedVersion ?? '?'}，有新版本`
+        : `已安装 ${plugin.installedVersion ?? ''}`.trim();
   const description = [plugin.description, flags, state].filter(Boolean).join(' · ');
 
   const buttons = [];
@@ -626,14 +636,14 @@ function renderPluginsDialog() {
     next.appendChild(head);
 
     if (state.phase === 'loading') {
-      next.appendChild(infoRow('正在读取插件列表', '…'));
+      next.appendChild(infoRow('正在读取插件列表…', ''));
     } else if (state.phase === 'list') {
       if (!state.plugins.length) next.appendChild(infoRow('仓库里还没有插件', ''));
       for (const plugin of state.plugins) next.appendChild(pluginRow(plugin));
-      if (state.problems.length) next.appendChild(infoRow('有条目不合格，已跳过', `${state.problems.length} 个`, state.problems.join('；')));
+      if (state.problems.length) next.appendChild(infoRow(`有 ${state.problems.length} 个条目格式不对，已跳过`, '', state.problems.join('；')));
     } else if (state.phase === 'error') {
       next.appendChild(row({
-        title: '读不到插件列表',
+        title: '没能读取插件列表',
         description: state.message,
         control: controls.button({ label: '重试', onClick: loadPlugins }),
       }));

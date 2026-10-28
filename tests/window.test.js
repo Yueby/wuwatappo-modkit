@@ -160,7 +160,7 @@ test('刷新 reads the status again and drops what was said before', { skip }, a
 
 test('a program that cannot be started is said in the window, and the buttons come back', { skip }, async () => {
   const report = await drive(`$script:Exe = 'C:\\nowhere\\none.exe'; $Exe = 'C:\\nowhere\\none.exe'; Show-Status; $report.box = $box.Text; $report.enabled = $install.Enabled`);
-  assert.match(report.box, /无法运行/);
+  assert.match(report.box, /运行不了/);
   assert.equal(report.enabled, true);
 });
 
@@ -194,7 +194,7 @@ test('an update that did not finish keeps the window, says so, and shows what th
   const report = await drive(`Start-Up; Wait-Idle; $report.closed = $form.IsDisposed; $report.label = $versionLabel.Text; $report.box = $box.Text`,
     { FAKE_LATEST: '2.0.0', FAKE_UPDATE_CODE: '1' });
   assert.equal(report.closed, false);
-  assert.match(report.label, /更新到 v2\.0\.0 没有完成/);
+  assert.match(report.label, /更新到 v2\.0\.0 没有成功/);
   assert.deepEqual(lines(report.box), ['FAKE ran: update --reopen --progress', '---', 'FAKE ran: setup status']);
 });
 
@@ -204,7 +204,7 @@ test('not being able to ask, and there being nothing to take yet, are said and n
   assert.deepEqual(failed.calls.filter(call => call.startsWith('update')), ['update --check --json']);
 
   const none = await drive(`Start-Up; Wait-Idle; $report.label = $versionLabel.Text`, { FAKE_LATEST: 'none' });
-  assert.match(none.label, /还没有发布过新版本/);
+  assert.match(none.label, /还没有新版本/);
 });
 
 test('刷新 asks again, and takes a newer version the same way', { skip }, async () => {
@@ -225,7 +225,7 @@ test('the plugins window lists what the registry has, with where each stands', {
   const report = await drive(`${OPEN}
     $report.rows = @($w.List.Items | ForEach-Object { ($_.Text, $_.SubItems[1].Text, $_.SubItems[2].Text) -join '|' })
     $report.act = $w.Act.Enabled; $report.remove = $w.Remove.Enabled`);
-  assert.deepEqual(report.rows, ['Alpha|1.0.0|未安装', 'Beta|1.1.0|可更新 1.0.0 → 1.1.0', 'Gamma|2.0.0|已安装 2.0.0', 'Delta|3.0.0|已安装（不是从这里装的）']);
+  assert.deepEqual(report.rows, ['Alpha|1.0.0|未安装', 'Beta|1.1.0|有新版本（已装 1.0.0）', 'Gamma|2.0.0|已安装 2.0.0', 'Delta|3.0.0|已有同名插件（不是从这里安装的）']);
   assert.deepEqual([report.act, report.remove], [false, false], 'nothing is selected, so nothing can be pressed');
   assert.deepEqual(report.calls, ['mods browse --json']);
 });
@@ -242,7 +242,7 @@ test('安装 says what the plugin declares first, and installs only on a yes; th
     Pick 'Alpha'; $w.Act.PerformClick()
     $report.question = $script:questions[0]; $report.asked = $script:questions.Count`);
   assert.equal(report.asked, 1);
-  for (const part of ['安装「Alpha」1.0.0？', 'does alpha', 'Node 部分：有', '没有沙盒', 'files、network', 'beta ^1.0.0', 'left-pad', '网页脚本会在软件的窗口里运行']) {
+  for (const part of ['安装「Alpha」1.0.0？', 'does alpha', '后台程序：有', '不受限制', '作者声明的权限：读写文件、联网', 'beta ^1.0.0', 'left-pad', '插件的脚本会在软件窗口里运行']) {
     assert.ok(report.question.includes(part), `the question has "${part}":\n${report.question}`);
   }
   assert.deepEqual(report.calls, ['mods browse --json', 'mods get alpha --yes', 'mods browse --json']);
@@ -255,7 +255,7 @@ test('a plugin without a Node part says so, and a no runs nothing', { skip }, as
     $report.questions = $script:questions`);
   assert.equal(said.questions.length, 2, 'asked each time it was pressed');
   assert.ok(said.questions[0].startsWith('更新「Beta」1.1.0？'));
-  assert.ok(said.questions[0].includes('Node 部分：没有') && said.questions[0].includes('它声明要用：没写'));
+  assert.ok(said.questions[0].includes('后台程序：无') && said.questions[0].includes('作者没有声明需要特别的权限'));
   assert.deepEqual(said.calls, ['mods browse --json'], 'nothing but the list');
 });
 
@@ -271,7 +271,7 @@ test('更新 updates the one that has a newer version, and 卸载 removes after 
 test('a list that cannot be read is said in the window, and nothing can be pressed', { skip }, async () => {
   const report = await drive(`${OPEN}
     $report.details = $w.Details.Text; $report.count = $w.List.Items.Count; $report.act = $w.Act.Enabled`, { FAKE_BROWSE_FAIL: '1' });
-  assert.match(report.details, /读不到插件列表：registry unreachable/);
+  assert.match(report.details, /没能读取插件列表：registry unreachable/);
   assert.deepEqual([report.count, report.act], [0, false]);
 });
 

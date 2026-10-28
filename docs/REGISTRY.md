@@ -55,6 +55,18 @@ registry again and takes a newer version if there is one, and the list shows "�
 
 ## For plugin authors
 
+`modkit.permissions` is a list of words saying what the plugin uses. These four are shown to people in plain Chinese in
+the install question and the plugin list; any other word is shown as written:
+
+| word | shown as |
+|---|---|
+| `files` | 读写文件 |
+| `network` | 联网 |
+| `clipboard` | 读写剪贴板 |
+| `run` | 运行其他程序 |
+
+A plugin that has a Node part (`modkit.host`) is shown as "后台程序：有", whatever it declares.
+
 `modkit.exe mods check <folder> --registry` (or `node src/cli.js mods check ...`) runs the reader the launcher uses,
 plus what the registry needs: a `version` like `1.0.0`, a `description`, no `node_modules` in the folder. The registry's
 `validate` check runs the same thing on every pull request, and a change to a plugin has to raise its version. What a

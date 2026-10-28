@@ -24,6 +24,32 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;      // a folder name: no separators,
 const MAX_MESSAGE = 600;
 
 const json = JSON.stringify;
+// What went wrong, for a person. The libraries speak English to the command line; the page is read by
+// someone who is not at one. What is not known here is passed on, in short, after "原因".
+const REASONS = [
+  [/could not reach the plugin registry/, '连不上插件仓库，请检查网络后再试。'],
+  [/has no index yet/, '插件仓库里还没有发布任何插件。'],
+  [/the plugin registry answered \d+/, '插件仓库暂时打不开，请稍后再试。'],
+  [/the plugin index is not|not in a format this program knows/, '插件仓库的列表这个版本读不懂，请先更新启动器。'],
+  [/no plugin called/, '仓库里没有这个插件。'],
+  [/no longer has a plugin/, '仓库里已经没有这个插件了。'],
+  [/did not come from the registry/, '这个插件不是从仓库安装的，没法在这里更新。'],
+  [/is already installed/, '这个插件已经装过了。'],
+  [/does not match its checksum/, '下载的文件和仓库登记的校验值对不上，已丢弃，没有安装。'],
+  [/stopped at \d+|bytes, not the/, '下载得不完整，已丢弃，请再试一次。'],
+  [/is called ".*", not|is version .*, not|declares something other than the index/, '安装包和仓库登记的信息对不上，没有安装。'],
+  [/answered \d+/, '下载失败，服务器返回了错误，请稍后再试。'],
+  [/could not find npm/, '这个插件要用 npm 下载附带的组件，但这台电脑上找不到 npm。'],
+  [/not a mod: no package\.json|not a valid mod manifest/, '这个安装包的内容不对，没有安装。'],
+  [/there is no mod called/, '没有找到这个插件。'],
+];
+
+function explain(err) {
+  const text = String(err?.message ?? err);
+  for (const [pattern, reason] of REASONS) if (pattern.test(text)) return reason;
+  return `原因：${short(text)}`;
+}
+
 const short = text => (String(text).length > MAX_MESSAGE ? `${String(text).slice(0, MAX_MESSAGE)}…` : String(text));
 
 export class ModManager {
@@ -65,7 +91,7 @@ export class ModManager {
       return true;
     }
     this.#reply(id, { type: 'ack' });     // heard: an older loader says nothing, and the page can tell
-    this.#handle(id, message).catch(err => this.#reply(id, { type: 'error', message: short(err.message ?? err) }));
+    this.#handle(id, message).catch(err => this.#reply(id, { type: 'error', message: explain(err) }));
     return true;
   }
 
@@ -77,7 +103,7 @@ export class ModManager {
     }
 
     if (!['get', 'update', 'remove'].includes(action)) throw new Error(`unknown request "${action}"`);
-    if (this.#busy) throw new Error('另一个安装、更新或卸载还没做完');
+    if (this.#busy) throw new Error('另一项操作还没做完，请稍等一下。');
     this.#busy = true;
     try {
       const result = await this.#run(id, message);
@@ -122,7 +148,7 @@ export class ModManager {
   }
 
   #idOf(value) {
-    if (typeof value !== 'string' || !ID.test(value)) throw new Error('不是插件的名字');
+    if (typeof value !== 'string' || !ID.test(value)) throw new Error('插件的名字不对。');
     return path.basename(value);
   }
 

@@ -103,7 +103,7 @@ test('a registry that cannot be reached is an error the page can show', async ()
   offline.send({ id: 'r1', action: 'browse' });
   const failed = await offline.finished('r1');
   assert.equal(failed.type, 'error');
-  assert.match(failed.message, /could not reach the plugin registry/);
+  assert.match(failed.message, /连不上插件仓库/);
 });
 
 // --- install -----------------------------------------------------------------------------------------
@@ -149,7 +149,7 @@ test('only what the registry has can be asked for, by a name that is a name', as
   await installMod(await plugin(dir, 'beta'), { modsDir });
 
   send({ id: 'r1', action: 'get', mod: 'nothing' });
-  assert.match((await finished('r1')).message, /no plugin called "nothing"/);
+  assert.match((await finished('r1')).message, /仓库里没有这个插件/);
 
   for (const [n, name] of ['../precious', '..', 'a/b', 'x/beta', '..\\beta', 'C:\\Windows', '', '.hidden', null, 5].entries()) {
     // One at a time: a second request while the first is still going is refused for being second, which

@@ -68,13 +68,13 @@ function New-Button([string]$Text, [int]$X, [int]$Width) {
 
 $install = New-Button '安装' 12 100
 $uninstall = New-Button '卸载' 122 100
-$folder = New-Button '打开 mods 文件夹' 232 140
+$folder = New-Button '打开插件文件夹' 232 140
 $refresh = New-Button '刷新' 382 70
 $pluginsButton = New-Button '插件…' 462 100
 
 $hint = New-Object System.Windows.Forms.Label
-$hint.Text = '安装一次就够了：以后直接运行 WuwaTappo.exe，mod 会跟着启动。软件更新后再点一次“安装”。' + "`n" +
-  '软件正在运行时，安装和卸载会先关掉它，做完再自动打开。卸载会把软件的 exe 还原成原版。'
+$hint.Text = '装一次就行，以后直接打开 WuwaTappo，插件会跟着启动。软件更新后，再点一次“安装”。' + "`n" +
+  '安装和卸载时，如果软件正在运行，会先关闭它，做完再自动打开。卸载会把软件还原成原版。'
 $hint.Location = New-Object System.Drawing.Point(14, 356)
 $hint.AutoSize = $true
 $hint.ForeColor = [System.Drawing.Color]::DimGray
@@ -117,7 +117,7 @@ function Start-Command([string]$Arguments, [string]$Title, $Then = $null, $After
   try {
     $script:process = [System.Diagnostics.Process]::Start($info)
   } catch {
-    $box.Text = "无法运行 $Exe`r`n$($_.Exception.Message)"
+    $box.Text = "运行不了 $Exe`r`n$($_.Exception.Message)"
     foreach ($button in $buttons) { $button.Enabled = $true }
     return
   }
@@ -197,10 +197,10 @@ function Show-Version([string]$Note) {
 # Takes the new version when there is one: downloaded, checked, put in place, set up, window reopened.
 function Update-Program($Latest) {
   $script:updatingTo = $Latest      # the block below runs after this function has returned
-  Show-Version "（发现新版本 v$Latest，正在更新…）"
-  Start-Command 'update --reopen --progress' "正在下载新版本 v$Latest，下载后会重新打补丁，可能弹出一次管理员确认" {
+  Show-Version "（发现新版本 v$Latest，正在更新）"
+  Start-Command 'update --reopen --progress' "正在下载新版本 v$Latest`r`n下载完成后会重新打补丁，可能弹出一次管理员确认。" {
     if ($script:resultCode -eq $UpdatedAndReopened) { $form.Close(); return }
-    Show-Version "（更新到 v$($script:updatingTo) 没有完成）"
+    Show-Version "（更新到 v$($script:updatingTo) 没有成功）"
     Show-Status
   }
 }
@@ -210,7 +210,7 @@ function Read-Check {
   $line = ($script:resultText -split "`r?`n" | Where-Object { $_ -like '{*' } | Select-Object -Last 1)
   try { $answer = $line | ConvertFrom-Json } catch { Show-Version '（检查更新失败）'; return }
   if ($answer.error) { Show-Version "（检查更新失败：$($answer.error)）"; return }
-  if (-not $answer.latest) { Show-Version '（还没有发布过新版本）'; return }
+  if (-not $answer.latest) { Show-Version '（还没有新版本）'; return }
   if (-not $answer.newer) { Show-Version '（已是最新）'; return }
   Update-Program $answer.latest
 }
@@ -225,8 +225,8 @@ function Start-Up {
   Show-Status { Check-Update }
 }
 
-$install.Add_Click({ Start-Command 'setup' '正在安装…（会弹出一次管理员确认；软件正在运行的话会先关掉，装好再自动打开）' { Show-Status } })
-$uninstall.Add_Click({ Start-Command 'uninstall' '正在卸载…（软件正在运行的话会先关掉，还原原版后再自动打开）' { Show-Status } })
+$install.Add_Click({ Start-Command 'setup' "正在安装…`r`n过程中会弹出一次管理员确认。软件正在运行的话，会先关闭，装好后自动重新打开。" { Show-Status } })
+$uninstall.Add_Click({ Start-Command 'uninstall' "正在卸载…`r`n软件正在运行的话，会先关闭，还原后自动重新打开。" { Show-Status } })
 $refresh.Add_Click({ $script:said = $null; Start-Up })
 $folder.Add_Click({
   New-Item -ItemType Directory -Force -Path $ModsDir | Out-Null
@@ -252,7 +252,7 @@ function Invoke-Modkit([string]$Arguments) {
   $info.RedirectStandardError = $true
   $info.StandardOutputEncoding = [System.Text.Encoding]::UTF8
   $info.StandardErrorEncoding = [System.Text.Encoding]::UTF8
-  try { $process = [System.Diagnostics.Process]::Start($info) } catch { return @{ Text = "无法运行 $Exe $($_.Exception.Message)"; Code = -1 } }
+  try { $process = [System.Diagnostics.Process]::Start($info) } catch { return @{ Text = "运行不了 $Exe $($_.Exception.Message)"; Code = -1 } }
   $out = $process.StandardOutput.ReadToEndAsync()
   $err = $process.StandardError.ReadToEndAsync()
   while (-not ($process.HasExited -and $out.IsCompleted -and $err.IsCompleted)) {
@@ -264,27 +264,34 @@ function Invoke-Modkit([string]$Arguments) {
 
 # What the person is asked before something is installed: what the plugin declares, from the registry's list.
 # (The program checks that the package says the same before it puts anything in place.)
+function Get-PluginFacts($Plugin) {
+  $labels = @{ files = '读写文件'; network = '联网'; clipboard = '读写剪贴板'; run = '运行其他程序' }
+  $lines = @()
+  $permissions = @($Plugin.permissions | ForEach-Object { if ($labels.ContainsKey($_)) { $labels[$_] } else { $_ } })
+  if ($permissions.Count) { $lines += ('作者声明的权限：' + ($permissions -join '、')) } else { $lines += '作者没有声明需要特别的权限' }
+  if ($Plugin.nodePart) { $lines += '后台程序：有。它会作为独立程序在电脑上运行，权限和您的账号一样，不受限制。' }
+  else { $lines += '后台程序：无' }
+  $needs = @($Plugin.requires.PSObject.Properties | ForEach-Object { "$($_.Name) $($_.Value)" })
+  if ($needs.Count) { $lines += ('需要先装好：' + ($needs -join '、')) }
+  $dependencies = @($Plugin.dependencies)
+  if ($dependencies.Count) { $lines += ("会一并下载 $($dependencies.Count) 个组件：" + ($dependencies -join '、')) }
+  return $lines
+}
+
 function Get-PluginQuestion($Plugin, [string]$Verb) {
   $lines = @("$Verb「$($Plugin.name)」$($Plugin.version)？", '')
   if ($Plugin.description) { $lines += $Plugin.description; $lines += '' }
-  if ($Plugin.nodePart) { $lines += 'Node 部分：有。它作为单独的程序运行，用您账号的权限，能读写文件、联网，没有沙盒。' }
-  else { $lines += 'Node 部分：没有。' }
-  $permissions = @($Plugin.permissions)
-  if ($permissions.Count) { $lines += ('它声明要用：' + ($permissions -join '、')) } else { $lines += '它声明要用：没写' }
-  $needs = @($Plugin.requires.PSObject.Properties | ForEach-Object { "$($_.Name) $($_.Value)" })
-  if ($needs.Count) { $lines += ('需要别的插件：' + ($needs -join '、')) }
-  $dependencies = @($Plugin.dependencies)
-  if ($dependencies.Count) { $lines += ("依赖包 $($dependencies.Count) 个：" + ($dependencies -join '、') + '（用 npm 取，不运行它们的安装脚本）') }
+  $lines += Get-PluginFacts $Plugin
   $lines += ''
-  $lines += '它的网页脚本会在软件的窗口里运行，能做软件自己能做的一切。'
+  $lines += '插件的脚本会在软件窗口里运行，软件能做的它都能做。请只安装信得过的插件。'
   return ($lines -join "`r`n")
 }
 
 function Get-PluginStatus($Plugin) {
   if (-not $Plugin.installed) { return '未安装' }
-  if ($Plugin.update) { return "可更新 $($Plugin.installedVersion) → $($Plugin.version)" }
+  if ($Plugin.update) { return "有新版本（已装 $($Plugin.installedVersion)）" }
   if ($Plugin.fromRegistry) { return "已安装 $($Plugin.installedVersion)" }
-  return "已安装（不是从这里装的）"
+  return '已有同名插件（不是从这里安装的）'
 }
 
 # The plugins window. Returns the form and the controls a test needs to reach.
@@ -355,7 +362,7 @@ function Update-PluginButtons($Window) {
   else { $Window.Act.Text = '已是最新' }
   $author = ''
   if ($plugin.author) { $author = "作者：$($plugin.author)`r`n" }
-  $Window.Details.Text = "$($plugin.name)  $($plugin.version)`r`n$author$($plugin.description)`r`n`r`n" + (Get-PluginQuestion $plugin '').Split("`n", 3)[2]
+  $Window.Details.Text = "$($plugin.name)  $($plugin.version)`r`n$author$($plugin.description)`r`n`r`n" + ((Get-PluginFacts $plugin) -join "`r`n")
 }
 
 # Ask the program for the registry's list and show it.
@@ -367,7 +374,7 @@ function Update-PluginList($Window) {
   $line = ($result.Text -split "`r?`n" | Where-Object { $_ -like '{*' } | Select-Object -Last 1)
   try { $answer = $line | ConvertFrom-Json } catch { $answer = $null }
   $Window.List.Items.Clear()
-  if (-not $answer) { $Window.Details.Text = "读不到插件列表：$($result.Text)"; return }
+  if (-not $answer) { $Window.Details.Text = "没能读取插件列表：$($result.Text)"; return }
   $Window.Plugins = @($answer.mods)
   foreach ($plugin in $Window.Plugins) {
     $item = New-Object System.Windows.Forms.ListViewItem($plugin.name)
@@ -379,7 +386,7 @@ function Update-PluginList($Window) {
   }
   if (-not $Window.Plugins.Count) { $Window.Details.Text = '仓库里还没有插件。' }
   else { $Window.Details.Text = "共 $($Window.Plugins.Count) 个插件。选一个看详情。" }
-  if (@($answer.problems).Count) { $Window.Details.Text += "`r`n（有 $(@($answer.problems).Count) 个条目不合格，已跳过）" }
+  if (@($answer.problems).Count) { $Window.Details.Text += "`r`n（有 $(@($answer.problems).Count) 个条目格式不对，已跳过）" }
 }
 
 # Install or update the selected one, after the person has read what it declares and said yes.
@@ -393,22 +400,28 @@ function Invoke-PluginAct($Window) {
   $command = "mods get $($plugin.id) --yes"
   if ($update) { $command = "mods update $($plugin.id) --yes" }
   $Window.Form.Enabled = $false
-  $Window.Details.Text = "正在$verb…"
+  $Window.Details.Text = "正在$verb「$($plugin.name)」…"
   $result = Invoke-Modkit $command
   $Window.Form.Enabled = $true
   Update-PluginList $Window
-  $Window.Details.Text = $result.Text + "`r`n`r`n---`r`n" + $Window.Details.Text
+  $Window.Details.Text = (Get-ActionSummary $result "$verb「$($plugin.name)」") + "`r`n`r`n" + $Window.Details.Text
+}
+
+# "已安装「x」" when it worked; when it did not, that, and what the program said.
+function Get-ActionSummary($Result, [string]$What) {
+  if ($Result.Code -eq 0) { return "已完成：$What" }
+  return "$What 没有成功。`r`n`r`n详细信息：`r`n$($Result.Text)"
 }
 
 function Invoke-PluginRemove($Window) {
   $plugin = Get-SelectedPlugin $Window
   if (-not $plugin -or -not $plugin.installed) { return }
-  if (-not (Confirm-Action "卸载「$($plugin.name)」？`r`n`r`n它的文件夹会被删掉。它在软件里存的设置还在，装回来还能用。")) { return }
+  if (-not (Confirm-Action "卸载「$($plugin.name)」？`r`n`r`n会删除它的文件夹。它在软件里保存的设置会保留，以后再装回来还能用。")) { return }
   $Window.Form.Enabled = $false
   $result = Invoke-Modkit "mods remove $($plugin.id)"
   $Window.Form.Enabled = $true
   Update-PluginList $Window
-  $Window.Details.Text = $result.Text + "`r`n`r`n---`r`n" + $Window.Details.Text
+  $Window.Details.Text = (Get-ActionSummary $result "卸载「$($plugin.name)」") + "`r`n`r`n" + $Window.Details.Text
 }
 
 # Wire a plugins window up. The handlers reach it through $script:plugins: a scriptblock made with

@@ -394,19 +394,19 @@ kit.manage = (action, args = {}, { onConfirm } = {}) => {
     const timer = setTimeout(() => {
       manageCalls.delete(id);
       clearTimeout(ackTimer);
-      reject(new Error('加载器没有回应'));
+      reject(new Error('等了很久，加载器还是没有回应。'));
     }, MANAGE_TIMEOUT_MS);
     const ackTimer = setTimeout(() => {
       manageCalls.delete(id);
       clearTimeout(timer);
-      reject(new Error('加载器没有回应：它可能是旧版本，重新运行一次“安装”换成新的'));
+      reject(new Error('加载器没有回应。它可能是旧版本，请在启动器里点一次“安装”，把它换成新的。'));
     }, MANAGE_ACK_MS);
     manageCalls.set(id, { resolve, reject, onConfirm, timer, ackTimer });
     if (!kit.hostAlive() || !kit.toHost({ t: 'manage', id, action, ...args })) {
       clearTimeout(timer);
       clearTimeout(ackTimer);
       manageCalls.delete(id);
-      reject(new Error('加载器没有在运行：安装、更新、卸载要由它来做（点启动器里的“安装”后，它会随软件一起启动）'));
+      reject(new Error('加载器没有在运行，安装、更新、卸载都要靠它。请先在启动器里点“安装”，之后它会随软件一起启动。'));
     }
   });
   return { id, done };
