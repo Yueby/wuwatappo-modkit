@@ -107,6 +107,33 @@ Consequences:
   the counter grows through the normal route. A synthetic counter that the server
   has never seen will not buy chest openings.
 
+### What counts a click, and what animates the pet
+
+The main window listens for native events (`plugin:event|emit` from the page reaches the same
+listeners as the Rust hook's). Read from the 1.0.2 main-window bundle; the pet's pose is a ref
+(1 idle, 2 left paw, 3 right paw, left and right alternate) that picks the body image.
+
+| event | counts | pet animation |
+|---|---|---|
+| `global-clap-mouse` | on receipt (+1) | on receipt: paw down, back to idle after 220 ms |
+| `gamepad-button-press` | on receipt (+1) | same |
+| `mouse-button` (`press`, left) | on receipt, with hit-testing on the coordinates | same |
+| `key-press` | not counted, except F5 in game mode | paw down, 220 ms timer |
+| `key-release` | **counted here**, for a key that had been pressed | paw put back at once |
+
+Consequences for anything that fakes input:
+
+- A duration is never measured; only the order of events matters.
+- One `global-clap-mouse` is the whole click: count and animation, no payload read, nothing to
+  pair. The auto-click mod uses it.
+- Keyboard events are the awkward route. A press followed straight away by its release counts
+  but leaves the animation on screen for milliseconds (the release resets the pose), and a press
+  that is never released makes the app ignore that key from then on. F5, F7 and F8/F9 have other
+  jobs (game mode, switching screens).
+- Observed on a running app: with clicks arriving every 100 ms the body image alternates between
+  a paw-down image and the idle image roughly every 5 ms and 110 ms, which is the key route
+  collapsing its own animation.
+
 There is also a client-side gate: the click handler refuses to open below
 `totalClickCount < As` before calling the API at all, and the animation function
 `wp()` already serialises clicks on its own timeline (it `await`s the animation

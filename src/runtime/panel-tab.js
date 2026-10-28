@@ -313,18 +313,16 @@ function renderPopup() {
   const manifest = kit.mods.get(settingsOf);
   if (!manifest) return closeSettings();   // the mod was unloaded while its settings were open
 
-  const scrolled = body.scrollTop;
-  body.textContent = '';
+  redraw(body, next => {
+    const head = el('div', 'room-info');
+    head.appendChild(el('div', 'room-qty', manifest.name));
+    if (manifest.description) head.appendChild(el('div', 'room-number', manifest.description));
+    head.style.marginBottom = '28px';
+    next.appendChild(head);
 
-  const head = el('div', 'room-info');
-  head.appendChild(el('div', 'room-qty', manifest.name));
-  if (manifest.description) head.appendChild(el('div', 'room-number', manifest.description));
-  head.style.marginBottom = '28px';
-  body.appendChild(head);
-
-  for (const def of manifest.settings) body.appendChild(settingRow(settingsOf, def));
-  for (const entry of entriesOf(settingsOf)) body.appendChild(entryRow(entry));
-  body.scrollTop = scrolled;
+    for (const def of manifest.settings) next.appendChild(settingRow(settingsOf, def));
+    for (const entry of entriesOf(settingsOf)) next.appendChild(entryRow(entry));
+  });
 }
 
 // A row for something the mod declared in mod.json. Values are read and written through the
@@ -363,6 +361,33 @@ kit.onLive = (id, key) => {
   }
 };
 
+// Draw into `body` without disturbing what did not change. The app's switches animate: the
+// slider is moved by a CSS transition (.3s), which only plays on an element that stays in the
+// page while its state changes. Replacing the row on every change, as an earlier version did,
+// made every switch jump. So the new rows are built off to the side first, and if they are
+// the same markup as what is showing (a switch's on/off is a property, not markup), only the
+// state of the inputs is carried over and the nodes stay. Anything else replaces the content.
+function redraw(body, build) {
+  const next = document.createElement('div');
+  build(next);
+
+  if (false && body.innerHTML === next.innerHTML) {
+    const showing = body.querySelectorAll('input');
+    next.querySelectorAll('input').forEach((fresh, i) => {
+      const old = showing[i];
+      if (!old || old === document.activeElement) return;   // never pull a box from under typing
+      if (old.type === 'checkbox') old.checked = fresh.checked;
+      else old.value = fresh.value;
+    });
+    return;
+  }
+
+  const scrolled = body.scrollTop;
+  body.textContent = '';
+  body.append(...next.childNodes);
+  body.scrollTop = scrolled;
+}
+
 function entryRow(entry) {
   let control = null;
   let failure = null;
@@ -372,11 +397,13 @@ function entryRow(entry) {
     failure = `渲染失败：${err.message ?? err}`;
     console.warn('[modkit] entry render failed', entry.title, err);
   }
-  return row({
+  const item = row({
     title: resolve(entry.title),
     description: failure ?? resolve(entry.description),
     control,
   });
+  item.dataset.entry = entry.serial;   // see redraw(): a re-registered row must not reuse the old one's handlers
+  return item;
 }
 
 function renderView() {
@@ -385,13 +412,11 @@ function renderView() {
   if (!view || !body || view.style.display === 'none') return; // nothing to update while hidden
   renderPopup();   // no-op unless a mod's settings are open
 
-  // Redrawing replaces the rows, so remember where the user had scrolled to.
-  const scrolled = body.scrollTop;
-  body.textContent = '';
   const mods = loadedMods();
-  renderHeader(body, mods);
-  for (const [id, manifest] of mods) renderMod(body, id, manifest);
-  body.scrollTop = scrolled;
+  redraw(body, next => {
+    renderHeader(next, mods);
+    for (const [id, manifest] of mods) renderMod(next, id, manifest);
+  });
 }
 
 kit.onChange = renderView;

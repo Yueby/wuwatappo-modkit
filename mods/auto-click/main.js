@@ -1,67 +1,71 @@
-// Auto click: raises the click count by sending the app the same native key events the
-// keyboard hook would send. Settings and what the MOD page shows are in mod.json.
+// Auto click: raises the click count by sending the app the event its global mouse hook sends.
+// Settings and what the MOD page shows are in mod.json.
 //
-// How the app counts (read from the 1.0.2 main-window bundle):
-//   * the Rust hook emits `key-press` and `key-release` with the key name as the payload;
-//   * a click is counted on the RELEASE of a key that was recorded as pressed, so one
-//     count is one press followed by its release — a press alone adds nothing;
-//   * F5/F7/F8/F9 do something else (game mode, switching screens), so they are avoided.
-// F13 is used because nothing is bound to it and a physical keyboard almost never has it,
-// so it cannot collide with what the user is typing.
+// How the app handles events (read from the 1.0.2 main-window bundle):
+//   * `global-clap-mouse` (and `gamepad-button-press`): one event is one click. The handler
+//     counts it and plays the pet's paw animation, alternating left and right, and nothing
+//     else: no payload is read, no matching release is expected, no duration is measured.
+//   * `key-press` / `key-release` are different: the paw goes down on press and is put back
+//     at once on release, and the click is only counted on the release. A press and release
+//     sent together therefore count but show no animation, and a press without its release
+//     makes the app ignore that key from then on. That is why this does not use them.
 //
 // The "running" switch is persist:false in the manifest: whatever the master switch does,
 // clicking only ever starts because the user turned it on in this session.
 //
-// Runs in the main window only (see "scripts" in mod.json): the events are received there,
-// and a timer in every window would send each pair seven times.
+// Runs in the main window only (see "scripts" in mod.json): the event is handled there,
+// and a timer in every window would send it seven times per tick.
 
-const KEY = 'F13';
-
-let sent = 0;            // pairs sent since this mod loaded
+let sent = 0;            // clicks sent since this mod loaded
 let timer = null;
+let alive = true;        // false once this copy has been stopped
+let generation = 0;      // one per start of the loop: an earlier loop must not carry on after a restart
 
-const emit = event => mod.invoke('plugin:event|emit', { event, payload: KEY });
+const sleep = ms => new Promise(resolve => { timer = setTimeout(resolve, ms); });
+const click = () => mod.invoke('plugin:event|emit', { event: 'global-clap-mouse' });
 const loggedIn = () => !!localStorage.getItem('wuwatappo-login-cuid');
 const showSent = () => mod.live('sent', `${sent} 次`);
 
-// One click: press, then release.
-async function tick() {
-  timer = null;
-  if (!mod.config.get('running')) return;
+async function loop(mine) {
+  const wanted = () => alive && mine === generation && mod.config.get('running');
 
-  try {
-    if (!loggedIn()) throw new Error('未登录');
-    await emit('key-press');
-    await emit('key-release');
-    sent += 1;
-  } catch (err) {
-    mod.warn('stopped:', err.message ?? err);
-    mod.config.set('running', false);                  // the listener below stops the timer
-    mod.live('state', `已停止：${err.message ?? err}`);  // after set(): replaces its plain "已停止"
-    showSent();
-    return;
+  while (wanted()) {
+    const started = Date.now();
+    try {
+      if (!loggedIn()) throw new Error('未登录');
+      await click();
+      sent += 1;
+    } catch (err) {
+      if (mine !== generation) return;                    // already superseded: nothing left to report
+      mod.warn('stopped:', err.message ?? err);
+      mod.config.set('running', false);                   // wanted() is false from here on
+      mod.live('state', `已停止：${err.message ?? err}`);  // after set(): replaces its plain "已停止"
+      showSent();
+      return;
+    }
+    if (sent % 10 === 0) showSent();                      // keep the counter moving without a message per click
+
+    // The interval is from one click to the next, so the time spent sending counts.
+    const rest = mod.config.get('interval') - (Date.now() - started);
+    if (rest > 0 && wanted()) await sleep(rest);
   }
-
-  if (sent % 10 === 0) showSent();                     // keep the counter moving without a message per tick
-  if (mod.config.get('running')) timer = setTimeout(tick, mod.config.get('interval'));
-}
-
-function halt() {
-  clearTimeout(timer);
-  timer = null;
 }
 
 mod.config.onChange('running', on => {
-  halt();
-  if (on) {
-    mod.live('state', '运行中');
-    timer = setTimeout(tick, mod.config.get('interval'));
-  } else {
+  generation += 1;
+  clearTimeout(timer);
+  if (!on) {
     mod.live('state', '已停止');
     showSent();
+    return;
   }
+  mod.live('state', '运行中');
+  loop(generation);
 });
 
 // Switching the mod off or reloading it must stop the loop, or it would keep clicking with
 // no switch left to turn off.
-mod.onDispose(halt);
+mod.onDispose(() => {
+  alive = false;
+  clearTimeout(timer);
+});

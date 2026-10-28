@@ -27,6 +27,7 @@
 
 const kit = (window.modkit ??= {});
 kit.entries ??= [];
+kit.entrySerial ??= 0;       // gives every added row an identity (the page compares them)
 kit.mods ??= new Map();       // id -> manifest, for every user mod installed in this window
 kit.units ??= new Map();      // id -> this window's installation of it
 kit.reports ??= new Map();    // id -> Map(window label -> { status, error }), from every window
@@ -48,6 +49,7 @@ kit.changed = () => {
 };
 
 kit.addEntry = entry => {
+  entry.serial = ++kit.entrySerial;
   kit.entries.push(entry);
   kit.changed();
 };

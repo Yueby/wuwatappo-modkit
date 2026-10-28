@@ -167,6 +167,33 @@ test('a switch in the dialog changes the setting', async () => {
   assert.equal(await panel(`document.querySelector('#modkit-popup-body .setting-switch input').checked`), true);
 });
 
+// The app moves a switch's knob with a CSS transition (.3s). That only plays on an element that
+// stays in the page while its state changes, so a redraw that replaces the row makes the knob
+// jump. Flip a switch with a real click and sample the knob on the way: a knob that is
+// animating is neither where it started nor where it ends up.
+const rowOf = (scope, title) => `[...document.querySelectorAll(${json(scope + ' .setting-item')})].find(r => r.querySelector('.setting-title').textContent === ${json(title)})`;
+const knobX = (scope, title) => panel(`new DOMMatrixReadOnly(getComputedStyle(${rowOf(scope, title)}.querySelector('.setting-slider'), '::before').transform).m41`);
+
+async function assertSwitchAnimates(scope, title) {
+  await panel(`window.__sw = ${rowOf(scope, title)}.querySelector('.setting-switch input')`);
+  const from = await knobX(scope, title);
+
+  await click('.setting-slider', title);            // returns about 150 ms after the press
+  const during = await knobX(scope, title);
+  await sleep(500);
+  const to = await knobX(scope, title);
+
+  assert.notEqual(to, from, 'the switch changed');
+  assert.ok(during !== from && during !== to, `caught the knob mid-way (${from} -> ${during} -> ${to}): it animated`);
+  assert.equal(await panel(`window.__sw === ${rowOf(scope, title)}.querySelector('.setting-switch input')`), true, 'the same element: nothing was rebuilt');
+
+  await click('.setting-slider', title);            // put it back
+  await sleep(500);
+  await panel(`delete window.__sw`);
+}
+
+test('a switch in the dialog animates when it is flipped', () => assertSwitchAnimates('#modkit-popup-body', 'Flag'));
+
 test('a live figure updates in place, without rebuilding the dialog', async () => {
   await panel(`window.__keep = document.querySelector('#modkit-popup-body .setting-value')`);
   await app.inWindow('main', `window.__zzPublish('second')`);
@@ -194,6 +221,8 @@ test('the dialog closes with Escape, with the close button, and with a click on 
   await clickAt(card.right + 20, card.mid);                    // on the dimmed part
   await until('closed by the dimmed part', async () => !(await popupOpen()));
 });
+
+test('the master switch in the list animates when it is flipped', () => assertSwitchAnimates('#modkit-view-body', NAME));
 
 test('the master switch in the list turns the mod off and on, and the 设置 button stays', async () => {
   await click('.setting-slider', NAME);
