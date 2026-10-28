@@ -218,22 +218,10 @@ kit.onChange = renderView;
 
 // --- switching between our page and the app's pages -------------------------
 
-// Whether our page is showing, and which stock tab was selected when it opened. The
-// app repaints the highlight only when the main window reports that the selected tab
-// changed — see leaveModView for why that matters when we leave.
+// Whether our page is showing. See leaveModView for what leaving has to hand back.
 let modOpen = false;
-let returnTo = -1;     // index of the stock tab; looked up fresh since Vue may replace nodes
 
 const stockTabs = () => tabButtons().filter(b => !b.dataset.modkitOwn);
-// Stock tabs are identified by position, not label: folded, the labels are gone.
-const stockTabByIndex = i => stockTabs()[i] ?? null;
-
-// Must run before the stock highlight is removed: once our click handler has cleared
-// it there is nothing left to read, and the index would silently stay at -1.
-function rememberSelection() {
-  const idx = stockTabs().findIndex(b => b.classList.contains('tab-btn--active'));
-  if (idx >= 0) returnTo = idx;
-}
 
 function showModView() {
   const host = moduleHost();
@@ -297,10 +285,8 @@ function buildTab() {
   btn.append(icon, label);
 
   btn.addEventListener('click', () => {
-    // Read which stock tab is selected first, then take its highlight away: the app
-    // will not mark a button it does not know about, so the one-active-tab invariant
-    // is ours to keep.
-    if (!modOpen) rememberSelection();
+    // The app will not mark a button it does not know about, so the one-active-tab
+    // invariant is ours to keep: take the highlight from the stock tab, give it to us.
     for (const other of tabButtons()) other.classList.toggle('tab-btn--active', other === btn);
     showModView();
   });
@@ -308,14 +294,14 @@ function buildTab() {
   return btn;
 }
 
-// Leave our page and hand the highlight back. `clicked` is the stock tab the user
-// pressed, or null when something else (the app itself) switched tabs.
+// Leave our page and hand the highlight to the stock tab the user pressed (`clicked`),
+// or to nobody when something else, the app itself, switched tabs.
 //
 // Entering our page removes .tab-btn--active from the stock tab that carried it. The
 // app puts it back only when the main window reports a change of selected tab. Going
 // back to the tab that was already selected is not a change, so nothing is reported and
 // that tab would stay unhighlighted for good — the symptom was: select 设置, open MOD,
-// click 设置, and no tab lit up. So restore it here. When the user picked a different tab
+// click 设置, and no tab lit up. So set it here. When the user picked a different tab
 // the app's report still arrives and repaints both tabs, to the same result.
 function leaveModView(clicked) {
   if (!modOpen) return;
@@ -323,11 +309,7 @@ function leaveModView(clicked) {
 
   document.getElementById(TAB_ID)?.classList.remove('tab-btn--active');
   hideModView();
-
-  if (!clicked) return;
-  // 收起 only folds the panel; the page underneath is still the one we came from.
-  const target = clicked === collapseButton() ? stockTabByIndex(returnTo) : clicked;
-  target?.classList.add('tab-btn--active');
+  clicked?.classList.add('tab-btn--active');
 }
 
 // Clicking any stock tab returns to the app's own content.
@@ -341,7 +323,15 @@ const boundTabs = new Map();   // button -> handler
 function bindStockTabs() {
   for (const btn of stockTabs()) {
     if (boundTabs.has(btn)) continue;
-    const handler = () => leaveModView(btn);
+    const handler = () => {
+      // The fold toggle changes the sidebar's width and nothing else: the page beside
+      // it, and so the selected tab, stay exactly as they are (measured: content width
+      // unchanged, same blocks shown). Leaving our page here would switch the user to
+      // another page just because they narrowed the sidebar — which is not what
+      // happens to a stock page when the sidebar is folded.
+      if (btn === collapseButton()) return;
+      leaveModView(btn);
+    };
     boundTabs.set(btn, handler);
     btn.addEventListener('click', handler);
   }
@@ -383,6 +373,9 @@ function ensureTab() {
     watchTabClasses();
     const tab = document.getElementById(TAB_ID) ?? buildTab();
     if (!tab) return;
+    // A rebuilt tab starts unselected; if our page is still showing it must not lose
+    // its highlight.
+    if (modOpen) tab.classList.add('tab-btn--active');
     // Re-seat on every pass: Vue may have moved the strip around.
     if (tab.nextElementSibling !== collapse) bar.insertBefore(tab, collapse);
   } finally {

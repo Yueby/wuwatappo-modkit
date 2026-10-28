@@ -14,7 +14,14 @@ const t = await connect();
 let failed = 0;
 const check = (name, got, want) => { const ok = JSON.stringify(got) === JSON.stringify(want); if (!ok) failed++; console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${ok ? '' : `   got ${JSON.stringify(got)}, wanted ${JSON.stringify(want)}`}`); };
 
-console.log('main window considers the panel open:', await t.ensureOpen());
+// Everything below assumes the main window considers the panel open (see the harness).
+// If that cannot be established, stop: running on would only produce failures that look
+// like bugs in the code under test.
+if (!(await t.ensureOpen())) {
+  console.error('ABORT: could not get the main window to treat the panel as open; nothing was tested.');
+  t.close(); process.exit(2);
+}
+console.log('main window considers the panel open: true');
 
 const toggleFold = async () => {
   const pos = JSON.parse(await t.q(`(() => { const b=[...document.querySelectorAll('.tab-btn')].filter(x=>!x.dataset.modkitOwn).pop(); const r=b.getBoundingClientRect(); return JSON.stringify({x:r.left+r.width/2,y:r.top+r.height/2}); })()`));
@@ -33,20 +40,46 @@ for (const [name, want] of [['设置','设置'],['MOD','MOD'],['设置','设置'
   await t.realClick(name); check(`click ${name}`, (await activeNames()).join(','), want);
 }
 
-console.log('\n-- fold / unfold');
+console.log('\n-- fold / unfold: neither the page nor the selection may change');
+// What is on screen: our page, or the names of the stock blocks that are visible.
+const page = () => t.q(`(() => {
+  const v = document.getElementById('modkit-view');
+  if (v && v.style.display !== 'none') return 'MOD';
+  return [...document.querySelectorAll('.module-block')]
+    .filter(b => b.id !== 'modkit-view' && getComputedStyle(b).display !== 'none')
+    .map(b => b.className.replace('module-block', '').trim()).join(',');
+})()`);
+// Folded, stock labels are gone, so a selected stock tab shows up as '(icon)'.
+const selection = async () => (await activeNames()).map(n => (n === '(icon)' ? '<native>' : n)).join(',');
+
+// A native page first: the baseline the MOD page has to match.
+await t.realClick('设置');
+const nativePage = await page();
+await toggleFold();
+check('native: folded', await folded(), true);
+check('native: same page after folding', await page(), nativePage);
+check('native: a tab is still selected', await selection(), '<native>');
+await toggleFold();
+check('native: same page after unfolding', await page(), nativePage);
+check('native: 设置 still selected', (await activeNames()).join(','), '设置');
+
+// The same sequence with the MOD page open.
 check('label shown when expanded', await modLabel(), 'shown');
-await t.realClick('联机');
 await t.realClick('MOD');
+check('MOD page is showing', await page(), 'MOD');
 await toggleFold();
-check('folded', await folded(), true);
-check('highlight handed back on fold (icon-only tab bar)', (await activeNames()).join(','), '(icon)');
-check('label hidden when folded', await modLabel(), 'hidden');
-check('MOD page closed by folding', await t.q(`document.getElementById('modkit-view').style.display`), 'none');
+check('MOD: folded', await folded(), true);
+check('MOD: page is still the MOD page', await page(), 'MOD');
+check('MOD: MOD is still the selected tab', await selection(), 'MOD');
+check('MOD: label hidden when folded', await modLabel(), 'hidden');
 await toggleFold();
-check('unfolded', await folded(), false);
-check('label shown again', await modLabel(), 'shown');
-check('previous tab still highlighted after unfold', (await activeNames()).join(','), '联机');
-await t.realClick('背包'); check('highlight works after unfold', (await activeNames()).join(','), '背包');
+check('MOD: unfolded', await folded(), false);
+check('MOD: page is still the MOD page', await page(), 'MOD');
+check('MOD: MOD is still the selected tab', await selection(), 'MOD');
+check('MOD: label shown again', await modLabel(), 'shown');
+await t.realClick('背包');
+check('leaving MOD after a fold still works', (await activeNames()).join(','), '背包');
+check('a native page is showing again', (await page()) !== 'MOD', true);
 
 console.log('\n-- tab rebuilt while folded');
 await toggleFold();
@@ -56,7 +89,17 @@ check('tab planted again while folded', await t.q(`document.querySelectorAll('#m
 await toggleFold();
 check('label exists after unfolding', await modLabel(), 'shown');
 check('still exactly one tab', await t.q(`document.querySelectorAll('#modkit-tab').length`), 1);
-await t.realClick('联机'); check('highlight works afterwards', (await activeNames()).join(','), '联机');
+await t.realClick('联机');
+check('highlight works afterwards', (await activeNames()).join(','), '联机');
+
+console.log('\n-- tab rebuilt while the MOD page is open');
+await t.realClick('MOD');
+await t.q(`document.getElementById('modkit-tab').remove()`);
+await sleep(900);
+check('rebuilt tab is selected, matching the page', (await activeNames()).join(','), 'MOD');
+check('page is still the MOD page', await page(), 'MOD');
+await t.realClick('联机');
+check('can still leave', (await activeNames()).join(','), '联机');
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');
 t.close(); process.exit(failed ? 1 : 0);
