@@ -1,0 +1,27 @@
+{
+  "name": "click-journal",
+  "displayName": "点击记录",
+  "version": "0.1.0",
+  "description": "每隔一段时间读取累计点击数，记进文件，并算出点击速度",
+  "private": true,
+  "type": "module",
+  "modkit": {
+    "host": "host.js",
+    "settings": [
+      {
+        "key": "interval",
+        "type": "number",
+        "title": "读取间隔（秒）",
+        "description": "多久读一次应用里的累计点击数，2–600",
+        "default": 10,
+        "min": 2,
+        "max": 600,
+        "step": 1
+      },
+      { "key": "count", "type": "value", "title": "累计点击数", "default": "—" },
+      { "key": "rate", "type": "value", "title": "最近一分钟", "default": "—" },
+      { "key": "session", "type": "value", "title": "本次新增", "default": "—" },
+      { "key": "rows", "type": "value", "title": "文件里已记录", "default": "—" }
+    ]
+  }
+}

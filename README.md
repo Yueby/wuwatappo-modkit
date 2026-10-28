@@ -64,7 +64,7 @@ src/
     modkit-registry.js    window.modkit: mod lifecycle, settings, master switch, state shared
                           between windows (every window)
     panel-tab.js          the MOD tab and page in the settings panel (panel window only)
-mods/                   your mods: single files or folders with a package.json (_ = not loaded)
+mods/                   your mods (auto-click, click-journal; _template* to copy): single files or folders with a package.json (_ = not loaded)
 scripts/                developer tools, not part of the CLI (icon preview)
 tests/                  `npm test` runs the offline ones; `npm run test:app` needs the app running
 docs/                   launching, modding, and what is known about the app

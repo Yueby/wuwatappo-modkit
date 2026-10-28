@@ -179,7 +179,12 @@ const controls = {
     input.style.maxWidth = '140px';
     input.addEventListener('change', () => {
       const n = Number(input.value);
-      if (Number.isFinite(n)) onChange?.(Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n)));
+      if (!Number.isFinite(n)) return;
+      const clamped = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n));
+      // The box is still focused now, and a redraw does not pull a focused box from under the
+      // user, so what was typed would stay on screen while something else was stored.
+      input.value = clamped;
+      onChange?.(clamped);
     });
     return input;
   },
@@ -242,7 +247,15 @@ function renderMod(body, id, manifest) {
   }));
 }
 
-// --- the settings dialog -------------------------------------------------------
+// The way into the log, after the mods: a row like theirs, with a button where theirs has a 设置.
+function renderLogEntry(body) {
+  const open = el('button', 'setting-btn', '查看');
+  open.type = 'button';
+  open.addEventListener('click', openLog);
+  body.appendChild(row({ title: '日志', description: 'mod 和它们的 Node 部分输出的内容', control: open }));
+}
+
+// --- the dialog ----------------------------------------------------------------
 //
 // The panel already has a dialog: the one the 合成 page opens for the atlas. It is a layer
 // over the whole panel, dimmed, leaving the tab strip visible (the left padding is
@@ -253,8 +266,9 @@ function renderMod(body, id, manifest) {
 const POPUP_ID = 'modkit-popup';
 const POPUP_BODY_ID = 'modkit-popup-body';
 
-// The mod whose settings are showing, or null.
-let settingsOf = null;
+// What the dialog is showing: { kind: 'settings', id } for one mod's settings, { kind: 'log' }
+// for the log, or null while it is closed.
+let dialog = null;
 
 const entriesOf = id => kit.entries.filter(e => e.owner === id);
 const hasSettings = (id, manifest) => manifest.settings.length > 0 || entriesOf(id).length > 0;
@@ -264,14 +278,14 @@ function buildPopup() {
   layer.id = POPUP_ID;
   // The app stops mousedown here for the same reason as above, and closes on a click.
   layer.addEventListener('mousedown', event => event.stopPropagation());
-  layer.addEventListener('click', closeSettings);
+  layer.addEventListener('click', closeDialog);
 
   const card = el('div', 'synthesis-atlas-pop-content');
   card.addEventListener('click', event => event.stopPropagation());
 
   const close = el('button', 'popup-close');
   close.type = 'button';
-  close.addEventListener('click', closeSettings);
+  close.addEventListener('click', closeDialog);
 
   // The card has a fixed size and its own padding; the list inside it scrolls, with the
   // app's thin scrollbar (the one .settings-module gives the settings page).
@@ -285,33 +299,45 @@ function buildPopup() {
   return layer;
 }
 
-function onSettingsKey(event) {
-  if (event.key === 'Escape') closeSettings();
+function onDialogKey(event) {
+  if (event.key === 'Escape') closeDialog();
 }
 
-function openSettings(id) {
+function openDialog(next) {
   const host = document.querySelector('.module-panel');   // the popup's variables live there
   if (!host) return;
-  settingsOf = id;
+  dialog = next;
   if (!document.getElementById(POPUP_ID)) {
     host.appendChild(buildPopup());
-    document.addEventListener('keydown', onSettingsKey);
+    document.addEventListener('keydown', onDialogKey);
   }
   renderPopup();
+  if (dialog?.kind === 'log') {                            // a log is read from the end
+    const body = document.getElementById(POPUP_BODY_ID);
+    body.scrollTop = body.scrollHeight;
+  }
 }
 
-function closeSettings() {
-  settingsOf = null;
+const openSettings = id => openDialog({ kind: 'settings', id });
+const openLog = () => openDialog({ kind: 'log' });
+
+function closeDialog() {
+  dialog = null;
   document.getElementById(POPUP_ID)?.remove();
-  document.removeEventListener('keydown', onSettingsKey);
+  document.removeEventListener('keydown', onDialogKey);
+}
+
+function renderPopup() {
+  if (dialog?.kind === 'log') renderLogDialog();
+  else if (dialog?.kind === 'settings') renderSettingsDialog();
 }
 
 // Same header as the MOD page (name, and what it does under it), then the rows.
-function renderPopup() {
+function renderSettingsDialog() {
   const body = document.getElementById(POPUP_BODY_ID);
   if (!body) return;
-  const manifest = kit.mods.get(settingsOf);
-  if (!manifest) return closeSettings();   // the mod was unloaded while its settings were open
+  const manifest = kit.mods.get(dialog.id);
+  if (!manifest) return closeDialog();   // the mod was unloaded while its settings were open
 
   redraw(body, next => {
     const head = el('div', 'room-info');
@@ -320,10 +346,67 @@ function renderPopup() {
     head.style.marginBottom = '28px';
     next.appendChild(head);
 
-    for (const def of manifest.settings) next.appendChild(settingRow(settingsOf, def));
-    for (const entry of entriesOf(settingsOf)) next.appendChild(entryRow(entry));
+    for (const def of manifest.settings) next.appendChild(settingRow(dialog.id, def));
+    for (const entry of entriesOf(dialog.id)) next.appendChild(entryRow(entry));
   });
 }
+
+// --- the log ---------------------------------------------------------------------
+//
+// What mods write with mod.log / mod.warn, and a Node part with host.log (src/runtime/
+// modkit-registry.js collects it from every window). One block in the settings page's own row
+// style, a line each in its subtitle text; there is no red or green to mark a warning with, so
+// the line says so in words.
+
+const pad = n => String(n).padStart(2, '0');
+
+function logLine(entry) {
+  const at = new Date(entry.t);
+  const time = `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+  const name = kit.mods.get(entry.mod)?.name ?? entry.mod;
+  const where = entry.source === 'node' ? 'Node' : entry.source;
+  const level = entry.level === 'warn' ? '警告：' : entry.level === 'error' ? '错误：' : '';
+  return `${time}  ${name}（${where}）  ${level}${entry.text}`;
+}
+
+function renderLogDialog() {
+  const body = document.getElementById(POPUP_BODY_ID);
+  if (!body) return;
+
+  // Following the end, unless the user has scrolled up to read something.
+  const following = body.scrollHeight - body.scrollTop - body.clientHeight < 12;
+  redraw(body, next => {
+    const head = el('div', 'room-info');
+    head.appendChild(el('div', 'room-qty', `日志（${kit.logs.length}）`));
+    head.appendChild(el('div', 'room-number', '最近 500 条，新的在下面'));
+    head.style.marginBottom = '28px';
+    next.appendChild(head);
+
+    const clear = el('button', 'setting-btn', '清空');
+    clear.type = 'button';
+    clear.addEventListener('click', () => kit.clearLogs());
+    next.appendChild(row({ title: '清空日志', description: '各窗口记下的都会清掉', control: clear }));
+
+    const block = el('div', 'setting-item');
+    const lines = el('div', 'setting-label');
+    if (!kit.logs.length) lines.appendChild(el('div', 'setting-sub', '还没有日志。mod 用 mod.log / host.log 写的内容会出现在这里'));
+    for (const entry of kit.logs) lines.appendChild(el('div', 'setting-sub', logLine(entry)));
+    block.appendChild(lines);
+    next.appendChild(block);
+  });
+  if (following) body.scrollTop = body.scrollHeight;
+}
+
+// Lines can come many at a time; draw once per 50 ms. (A timer, not a frame: a hidden window
+// draws no frames, and the log should be current when it is shown.)
+let logTimer = 0;
+kit.onLog = () => {
+  if (dialog?.kind !== 'log' || logTimer) return;
+  logTimer = setTimeout(() => {
+    logTimer = 0;
+    renderLogDialog();
+  }, 50);
+};
 
 // A row for something the mod declared in its package.json. Values are read and written through the
 // framework, which is what makes them persist and reach the window the mod runs in.
@@ -371,7 +454,7 @@ function redraw(body, build) {
   const next = document.createElement('div');
   build(next);
 
-  if (false && body.innerHTML === next.innerHTML) {
+  if (body.innerHTML === next.innerHTML) {
     const showing = body.querySelectorAll('input');
     next.querySelectorAll('input').forEach((fresh, i) => {
       const old = showing[i];
@@ -410,12 +493,13 @@ function renderView() {
   const view = document.getElementById(VIEW_ID);
   const body = document.getElementById(BODY_ID);
   if (!view || !body || view.style.display === 'none') return; // nothing to update while hidden
-  renderPopup();   // no-op unless a mod's settings are open
+  renderPopup();   // no-op unless a dialog is open
 
   const mods = loadedMods();
   redraw(body, next => {
     renderHeader(next, mods);
     for (const [id, manifest] of mods) renderMod(next, id, manifest);
+    renderLogEntry(next);
   });
 }
 
@@ -453,7 +537,7 @@ function showModView() {
 }
 
 function hideModView() {
-  closeSettings();
+  closeDialog();
   document.getElementById(VIEW_ID)?.style.setProperty('display', 'none');
 
   const host = moduleHost();
@@ -612,7 +696,8 @@ mod.onDispose(() => classWatcher.disconnect());
 mod.onDispose(() => { for (const [btn, handler] of boundTabs) btn.removeEventListener('click', handler); boundTabs.clear(); });
 mod.onDispose(() => clearInterval(retry));
 mod.onDispose(() => { kit.onChange = null; kit.onLive = null; });
-mod.onDispose(closeSettings);
+mod.onDispose(closeDialog);
+mod.onDispose(() => { kit.onLog = null; clearTimeout(logTimer); });
 mod.onDispose(() => document.getElementById(TAB_ID)?.remove());
 mod.onDispose(() => document.getElementById(VIEW_ID)?.remove());
 mod.onDispose(() => document.getElementById(STYLE_ID)?.remove());

@@ -49,10 +49,19 @@ before(async () => {
     modkit: {
       host: 'host.js',
       windows: { main: 'main.js' },
-      settings: [{ key: 'n', type: 'number', title: 'N', default: 5, min: 0, max: 99 }],
+      settings: [
+        { key: 'n', type: 'number', title: 'N', default: 5, min: 0, max: 99 },
+        { key: 'shown', type: 'value', title: 'Shown', default: '-' },
+      ],
     },
   }));
   await write(path.join(root, 'mods', 'chat', 'host.js'), `export default function (host) {
+    host.handle('speak', () => {
+      host.log('from node', { n: 1 });
+      host.warn('careful');
+      host.live('shown', 'published by node');
+      return 'ok';
+    });
     host.handle('double', n => n * 2);
     host.handle('ping', () => { host.emit('pong', { n: host.config.get('n') }); return 'sent'; });
     host.handle('n', () => host.config.get('n'));
@@ -61,6 +70,8 @@ before(async () => {
   // The page script uses the Node part as soon as it runs; the part is still starting then.
   await write(path.join(root, 'mods', 'chat', 'main.js'), `
     window.__heard = [];
+    mod.log('hello', { a: 1 });
+    mod.warn('hmm');
     mod.host.on('pong', value => window.__heard.push(value));
     window.__doubled = await mod.host.call('double', 21);
     window.__call = (name, arg) => mod.host.call(name, arg);
@@ -131,6 +142,8 @@ test('switching the mod off stops its Node part, and a call then fails with the 
   await until('stopped', () => Object.keys(manager.states()).length === 0);
   await assert.rejects(run(`modkit.hostCall('chat', 'double', 1, 'main')`), /not running/);
 
+  assert.equal(run(`modkit.live.get('chat')?.get('shown') ?? null`), null, 'what it published is withdrawn with it');
+
   run(`modkit.setEnabled('chat', true)`);
   await until('running again', () => manager.states().chat === 'ready');
   assert.equal(await run(`modkit.hostCall('chat', 'double', 4, 'main')`), 8);
@@ -154,6 +167,69 @@ test('the binding outlives the loader, so a call made after it went fails at onc
   await assert.rejects(run(`modkit.hostCall('chat', 'double', 1, 'main')`), /not running/);
   assert.ok(Date.now() - began < 500, 'at once, not after the 30 s timeout');
   run('modkit.hostBeat()');
+});
+
+const logs = () => plain(run('modkit.logs'));
+
+test('what a mod logs is kept for the MOD page, with its mod, level and window', () => {
+  // Once per start of the script: the mod was switched off and on in an earlier test, so twice.
+  const mine = logs().filter(e => e.mod === 'chat' && e.source === 'main');
+  const pair = [['log', 'hello {"a":1}'], ['warn', 'hmm']];
+  assert.deepEqual(mine.map(e => [e.level, e.text]), [...pair, ...pair]);
+  assert.ok(mine.every(e => typeof e.t === 'number' && e.id));
+});
+
+test('what the Node part logs lands there too, marked as coming from node; its figures are published', async () => {
+  assert.equal(await run(`window.__call('speak')`), 'ok');
+  await until('node lines recorded', () => logs().filter(e => e.source === 'node').length === 2);
+  assert.deepEqual(
+    logs().filter(e => e.source === 'node').map(e => [e.mod, e.level, e.text]),
+    [['chat', 'log', 'from node { n: 1 }'], ['chat', 'warn', 'careful']],
+  );
+  await until('figure published', () => run(`modkit.live.get('chat')?.get('shown')`) === 'published by node');
+});
+
+test('another window\'s history merges in time order, repeats are ignored, and clearing reaches everyone', async () => {
+  const other = new BroadcastChannel('modkit');
+  const heard = [];
+  other.onmessage = event => heard.push(event.data);
+  try {
+    const now = Date.now();
+    const entry = (id, t, text) => ({ id, t, mod: 'chat', level: 'log', source: 'panel', text, origin: 'elsewhere' });
+
+    // Arrives late, so it belongs before what is already there.
+    other.postMessage({ type: 'logs', entries: [entry('e:2', now - 5000, 'second'), entry('e:1', now - 6000, 'first')] });
+    await until('merged', () => logs().some(e => e.id === 'e:1'));
+    other.postMessage({ type: 'log', entry: entry('e:2', now - 5000, 'second') });         // a repeat
+    other.postMessage({ type: 'logs', entries: [entry('e:1', now - 6000, 'first')] });     // and another
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    const all = logs();
+    assert.equal(all.filter(e => e.id === 'e:2').length, 1, 'no duplicates');
+    assert.deepEqual(all.map(e => e.t), [...all.map(e => e.t)].sort((a, b) => a - b), 'in time order');
+    assert.ok(all.findIndex(e => e.id === 'e:1') < all.findIndex(e => e.text === 'hello {"a":1}'), 'earlier lines come first');
+
+    // A window that opens asks everyone to say what they have; ours replies with its own lines only.
+    heard.length = 0;
+    other.postMessage({ type: 'hello' });
+    const reply = await until('history sent', () => heard.find(m => m.type === 'logs'));
+    assert.ok(reply.entries.length >= 4 && reply.entries.every(e => e.origin !== 'elsewhere'));
+
+    other.postMessage({ type: 'clear-logs' });
+    await until('cleared', () => logs().length === 0);
+  } finally {
+    other.close();
+  }
+});
+
+test('the log keeps the most recent 500 lines', () => {
+  run(`for (let i = 0; i < 520; i++) modkit.addLog('chat', 'log', 'main', 'line ' + i)`);
+  const kept = logs();
+  assert.equal(kept.length, 500);
+  assert.equal(kept.at(-1).text, 'line 519');
+  assert.equal(kept[0].text, 'line 20');
+  run('modkit.clearLogs()');
+  assert.equal(logs().length, 0);
 });
 
 test('a listener is removed with the mod, so a reloaded mod does not hear twice', async () => {

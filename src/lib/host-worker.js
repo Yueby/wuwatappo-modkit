@@ -49,8 +49,13 @@ const host = {
   id,
   dir,                      // the mod's own folder
   dataDir,                  // a folder to keep files in; it exists
+  // Written to the loader's output and to the MOD page's log view.
   log: (...args) => send({ t: 'log', level: 'log', text: format(...args) }),
   warn: (...args) => send({ t: 'log', level: 'warn', text: format(...args) }),
+  error: (...args) => send({ t: 'log', level: 'error', text: format(...args) }),
+
+  // Publish the text of a `value` row of the manifest (the same rows mod.live feeds); null clears it.
+  live: (key, value) => send({ t: 'live', key, value: value ?? null }),
 
   // Answer a call from the page: mod.host.call(name, arg). The return value goes back to it.
   handle(name, fn) {

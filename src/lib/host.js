@@ -167,6 +167,7 @@ export class HostManager {
     if (!host) return this.#exits.get(id) ?? Promise.resolve();
     this.#hosts.delete(id);
     this.#report(id, null);
+    this.#app?.evaluate(null, `window.modkit?.clearLive?.(${json(id)})`).catch(() => {});
     this.#failCalls(host, 'the Node part was stopped');
 
     const worker = host.worker;
@@ -189,12 +190,21 @@ export class HostManager {
     host.state = 'failed';
     host.error = error;
     this.#log(`[${id}] Node part failed: ${error.split('\n')[0]}`);
+    this.#toLog(id, 'error', `Node 部分出错：${error}`);
     this.#report(id, 'error', `Node 部分出错：${error.split('\n')[0]}`);
     this.#failCalls(host, `the Node part failed: ${error.split('\n')[0]}`);
     host.worker?.terminate();
   }
 
   #fromWorker(id, host, message) {
+    // What it says while it is being stopped (its dispose hook runs after it has been taken off
+    // the list) is still worth hearing: that is where "stopped" and cleanup errors are written.
+    // Anything that would change state is not: it is no longer the one the pages are talking to.
+    if (message.t === 'log') {
+      this.#log(`[${id}] ${message.text}`);
+      this.#toLog(id, message.level, message.text);
+      return;
+    }
     if (this.#hosts.get(id) !== host) return;
     const worker = host.worker;
 
@@ -208,8 +218,9 @@ export class HostManager {
       case 'failed':
         this.#fail(id, host, message.error);
         break;
-      case 'log':
-        this.#log(`[${id}] ${message.text}`);
+      case 'live':
+        this.#app?.evaluate(null, `window.modkit.hostLive(${json(id)}, ${json(message.key)}, ${json(message.value)})`)
+          .catch(err => this.#toLog(id, 'warn', `host.live(${message.key}): ${String(err?.message ?? err).split('\n')[0]}`));
         break;
       case 'emit': {
         const expression = `window.modkit?.fromHost?.(${json(id)}, ${json(message.name)}, ${json(message.arg)})`;
@@ -267,6 +278,11 @@ export class HostManager {
 
   #reply(window, callId, ok, value) {
     this.#app?.evaluate(window, `window.modkit?.hostReply?.(${json(callId)}, ${ok ? 'true' : 'false'}, ${json(value)})`).catch(() => {});
+  }
+
+  // Into the MOD page's log view. One window records it; the others hear of it over the channel.
+  #toLog(id, level, text) {
+    this.#app?.evaluate(null, `window.modkit?.logFromHost?.(${json(id)}, ${json(level)}, ${json(text)})`).catch(() => {});
   }
 
   // What the MOD page shows for this part: loading / ok / error, or nothing once it is stopped.

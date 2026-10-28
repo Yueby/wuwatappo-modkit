@@ -17,6 +17,7 @@ const REPORTED = new Set(['ok', 'error', 'off']);
 export class Injector {
   #port;
   #log;
+  #only;
   #mods = [];
   #signature = '';
   #sessions = new Map(); // target id -> { target, session, needsInject }
@@ -25,9 +26,12 @@ export class Injector {
   // While it is null the pages have no way to call out (see HOST_BINDING in host.js).
   onHostMessage = null;
 
-  constructor({ port, log = () => {} }) {
+  // `only`: window labels to attach to (default: all). A window that is not attached is not touched
+  // at all, which is how a test can work in the panel without disturbing what runs in main.
+  constructor({ port, log = () => {}, only = null }) {
     this.#port = port;
     this.#log = log;
+    this.#only = only;
   }
 
   // Run something in one window (by label), or in the first one when `label` is null.
@@ -60,7 +64,8 @@ export class Injector {
 
   // Attach to new windows, drop sessions for windows that are gone.
   async #syncSessions() {
-    const targets = await targetList({ port: this.#port });
+    const targets = (await targetList({ port: this.#port }))
+      .filter(t => !this.#only || this.#only.includes(windowLabel(t)));
 
     const live = new Set(targets.map(t => t.id));
     for (const [id, entry] of this.#sessions) {

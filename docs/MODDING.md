@@ -111,8 +111,8 @@ mod.css(text)                  // inject a stylesheet; returns a remover functio
 mod.waitFor(selector, opts)    // resolve when an element appears (MutationObserver)
 mod.onDispose(fn)              // run fn when the mod stops: reload, deletion, master switch, failure
 mod.entry({ title, ... })      // add a row from code (below)
-mod.log(...args)               // console.log, prefixed with the mod name
-mod.warn(...args)              // same, as a warning
+mod.log(...args)               // to the console and to the MOD page's log, under the mod's name
+mod.warn(...args)              // the same, as a warning
 ```
 
 A key that is not declared under `modkit.settings` throws, on purpose: a typo should be an error, not a
@@ -157,6 +157,15 @@ atlas — dimmed over the content with the tab strip left visible, a card with t
 button — headed by the mod's name and description, then its settings in the order the manifest
 lists them. It closes with the close button, Escape, or a click on the dimmed part, and when the
 user leaves the MOD page. Values a running mod publishes with `mod.live` update in place.
+
+The last row of the list is **日志**, the way into the log: a dialog of what mods have written with
+`mod.log` / `mod.warn` and a Node part with `host.log` / `host.warn` / `host.error`. One line each,
+oldest first and the newest at the bottom, as `time  mod name（window or Node）  text`; a warning or an
+error says so in words, since the app's palette has no colour for it. The view follows new lines unless
+it has been scrolled up to read, and 清空 clears it in every window. It keeps the latest 500 lines and
+nothing is stored: each window keeps what it wrote and the panel collects it, so lines written before
+the panel was opened are still there, and a restart starts empty. A mod that fails to load or throws
+while starting leaves its error there too.
 
 Everything uses the app's own classes, so fonts, colours and scrollbar match without a mod
 writing any HTML or CSS. The app has no section headings, no red and no green, and the page
@@ -216,7 +225,8 @@ it left behind. Settings with `"persist": false` are reset when it starts, as fo
 
 ```js
 host.id, host.dir, host.dataDir           // the mod's name, its folder, a folder to keep files in
-host.log(...), host.warn(...)             // to the loader's output, prefixed with the mod name
+host.log(...), host.warn(...), host.error(...)   // to the loader's output and to the MOD page's log
+host.live(key, value)                     // publish the text of a `value` row (what mod.live does); null clears it
 host.handle(name, (arg, { window }) => value)   // answers mod.host.call(name, arg); may be async
 host.emit(name, arg, { window? })         // to mod.host.on(name, fn): every window, or one
 host.evaluate(window, javascript)         // run JavaScript in a window ('main', 'panel', ...) and get the value back

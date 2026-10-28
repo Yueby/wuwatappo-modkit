@@ -198,6 +198,26 @@ test('files: it has a folder of its own, and its dispose hook runs when it is sw
   await until('started again', () => manager.states().files === 'ready');
 });
 
+test('what it logs and publishes reaches the pages, including what it says while being stopped', async () => {
+  await start('voice', `export default function (host) {
+    host.log('hello', { n: 1 });
+    host.warn('careful');
+    host.error('bad');
+    host.live('shown', 'a figure');
+    host.onDispose(() => host.log('goodbye'));
+  }`);
+  await until('start lines forwarded', () => app.find('logFromHost?.("voice", "error", "bad")').length === 1);
+  assert.ok(app.find('logFromHost?.("voice", "log", "hello { n: 1 }")').length, 'objects are formatted like console.log');
+  assert.ok(app.find('logFromHost?.("voice", "warn", "careful")').length);
+  assert.ok(app.find('hostLive("voice", "shown", "a figure")').length, 'published through the page, which checks the row exists');
+
+  manager.onPageMessage('main', page.enabled('voice', false));
+  await until('stopped', () => Object.keys(manager.states()).length === 0);
+  assert.ok(app.find('clearLive?.("voice")').length, 'its figures are withdrawn');
+  // Written after it was taken off the list: the last words are not lost.
+  await until('the goodbye arrived', () => app.find('logFromHost?.("voice", "log", "goodbye")').length === 1);
+});
+
 test('a timer the mod forgot to clear dies with it', async () => {
   await start('leaky', `import fs from 'node:fs';
     import path from 'node:path';

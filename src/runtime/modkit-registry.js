@@ -20,6 +20,9 @@
 //               BroadcastChannel. Never stored, so a restart cannot leave stale ones behind.
 //   entries     rows a mod adds from its own code (mod.entry), for the cases a manifest
 //               cannot describe. Only visible if the mod runs in the panel window.
+//   logs        what mods write with mod.log / mod.warn (and a Node part with host.log), kept
+//               for the MOD page's log view. Each window keeps what it produced and sends it on
+//               a channel; the panel collects it. Not stored: a restart starts them empty.
 //   host        the line to a mod's Node part (src/lib/host.js), which runs in the loader's
 //               process: calls to it, what it sends back, and telling it when the switch or a
 //               setting changes. It exists only while the loader is resident.
@@ -39,6 +42,11 @@ kit.watchers ??= [];          // { id, key, fn }: mods listening for a setting t
 kit.hostCalls ??= new Map();  // callId -> { resolve, reject, timer }: calls to a Node part, unanswered
 kit.hostListeners ??= [];     // { id, name, fn }: mod.host.on
 kit.callSeq ??= 0;
+kit.logs ??= [];              // { id, t, mod, level, source, text, origin }, oldest first, from every window
+kit.logIds ??= new Set();
+kit.logSeq ??= 0;
+kit.instance ??= Math.random().toString(36).slice(2, 8);   // tells this window's log entries from others'
+kit.onLog ??= null;           // (entry | undefined): a line arrived, or the list changed
 kit.onChange ??= null;        // redraw hook: set by whatever draws the MOD page
 kit.onLive ??= null;          // (id, key, value): a live figure moved; cheaper than a redraw
 
@@ -98,9 +106,69 @@ function receive(message) {
       break;
     case 'hello':
       for (const unit of kit.units.values()) unit.announce();
+      kit.post({ type: 'logs', entries: kit.logs.filter(e => e.origin === kit.instance) });
+      break;
+    case 'log':
+      if (storeLog(message.entry)) kit.onLog?.(message.entry);
+      break;
+    case 'logs':
+      // The reply to a hello: another window's history. Only a change is worth a redraw.
+      if ((message.entries ?? []).map(storeLog).some(Boolean)) kit.onLog?.();
+      break;
+    case 'clear-logs':
+      clearLogs();
+      kit.onLog?.();
       break;
   }
 }
+
+// --- logs -----------------------------------------------------------------------
+
+const LOG_LIMIT = 500;
+
+function storeLog(entry) {
+  if (!entry || kit.logIds.has(entry.id)) return false;
+  kit.logIds.add(entry.id);
+  let i = kit.logs.length;                       // entries from other windows can arrive late
+  while (i > 0 && kit.logs[i - 1].t > entry.t) i--;
+  kit.logs.splice(i, 0, entry);
+  while (kit.logs.length > LOG_LIMIT) kit.logIds.delete(kit.logs.shift().id);
+  return true;
+}
+
+function clearLogs() {
+  kit.logs.length = 0;
+  kit.logIds.clear();
+}
+
+const formatArg = value => {
+  if (typeof value === 'string') return value;
+  if (value instanceof Error) return value.stack ?? value.message;
+  try { return JSON.stringify(value) ?? String(value); } catch { return String(value); }
+};
+
+// level: 'log' | 'warn' | 'error'. source: the window it came from, or 'node'.
+kit.addLog = (mod, level, source, text) => {
+  const entry = {
+    id: `${kit.instance}:${++kit.logSeq}`,
+    t: Date.now(),
+    mod,
+    level,
+    source,
+    text: String(text).slice(0, 2000),
+    origin: kit.instance,
+  };
+  storeLog(entry);
+  kit.post({ type: 'log', entry });
+  kit.onLog?.(entry);
+  return entry;
+};
+
+kit.clearLogs = () => {
+  clearLogs();
+  kit.post({ type: 'clear-logs' });
+  kit.onLog?.();
+};
 
 function setReport(id, window, report) {
   if (!kit.reports.has(id)) kit.reports.set(id, new Map());
@@ -320,6 +388,21 @@ kit.fromHost = (id, name, arg) => {
   }
 };
 
+// What the Node part writes with host.log / host.warn: one window records it, the rest hear of it.
+kit.logFromHost = (id, level, text) => kit.addLog(id, level, 'node', text);
+
+// host.live(key, value): the same figures mod.live publishes, from the Node part.
+kit.hostLive = (id, key, value) => {
+  const def = kit.mods.get(id)?.settings.find(s => s.key === key && s.type === 'value');
+  if (!def) throw new Error(`"${key}" is not a value row of ${id} (declare it under "modkit" in package.json)`);
+  kit.setLive(id, key, value);
+};
+
+// Its figures are not meaningful once it has stopped.
+kit.clearLive = id => {
+  for (const key of [...(kit.live.get(id)?.keys() ?? [])]) kit.setLive(id, key, null);
+};
+
 // How the Node part is doing, shown on the MOD page like any window's state. null clears it.
 kit.hostReport = (id, status, error) => {
   if (status == null) kit.reports.get(id)?.delete('host');
@@ -363,9 +446,9 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
 
   // Say again what this window knows, for a window that has just opened.
   function announce() {
+    for (const [key, value] of unit.live) kit.post({ type: 'live', id, key, value });
     if (!run && !loadError) return;
     kit.post({ type: 'status', id, window: label, status: record.status, error: record.error });
-    for (const [key, value] of unit.live) kit.post({ type: 'live', id, key, value });
   }
 
   // Tell the mod's Node part where it stands: the master switch and the settings (hello, which
@@ -402,6 +485,7 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
       if (session === mine) report('ok');
     } catch (err) {
       console.error(`[${id}] failed`, err);
+      kit.addLog(id, 'error', label, `出错：${formatArg(err)}`);
       // A mod that dies halfway has usually already added a row, a style, a timer. Leaving
       // that behind gives a half-working UI that is harder to diagnose than none.
       if (session === mine) teardown();
@@ -433,8 +517,8 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
     return {
       name: id,
       invoke: (cmd, args) => T.invoke(cmd, args),
-      log: (...args) => console.log(`[${id}]`, ...args),
-      warn: (...args) => console.warn(`[${id}]`, ...args),
+      log: (...args) => { console.log(`[${id}]`, ...args); kit.addLog(id, 'log', label, args.map(formatArg).join(' ')); },
+      warn: (...args) => { console.warn(`[${id}]`, ...args); kit.addLog(id, 'warn', label, args.map(formatArg).join(' ')); },
       onDispose,
 
       css(text) {
@@ -542,7 +626,10 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
   kit.units.set(id, unit);
   tellHost('hello');
 
-  if (loadError) report('error', loadError);
+  if (loadError) {
+    kit.addLog(id, 'error', label, `没能加载：${loadError}`);
+    report('error', loadError);
+  }
   else await apply();
 
   kit.changed();

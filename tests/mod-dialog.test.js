@@ -8,9 +8,10 @@
 // it never asks the app for anything; it only drives our own page.
 //
 // This test clicks around a panel that also lists the user's real mods, one of which acts on
-// their account. So for its duration the real mods are taken out (only the framework and the
-// throwaway ones stay), and put back afterwards, which starts them fresh with every
-// persist:false switch off. It also refuses to run while such a switch is on.
+// their account. So it works on the panel window only: that is the only window it attaches to
+// (the main window, where such a mod runs, is never touched, so nothing running there is
+// restarted), and in the panel the real mods are taken out for its duration, so there is no
+// row of theirs to hit. They are put back afterwards; in the panel they are only their manifests.
 
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -63,7 +64,7 @@ async function clickAt(x, y) {
 
 const titles = () => panel(`[...document.querySelectorAll('#modkit-popup-body .setting-title')].map(n => n.textContent)`);
 const popupOpen = () => panel(`!!document.getElementById('modkit-popup')`);
-const config = (key) => app.inWindow('main', `modkit.getConfig(${json(ID)}, ${json(key)})`);
+const config = (key) => panel(`modkit.getConfig(${json(ID)}, ${json(key)})`);
 
 before(async () => {
   app = await openWindows();
@@ -72,15 +73,11 @@ before(async () => {
   assert.ok(strip > 0, 'the panel has not rendered its tab strip: open the settings panel once, then run this');
   tabBefore = await panel(`[...document.querySelectorAll('.tab-btn')].findIndex(b => b.classList.contains('tab-btn--active'))`);
 
-  const live = await panel(`JSON.stringify([...modkit.mods].flatMap(([id, m]) => m.settings
-    .filter(s => s.type === 'toggle' && s.persist === false && modkit.getConfig(id, s.key)).map(s => id + '.' + s.key)))`);
-  assert.deepEqual(JSON.parse(live), [], 'a mod has a persist:false switch on: not clicking around the panel now');
-
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'modkit-dialog-'));
   await write(path.join(tmpDir, ID, 'package.json'), json({
     displayName: NAME, description: 'what it does',
     modkit: {
-      windows: { main: 'main.js' },
+      windows: { panel: 'main.js' },
       settings: [
         { key: 'flag', type: 'toggle', title: 'Flag', default: false },
         { key: 'n', type: 'number', title: 'Number', default: 5, min: 1, max: 9 },
@@ -91,9 +88,14 @@ before(async () => {
   await write(path.join(tmpDir, ID, 'main.js'), `mod.live('shown', 'first'); window.__zzPublish = v => mod.live('shown', v);`);
   await write(path.join(tmpDir, 'zz-plain.js'), 'return 1;');   // a single file: no settings, so no button
 
-  injector = new Injector({ port: 9222 });
+  injector = new Injector({ port: 9222, only: ['panel'] });
   injector.setMods([...await discoverCore(), ...await discoverMods(tmpDir)]);   // the real mods are retired
   await injector.injectAll({ force: true });
+
+  // The safety this test depends on, checked rather than assumed: nothing but its own mods is
+  // in the panel now, so no click can land on a real mod's switch.
+  const present = JSON.parse(await panel(`JSON.stringify([...modkit.mods.keys()])`));
+  assert.ok(present.length && present.every(id => id.startsWith('zz-')), `real mods are still in the panel: ${present}`);
 
   await click('#modkit-tab');
   await until('the MOD page is showing', () => panel(`getComputedStyle(document.getElementById('modkit-view')).display !== 'none'`));
@@ -106,7 +108,7 @@ after(async () => {
     injector.close();
   }
   if (app) {
-    await app.inWindow('main', `(() => {
+    await panel(`(() => {
       for (const key of Object.keys(localStorage)) if (/^modkit:[a-z]+:zz-/.test(key)) localStorage.removeItem(key);
       delete window.__zzPublish;
     })()`).catch(() => {});
@@ -131,7 +133,39 @@ test('the list has one row per mod; only a mod with settings has a 设置 button
   assert.equal(mine.button, '设置');
   assert.ok(mine.buttonX < mine.switchX, 'the button sits left of the switch');
   assert.equal(rows.find(r => r.title === 'zz-plain').button, null, 'no settings, no button');
-  assert.equal(rows.length, (await panel(`modkit.mods.size`)), 'one row per mod, no settings rows in the list');
+  const mods = await panel(`modkit.mods.size`);
+  assert.equal(rows.length, mods + 1, 'one row per mod, and the log: no settings rows in the list');
+  assert.equal(rows.at(-1).title, '日志', 'the log is the last row');
+  assert.equal(rows.at(-1).button, '查看');
+});
+
+test('the log opens from its row and shows what mods wrote, oldest first, newest at the bottom', async () => {
+  const write = (level, text) => panel(`modkit.addLog(${json(ID)}, ${json(level)}, 'main', ${json(text)})`);
+  await write('log', 'first line');
+  await write('warn', 'second line');
+
+  await click('.setting-btn', '日志');
+  await until('the dialog is open', popupOpen);
+  const lines = () => panel(`[...document.querySelectorAll('#modkit-popup-body .setting-label .setting-sub')].map(n => n.textContent)`);
+  await until('both lines shown', async () => (await lines()).length >= 2);
+
+  const shown = await lines();
+  const mine = shown.filter(l => l.includes('first line') || l.includes('second line'));
+  assert.match(mine[0], /^\d\d:\d\d:\d\d {2}Dialog test（main） {2}first line$/);
+  assert.match(mine[1], /Dialog test（main） {2}警告：second line$/, 'a warning says so in words');
+  assert.equal(await panel(`document.querySelector('#modkit-popup .room-qty').textContent`), `日志（${(await panel('modkit.logs.length'))}）`);
+
+  // A line that arrives while it is open is added, and the view follows the end.
+  await write('error', 'third line');
+  await until('the new line is there', async () => (await lines()).some(l => l.includes('错误：third line')));
+  const atEnd = await panel(`(() => { const b = document.getElementById('modkit-popup-body'); return b.scrollHeight - b.scrollTop - b.clientHeight < 12 })()`);
+  assert.equal(atEnd, true, 'scrolled to the newest line');
+
+  await click('#modkit-popup .setting-btn');           // 清空
+  await until('cleared', async () => (await panel('modkit.logs.length')) === 0);
+  // (That clearing reaches the other windows is covered offline, in tests/host-page.test.js.)
+  await click('#modkit-popup .popup-close');
+  await until('closed', async () => !(await popupOpen()));
 });
 
 test('the 设置 button opens the app\'s own dialog, with the mod\'s settings in manifest order', async () => {
@@ -199,7 +233,7 @@ test('a switch in the dialog animates when it is flipped', () => assertSwitchAni
 
 test('a live figure updates in place, without rebuilding the dialog', async () => {
   await panel(`window.__keep = document.querySelector('#modkit-popup-body .setting-value')`);
-  await app.inWindow('main', `window.__zzPublish('second')`);
+  await panel(`window.__zzPublish('second')`);
   await until('the figure changed', async () => (await panel(`document.querySelector('#modkit-popup-body .setting-value').textContent`)) === 'second');
   assert.equal(await panel(`window.__keep === document.querySelector('#modkit-popup-body .setting-value')`), true, 'same node: nothing was redrawn');
   await panel(`delete window.__keep`);
@@ -229,11 +263,11 @@ test('the master switch in the list animates when it is flipped', () => assertSw
 
 test('the master switch in the list turns the mod off and on, and the 设置 button stays', async () => {
   await click('.setting-slider', NAME);
-  await until('off', async () => (await app.inWindow('main', `modkit.isEnabled(${json(ID)})`)) === false);
+  await until('off', async () => (await panel(`modkit.isEnabled(${json(ID)})`)) === false);
   assert.equal(await centreOf('.setting-btn', NAME) !== null, true);
 
   await click('.setting-slider', NAME);
-  await until('on again', async () => (await app.inWindow('main', `modkit.isEnabled(${json(ID)})`)) === true);
+  await until('on again', async () => (await panel(`modkit.isEnabled(${json(ID)})`)) === true);
 });
 
 test('leaving the MOD page closes an open dialog', async () => {
