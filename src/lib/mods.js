@@ -57,8 +57,8 @@ async function readScripts(dir, { prefix = '', core = false } = {}) {
 // User mods come in two shapes, and both end up as the same record:
 //
 //   mods/name.js              a single script, runs in every window, no settings
-//   mods/name/mod.json        a package: manifest + one script per window (see manifest.js)
-//   mods/name/<scripts>       (mod.json may be left out if there is an index.js)
+//   mods/name/package.json    a package: manifest + one script per window (see manifest.js)
+//   mods/name/<scripts>       (package.json may be left out if there is an index.js)
 //
 // { name, manifest, scripts: { <window|'*'>: code }, loadError?, signature, core: false }
 //
@@ -100,14 +100,14 @@ async function readSingleFile(file) {
 
 async function readPackage(folder) {
   const id = path.basename(folder);
-  const manifestFile = path.join(folder, 'mod.json');
+  const manifestFile = path.join(folder, 'package.json');
 
   let raw = {};
   let hasManifest = true;
   try {
     raw = JSON.parse(await fs.readFile(manifestFile, 'utf8'));
   } catch (err) {
-    if (err.code !== 'ENOENT') return brokenMod(id, manifestFile, `mod.json: ${err.message}`);
+    if (err.code !== 'ENOENT') return brokenMod(id, manifestFile, `package.json: ${err.message}`);
     hasManifest = false;
   }
   // Without a manifest a folder is only a mod if it has the default script; otherwise it
@@ -119,15 +119,15 @@ async function readPackage(folder) {
     parsed = parseManifest(raw, id);
   } catch (err) {
     if (!(err instanceof ManifestError)) throw err;
-    return brokenMod(id, manifestFile, `mod.json: ${err.message}`);
+    return brokenMod(id, manifestFile, `package.json: ${err.message}`);
   }
 
   const scripts = {};
-  for (const [windowName, relative] of Object.entries(parsed.scripts)) {
+  for (const [windowName, relative] of Object.entries(parsed.windows)) {
     try {
       scripts[windowName] = await fs.readFile(path.join(folder, relative), 'utf8');
     } catch (err) {
-      return brokenMod(id, manifestFile, `scripts.${windowName}: cannot read ${relative} (${err.code ?? err.message})`);
+      return brokenMod(id, manifestFile, `modkit.windows.${windowName}: cannot read ${relative} (${err.code ?? err.message})`);
     }
   }
   return makeMod({ name: id, file: manifestFile, manifest: parsed.manifest, scripts });

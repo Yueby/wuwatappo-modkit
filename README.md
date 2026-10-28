@@ -1,7 +1,7 @@
 # Wuwa Tappo modkit
 
 CDP-based mod loader for **Wuwa Tappo** (Kuro's Tauri 2 / WebView2 desktop app).
-Mods are JavaScript injected into the app's webviews, each with a `mod.json` that declares the
+Mods are JavaScript injected into the app's webviews, each with a `package.json` that declares the
 switches and numbers it shows on the MOD page (remembered across restarts, one master switch per
 mod). The installed executable gets one length-preserving byte edit (it stops demanding
 administrator) and nothing else.
@@ -48,7 +48,7 @@ src/
     targets.js            finding the app's windows over the DevTools HTTP endpoint
     injector.js           one live session per window; re-injects on navigation and edits
     page-scripts.js       generates the JavaScript that is evaluated *inside* the page
-    manifest.js           mod.json: parsing and validation
+    manifest.js           a mod's package.json: parsing and validation
     mods.js               discovery of framework scripts and user mods (files and folders)
     patch.js              patches the installed exe in place, with backup and restore
     launch.js             starting the app detached
@@ -61,7 +61,7 @@ src/
     modkit-registry.js    window.modkit: mod lifecycle, settings, master switch, state shared
                           between windows (every window)
     panel-tab.js          the MOD tab and page in the settings panel (panel window only)
-mods/                   your mods: single files or folders with a mod.json (_ = not loaded)
+mods/                   your mods: single files or folders with a package.json (_ = not loaded)
 scripts/                developer tools, not part of the CLI (icon preview)
 tests/                  `npm test` runs the offline ones; `npm run test:app` needs the app running
 docs/                   launching, modding, and what is known about the app

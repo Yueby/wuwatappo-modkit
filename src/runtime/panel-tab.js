@@ -325,7 +325,7 @@ function renderPopup() {
   });
 }
 
-// A row for something the mod declared in mod.json. Values are read and written through the
+// A row for something the mod declared in its package.json. Values are read and written through the
 // framework, which is what makes them persist and reach the window the mod runs in.
 function settingRow(id, def) {
   let control;

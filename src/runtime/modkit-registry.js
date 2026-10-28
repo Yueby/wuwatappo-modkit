@@ -10,7 +10,7 @@
 //               it is switched back on, keep its `mod` API. Mods are injected into every
 //               window (so the panel always knows their manifest) but only run where they
 //               have a script.
-//   settings    values declared in mod.json. The panel draws them; the mod reads them.
+//   settings    values declared in package.json ("modkit"). The panel draws them; the mod reads them.
 //               Persisted ones live in localStorage, which every window of the app shares
 //               (same origin, same profile), and a change in one window reaches the others
 //               as a `storage` event. Values marked persist:false are reset whenever the mod
@@ -138,7 +138,7 @@ const bucketOf = def => (def.persist === false ? 'tmp' : 'cfg');
 
 function settingDef(id, key) {
   const def = kit.mods.get(id)?.settings.find(s => s.key === key && s.type !== 'value');
-  if (!def) throw new Error(`"${key}" is not a setting of ${id} (declare it in mod.json)`);
+  if (!def) throw new Error(`"${key}" is not a setting of ${id} (declare it under "modkit" in package.json)`);
   return def;
 }
 
@@ -347,7 +347,7 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
         return remove;
       },
 
-      // Settings declared in mod.json. Reading and writing is by key; a key that is not
+      // Settings declared in package.json. Reading and writing is by key; a key that is not
       // declared throws, so a typo is an error and not a value that is always the default.
       config: {
         get: key => kit.getConfig(id, key),
@@ -363,7 +363,7 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
       // Publish a figure for a `value` row of the manifest; null clears it.
       live: (key, value) => {
         const def = kit.mods.get(id)?.settings.find(s => s.key === key && s.type === 'value');
-        if (!def) throw new Error(`"${key}" is not a value row of ${id} (declare it in mod.json)`);
+        if (!def) throw new Error(`"${key}" is not a value row of ${id} (declare it under "modkit" in package.json)`);
         kit.setLive(id, key, value);
       },
 

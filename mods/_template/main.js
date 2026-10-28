@@ -1,6 +1,6 @@
 // Template for a mod with settings. Folders starting with "_" are not loaded: copy this folder,
-// drop the underscore, and edit mod.json (what the MOD page shows) and this file (what runs).
-// "scripts" in mod.json says which window runs which file; this one runs in main only.
+// drop the underscore, and edit package.json (what the MOD page shows) and this file (what runs).
+// "modkit.windows" in package.json says which window runs which file; this one runs in main only.
 
 function greet() {
   if (!mod.config.get('greet')) return;

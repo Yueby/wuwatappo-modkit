@@ -37,14 +37,17 @@ before(async () => {
 
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'modkit-runtime-'));
 
-  await write(path.join(tmpDir, GOOD, 'mod.json'), json({
-    name: 'Test', scripts: { main: 'main.js' },
-    settings: [
-      { key: 'flag', type: 'toggle', title: 'Flag', default: false },
-      { key: 'temp', type: 'toggle', title: 'Temp', default: false, persist: false },
-      { key: 'n', type: 'number', title: 'N', default: 5, min: 1, max: 9 },
-      { key: 'shown', type: 'value', title: 'Shown', default: '-' },
-    ],
+  await write(path.join(tmpDir, GOOD, 'package.json'), json({
+    displayName: 'Test',
+    modkit: {
+      windows: { main: 'main.js' },
+      settings: [
+        { key: 'flag', type: 'toggle', title: 'Flag', default: false },
+        { key: 'temp', type: 'toggle', title: 'Temp', default: false, persist: false },
+        { key: 'n', type: 'number', title: 'N', default: 5, min: 1, max: 9 },
+        { key: 'shown', type: 'value', title: 'Shown', default: '-' },
+      ],
+    },
   }));
   await write(path.join(tmpDir, GOOD, 'main.js'), `
     const seen = (window.__zzTest = { starts: (window.__zzTest?.starts ?? 0) + 1, log: window.__zzTest?.log ?? [] });
@@ -53,10 +56,10 @@ before(async () => {
     mod.onDispose(() => seen.log.push('disposed'));
   `);
 
-  await write(path.join(tmpDir, SYNTAX, 'mod.json'), json({ scripts: { main: 'main.js' } }));
+  await write(path.join(tmpDir, SYNTAX, 'package.json'), json({ modkit: { windows: { main: 'main.js' } } }));
   await write(path.join(tmpDir, SYNTAX, 'main.js'), 'let = ;');
 
-  await write(path.join(tmpDir, THROWS, 'mod.json'), json({ scripts: { main: 'main.js' } }));
+  await write(path.join(tmpDir, THROWS, 'package.json'), json({ modkit: { windows: { main: 'main.js' } } }));
   await write(path.join(tmpDir, THROWS, 'main.js'), `
     mod.entry({ title: 'half-built row', value: '1' });
     mod.css('body { outline: 0 }');

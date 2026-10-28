@@ -77,13 +77,16 @@ before(async () => {
   assert.deepEqual(JSON.parse(live), [], 'a mod has a persist:false switch on: not clicking around the panel now');
 
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'modkit-dialog-'));
-  await write(path.join(tmpDir, ID, 'mod.json'), json({
-    name: NAME, description: 'what it does', scripts: { main: 'main.js' },
-    settings: [
-      { key: 'flag', type: 'toggle', title: 'Flag', default: false },
-      { key: 'n', type: 'number', title: 'Number', default: 5, min: 1, max: 9 },
-      { key: 'shown', type: 'value', title: 'Shown', default: '-' },
-    ],
+  await write(path.join(tmpDir, ID, 'package.json'), json({
+    displayName: NAME, description: 'what it does',
+    modkit: {
+      windows: { main: 'main.js' },
+      settings: [
+        { key: 'flag', type: 'toggle', title: 'Flag', default: false },
+        { key: 'n', type: 'number', title: 'Number', default: 5, min: 1, max: 9 },
+        { key: 'shown', type: 'value', title: 'Shown', default: '-' },
+      ],
+    },
   }));
   await write(path.join(tmpDir, ID, 'main.js'), `mod.live('shown', 'first'); window.__zzPublish = v => mod.live('shown', v);`);
   await write(path.join(tmpDir, 'zz-plain.js'), 'return 1;');   // a single file: no settings, so no button

@@ -1,5 +1,5 @@
 // Auto click: raises the click count by sending the app the event its global mouse hook sends.
-// Settings and what the MOD page shows are in mod.json.
+// Settings and what the MOD page shows are in package.json.
 //
 // How the app handles events (read from the 1.0.2 main-window bundle):
 //   * `global-clap-mouse` (and `gamepad-button-press`): one event is one click. The handler
@@ -13,7 +13,7 @@
 // The "running" switch is persist:false in the manifest: whatever the master switch does,
 // clicking only ever starts because the user turned it on in this session.
 //
-// Runs in the main window only (see "scripts" in mod.json): the event is handled there,
+// Runs in the main window only (see "modkit.windows" in package.json): the event is handled there,
 // and a timer in every window would send it seven times per tick.
 
 let sent = 0;            // clicks sent since this mod loaded

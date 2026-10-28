@@ -5,46 +5,63 @@ on the MOD page. It comes in two shapes:
 
 ```
 mods/hello.js            a single script: runs in every window, nothing on the MOD page but a switch
-mods/auto-click/         a package: mod.json says what it is and what it exposes
-  mod.json
+mods/auto-click/         a package: package.json says what it is and what it exposes
+  package.json
   main.js                the code that runs in the main window
 ```
 
 Start a package by copying `mods/_template/` and dropping the underscore. Files and folders
 starting with `_` or `.` are never loaded, so you can keep fragments around.
 
-## mod.json
+## package.json
+
+A mod's manifest is an ordinary `package.json`, the way a VS Code extension's is. The standard
+fields mean what they always do; what is specific to this loader sits under one key of its own,
+`modkit`, so nothing collides with npm's vocabulary (in particular, `scripts` is npm's, and here
+the window-to-file map is `modkit.windows`).
 
 ```json
 {
-  "name": "自动点击",
-  "version": "0.2.0",
-  "description": "按设定间隔模拟按键，增加点击数",
-  "scripts": { "main": "main.js" },
-  "settings": [
-    { "key": "running",  "type": "toggle", "title": "开始点击", "default": false, "persist": false },
-    { "key": "interval", "type": "number", "title": "点击间隔（毫秒）", "default": 200, "min": 50, "max": 5000, "step": 10 },
-    { "key": "state",    "type": "value",  "title": "状态", "default": "未运行" }
-  ]
+  "name": "auto-click",
+  "displayName": "自动点击",
+  "version": "0.4.0",
+  "description": "按设定间隔模拟鼠标点击，增加点击数",
+  "private": true,
+  "modkit": {
+    "windows": { "main": "main.js" },
+    "settings": [
+      { "key": "running",  "type": "toggle", "title": "开始点击", "default": false, "persist": false },
+      { "key": "interval", "type": "number", "title": "点击间隔（毫秒）", "default": 200, "min": 50, "max": 5000, "step": 10 },
+      { "key": "state",    "type": "value",  "title": "状态", "default": "未运行" }
+    ]
+  }
 }
 ```
 
 | field | meaning |
 |---|---|
-| `id` | optional; if given it must equal the folder name (the folder name is the id) |
-| `name`, `description`, `version` | shown on the MOD page (`name` defaults to the id) |
-| `defaultEnabled` | whether the master switch starts on; default `true` |
-| `scripts` | which file runs in which window: `{ "main": "main.js", "panel": "ui.js" }`, or `"*"` for all of them. Default: `index.js` in every window |
-| `settings` | what the MOD page shows under the mod, in order (below) |
+| `name` | the id; optional, and if given it must equal the folder name |
+| `displayName` | what the MOD page shows (defaults to `name`) |
+| `description`, `version` | shown on the MOD page |
+| `modkit.defaultEnabled` | whether the master switch starts on; default `true` |
+| `modkit.windows` | which file runs in which window: `{ "main": "main.js", "panel": "ui.js" }`, or `"*"` for all of them. Default: `index.js` in every window |
+| `modkit.settings` | what the MOD page shows under the mod, in order (below) |
+
+Other top-level fields (`author`, `license`, `private`, ...) are allowed and ignored. An
+unknown key inside `modkit` is an error, so a typo like `windos` is reported rather than
+silently doing nothing.
 
 Windows are `main`, `panel`, `login`, `update`, `toast`, `about`, `oss-notice`. A mod only runs in
-the windows named in `scripts`; every window still receives the manifest, because the MOD page
-is drawn in the panel while the code usually runs in main. That is why `settings` are data, not
-code: the panel can draw them without running anything.
+the windows named in `modkit.windows`; every window still receives the manifest, because the MOD
+page is drawn in the panel while the code usually runs in main. That is why `settings` are data,
+not code: the panel can draw them without running anything.
 
 A manifest that does not parse or does not validate is not ignored: the mod is listed on the
 MOD page as broken, with the reason. The same goes for a script that fails to compile or throws
 while starting (whatever it had already added is undone).
+
+The mod is not an npm package: nothing is installed or bundled, and the scripts are sent into the
+page as text. `package.json` is used for its shape, which editors and people already know.
 
 ### Settings
 
@@ -95,7 +112,7 @@ mod.log(...args)               // console.log, prefixed with the mod name
 mod.warn(...args)              // same, as a warning
 ```
 
-A key that is not declared in `mod.json` throws, on purpose: a typo should be an error, not a
+A key that is not declared under `modkit.settings` throws, on purpose: a typo should be an error, not a
 setting that always reads its default.
 
 **State and timers belong in the window that runs the mod; the MOD page only shows and changes
@@ -240,7 +257,7 @@ updater, or anything else outside the webview. Those need native work (see
 
 ## Rules of thumb
 
-- A single-file mod starts with a `location.hash` guard; a package names its windows in `scripts`.
+- A single-file mod starts with a `location.hash` guard; a package names its windows in `modkit.windows`.
 - Anything user-visible: off by default.
 - Anything that acts on the account (clicks, chests, requests): a feature switch with
   `"persist": false`, so it only ever runs because the user turned it on this session. Treat it

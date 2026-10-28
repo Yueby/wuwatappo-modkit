@@ -1,0 +1,15 @@
+{
+  "name": "template",
+  "displayName": "示例 mod",
+  "version": "0.1.0",
+  "description": "复制这个文件夹，去掉名字前的下划线，改 package.json 和 main.js",
+  "private": true,
+  "modkit": {
+    "windows": { "main": "main.js" },
+    "settings": [
+      { "key": "greet", "type": "toggle", "title": "打招呼", "description": "写进控制台", "default": true },
+      { "key": "times", "type": "number", "title": "次数", "default": 1, "min": 1, "max": 5, "step": 1 },
+      { "key": "last", "type": "value", "title": "上一次", "default": "还没有" }
+    ]
+  }
+}

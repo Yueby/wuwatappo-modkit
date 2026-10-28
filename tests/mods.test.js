@@ -22,22 +22,37 @@ const problemsOf = (raw, folder = 'demo') => {
   return [];
 };
 
-test('a manifest with nothing but settings gets the defaults', () => {
-  const { manifest, scripts } = parseManifest({}, 'demo');
+test('a package.json with nothing in it gets the defaults', () => {
+  const { manifest, windows } = parseManifest({}, 'demo');
   assert.equal(manifest.id, 'demo');
   assert.equal(manifest.name, 'demo');
   assert.equal(manifest.defaultEnabled, true);
   assert.deepEqual(manifest.settings, []);
-  assert.deepEqual(scripts, { '*': 'index.js' });
+  assert.deepEqual(windows, { '*': 'index.js' });
+});
+
+test('standard package.json fields mean what they always do, and the rest of it is left alone', () => {
+  const { manifest } = parseManifest({
+    name: 'demo', displayName: '  示例  ', version: '1.2.3', description: 'd',
+    private: true, author: 'me', license: 'MIT', keywords: ['x'],
+    scripts: { test: 'node --test' },                      // npm's scripts: not ours, not an error
+    modkit: { defaultEnabled: false },
+  }, 'demo');
+  assert.deepEqual(
+    [manifest.id, manifest.name, manifest.version, manifest.description, manifest.defaultEnabled],
+    ['demo', '示例', '1.2.3', 'd', false],
+  );
 });
 
 test('settings are normalised and persist by default', () => {
   const { manifest } = parseManifest({
-    settings: [
-      { key: 'on', type: 'toggle', title: 'On' },
-      { key: 'n', type: 'number', title: 'N', default: 5, min: 1, max: 9 },
-      { key: 'shown', type: 'value', title: 'Shown' },
-    ],
+    modkit: {
+      settings: [
+        { key: 'on', type: 'toggle', title: 'On' },
+        { key: 'n', type: 'number', title: 'N', default: 5, min: 1, max: 9 },
+        { key: 'shown', type: 'value', title: 'Shown' },
+      ],
+    },
   }, 'demo');
   const [on, n, shown] = manifest.settings;
   assert.deepEqual([on.default, on.persist], [false, true]);
@@ -47,19 +62,24 @@ test('settings are normalised and persist by default', () => {
 
 test('the manifest of a mod is rejected for the mistakes that would otherwise go quiet', () => {
   const cases = [
-    [{ id: 'other' }, /must match the folder name/],
-    [{ scripts: { mian: 'a.js' } }, /unknown window "mian"/],
-    [{ scripts: { main: '../x.js' } }, /inside the mod's folder/],
-    [{ scripts: { main: 'C:\\x.js' } }, /inside the mod's folder/],
-    [{ scripts: {} }, /scripts is empty/],
-    [{ settings: [{ key: 'a', type: 'toggle', title: 'A' }, { key: 'a', type: 'toggle', title: 'A' }] }, /used twice/],
-    [{ settings: [{ key: 'a', type: 'slider', title: 'A' }] }, /type must be one of/],
-    [{ settings: [{ key: 'a', type: 'toggle' }] }, /title is required/],
-    [{ settings: [{ key: 'a', type: 'number', title: 'A', default: 99, max: 10 }] }, /outside min\/max/],
-    [{ settings: [{ key: 'a', type: 'number', title: 'A' }] }, /default must be a number/],
-    [{ settings: [{ key: 'a', type: 'value', title: 'A', persist: false }] }, /never stored/],
-    [{ settings: [{ key: '1a', type: 'toggle', title: 'A' }] }, /key "1a"/],
-    [{ defaultEnabled: 'no' }, /defaultEnabled/],
+    [{ name: 'other' }, /must match the folder name/],
+    [{ displayName: '' }, /displayName/],
+    [{ modkit: [] }, /"modkit" must be an object/],
+    [{ modkit: { windos: {} } }, /modkit\.windos: unknown/],
+    [{ modkit: { windows: { mian: 'a.js' } } }, /unknown window "mian"/],
+    [{ modkit: { windows: { main: '../x.js' } } }, /inside the mod's folder/],
+    [{ modkit: { windows: { main: 'C:\\x.js' } } }, /inside the mod's folder/],
+    [{ modkit: { windows: {} } }, /windows is empty/],
+    [{ modkit: { defaultEnabled: 'no' } }, /defaultEnabled/],
+    ...[
+      [[{ key: 'a', type: 'toggle', title: 'A' }, { key: 'a', type: 'toggle', title: 'A' }], /used twice/],
+      [[{ key: 'a', type: 'slider', title: 'A' }], /type must be one of/],
+      [[{ key: 'a', type: 'toggle' }], /title is required/],
+      [[{ key: 'a', type: 'number', title: 'A', default: 99, max: 10 }], /outside min\/max/],
+      [[{ key: 'a', type: 'number', title: 'A' }], /default must be a number/],
+      [[{ key: 'a', type: 'value', title: 'A', persist: false }], /never stored/],
+      [[{ key: '1a', type: 'toggle', title: 'A' }], /key "1a"/],
+    ].map(([settings, expected]) => [{ modkit: { settings } }, expected]),
   ];
   for (const [raw, expected] of cases) {
     assert.match(problemsOf(raw).join('\n'), expected, JSON.stringify(raw));
@@ -75,27 +95,27 @@ test('mods are found as single files and as folders; helpers and plain folders a
     await fs.writeFile(path.join(dir, 'notes.txt'), 'x');
 
     await fs.mkdir(path.join(dir, 'pkg'));
-    await fs.writeFile(path.join(dir, 'pkg', 'mod.json'), JSON.stringify({
-      name: 'Pkg', scripts: { main: 'a.js', panel: 'b.js' },
-      settings: [{ key: 'k', type: 'toggle', title: 'K' }],
+    await fs.writeFile(path.join(dir, 'pkg', 'package.json'), JSON.stringify({
+      displayName: 'Pkg',
+      modkit: { windows: { main: 'a.js', panel: 'b.js' }, settings: [{ key: 'k', type: 'toggle', title: 'K' }] },
     }));
     await fs.writeFile(path.join(dir, 'pkg', 'a.js'), 'A');
     await fs.writeFile(path.join(dir, 'pkg', 'b.js'), 'B');
 
-    await fs.mkdir(path.join(dir, 'bare'));                       // no mod.json, has index.js
+    await fs.mkdir(path.join(dir, 'bare'));                       // no package.json, has index.js
     await fs.writeFile(path.join(dir, 'bare', 'index.js'), 'C');
     await fs.mkdir(path.join(dir, 'assets'));                     // not a mod
     await fs.writeFile(path.join(dir, 'assets', 'logo.png'), 'x');
     await fs.mkdir(path.join(dir, 'bad'));                        // manifest does not parse
-    await fs.writeFile(path.join(dir, 'bad', 'mod.json'), '{ nope');
+    await fs.writeFile(path.join(dir, 'bad', 'package.json'), '{ nope');
     await fs.mkdir(path.join(dir, 'missing'));                    // names a script that is not there
-    await fs.writeFile(path.join(dir, 'missing', 'mod.json'), JSON.stringify({ scripts: { main: 'gone.js' } }));
+    await fs.writeFile(path.join(dir, 'missing', 'package.json'), JSON.stringify({ modkit: { windows: { main: 'gone.js' } } }));
 
     const mods = await discoverMods(dir);
     assert.deepEqual(mods.map(m => m.name), ['bad', 'bare', 'missing', 'pkg', 'single']);
     const byName = Object.fromEntries(mods.map(m => [m.name, m]));
 
-    assert.match(byName.bad.loadError, /^mod\.json:/);
+    assert.match(byName.bad.loadError, /^package\.json:/);
     assert.match(byName.missing.loadError, /cannot read gone\.js/);
     assert.equal(byName.pkg.loadError, null);
     assert.equal(byName.pkg.manifest.name, 'Pkg');
@@ -133,9 +153,9 @@ test('every mod in mods/ loads cleanly, and the page code generated for it parse
 
 test('the template mod is valid once the underscore is dropped, so copying it works', async () => {
   const folder = path.join(MODS_DIR, '_template');
-  const raw = JSON.parse(await fs.readFile(path.join(folder, 'mod.json'), 'utf8'));
-  const { manifest, scripts } = parseManifest(raw, 'template');
-  for (const file of Object.values(scripts)) {
+  const raw = JSON.parse(await fs.readFile(path.join(folder, 'package.json'), 'utf8'));
+  const { manifest, windows } = parseManifest(raw, 'template');
+  for (const file of Object.values(windows)) {
     const code = await fs.readFile(path.join(folder, file), 'utf8');
     new vm.Script(compileMod({ name: 'template', manifest, code, version: '1' }, 'main'));
   }

@@ -1,15 +1,34 @@
-// mod.json: what a mod says about itself, checked before anything is injected.
+// package.json: what a mod says about itself, checked before anything is injected.
+//
+// A mod's manifest is an ordinary package.json, the way a VS Code extension's is. The standard
+// fields mean what they always do (name, version, description), and what is specific to this
+// loader sits under one key of its own, "modkit", so nothing collides with npm's vocabulary:
+//
+//   {
+//     "name": "auto-click",            the id; must equal the folder name
+//     "displayName": "自动点击",         what the MOD page shows (defaults to the name)
+//     "version": "0.4.0",
+//     "description": "...",
+//     "private": true,
+//     "modkit": {
+//       "defaultEnabled": true,
+//       "windows": { "main": "main.js" },
+//       "settings": [ ... ]
+//     }
+//   }
 //
 // The manifest is data on purpose. The settings page is drawn in the panel window while the
 // mod's code runs in another one, so what a mod exposes has to be something that can be read
 // without running it. Everything here is validated up front: a typo in a key name should be
-// an error on the MOD page, not a row that silently does nothing.
+// an error on the MOD page, not a row that silently does nothing. Other top-level fields
+// (author, license, ...) are left alone; unknown keys inside "modkit" are an error.
 
 export const WINDOWS = ['main', 'panel', 'login', 'update', 'toast', 'about', 'oss-notice'];
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const KEY = /^[A-Za-z][A-Za-z0-9_]*$/;
 const SETTING_TYPES = ['toggle', 'number', 'value'];
+const MODKIT_KEYS = ['defaultEnabled', 'windows', 'settings'];
 
 export class ManifestError extends Error {
   constructor(problems) {
@@ -19,66 +38,75 @@ export class ManifestError extends Error {
   }
 }
 
-// Returns { manifest, scripts }: `manifest` is what the page gets (no file names), `scripts`
+// Returns { manifest, windows }: `manifest` is what the page gets (no file names), `windows`
 // maps a window label (or '*' for all of them) to a path relative to the mod's folder.
-// `folder` is the directory name, which is the mod's id unless the manifest says otherwise.
+// `folder` is the directory name, which is the mod's id.
 export function parseManifest(raw, folder) {
   const problems = [];
   const bad = message => problems.push(message);
 
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new ManifestError(['mod.json must be a JSON object']);
+    throw new ManifestError(['package.json must be a JSON object']);
   }
 
-  const id = raw.id ?? folder;
-  if (typeof id !== 'string' || !ID.test(id)) bad(`id "${id}" must be letters, digits, ".", "_" or "-"`);
-  else if (id !== folder) bad(`id "${id}" must match the folder name "${folder}"`);
+  const id = raw.name ?? folder;
+  if (typeof id !== 'string' || !ID.test(id)) bad(`name "${id}" must be letters, digits, ".", "_" or "-"`);
+  else if (id !== folder) bad(`name "${id}" must match the folder name "${folder}"`);
 
-  const name = raw.name ?? id;
-  if (typeof name !== 'string' || !name.trim()) bad('name must be a non-empty string');
+  const displayName = raw.displayName ?? id;
+  if (typeof displayName !== 'string' || !displayName.trim()) bad('displayName must be a non-empty string');
 
   for (const field of ['version', 'description']) {
     if (raw[field] != null && typeof raw[field] !== 'string') bad(`${field} must be a string`);
   }
-  if (raw.defaultEnabled != null && typeof raw.defaultEnabled !== 'boolean') bad('defaultEnabled must be true or false');
 
-  const scripts = parseScripts(raw.scripts, bad);
-  const settings = parseSettings(raw.settings, bad);
+  const kit = raw.modkit ?? {};
+  if (typeof kit !== 'object' || Array.isArray(kit) || kit === null) {
+    bad('"modkit" must be an object');
+    throw new ManifestError(problems);
+  }
+  for (const key of Object.keys(kit)) {
+    if (!MODKIT_KEYS.includes(key)) bad(`modkit.${key}: unknown (it has: ${MODKIT_KEYS.join(', ')})`);
+  }
+  if (kit.defaultEnabled != null && typeof kit.defaultEnabled !== 'boolean') bad('modkit.defaultEnabled must be true or false');
+
+  const windows = parseWindows(kit.windows, bad);
+  const settings = parseSettings(kit.settings, bad);
 
   if (problems.length) throw new ManifestError(problems);
 
   return {
     manifest: {
       id,
-      name: name.trim(),
+      name: displayName.trim(),
       version: raw.version ?? null,
       description: raw.description ?? null,
-      defaultEnabled: raw.defaultEnabled ?? true,
+      defaultEnabled: kit.defaultEnabled ?? true,
       settings,
     },
-    scripts,
+    windows,
   };
 }
 
-function parseScripts(raw, bad) {
+function parseWindows(raw, bad) {
   if (raw == null) return { '*': 'index.js' };
   if (typeof raw !== 'object' || Array.isArray(raw)) {
-    bad('scripts must map a window name to a file, e.g. { "main": "main.js" }');
+    bad('modkit.windows must map a window name to a file, e.g. { "main": "main.js" }');
     return {};
   }
 
-  const scripts = {};
+  const windows = {};
   for (const [windowName, file] of Object.entries(raw)) {
     if (windowName !== '*' && !WINDOWS.includes(windowName)) {
-      bad(`scripts: unknown window "${windowName}" (windows: ${WINDOWS.join(', ')}, or "*")`);
+      bad(`modkit.windows: unknown window "${windowName}" (windows: ${WINDOWS.join(', ')}, or "*")`);
     } else if (typeof file !== 'string' || !file.trim() || /^([\\/]|[A-Za-z]:)|(^|[\\/])\.\.([\\/]|$)/.test(file)) {
-      bad(`scripts.${windowName}: "${file}" must be a file inside the mod's folder`);
+      bad(`modkit.windows.${windowName}: "${file}" must be a file inside the mod's folder`);
     } else {
-      scripts[windowName] = file;
+      windows[windowName] = file;
     }
   }
-  if (!Object.keys(scripts).length) bad('scripts is empty');
-  return scripts;
+  if (!Object.keys(windows).length) bad('modkit.windows is empty');
+  return windows;
 }
 
 function parseSettings(raw, bad) {
