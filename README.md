@@ -125,4 +125,5 @@ Node 22+ (uses the built-in `WebSocket`). No npm dependencies.
 
 - [docs/LAUNCHING.md](docs/LAUNCHING.md) — why the exe needs patching, what it changes
 - [docs/MODDING.md](docs/MODDING.md) — mod API, backend command reference, gotchas
+- [docs/PACKAGING.md](docs/PACKAGING.md) — the plan for one exe, what was checked for it, what is left
 - [docs/APP-NOTES.md](docs/APP-NOTES.md) — what the app does, where its state lives
