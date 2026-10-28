@@ -312,7 +312,7 @@ your account), its `permissions`, the mods it needs, the npm packages it depends
 - A mod that already exists needs `--force`, or `update`. An update that cannot be installed
   (invalid manifest, a dependency that cannot be fetched) leaves the old version exactly as it was.
 - A mod that is renamed at its source is a new mod, not an update of the old one.
-- `remove` keeps what the mod's Node part wrote (`moddata<id>` in the app folder) unless `--purge`. Its settings
+- `remove` keeps what the mod's Node part wrote (`moddata\<id>` in the app folder) unless `--purge`. Its settings
   are in the app's storage and are used again if it is installed again.
 - Mods are not signed or reviewed: install what you would run.
 

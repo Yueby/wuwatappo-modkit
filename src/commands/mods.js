@@ -6,7 +6,7 @@
 //     --allow-scripts    let those dependencies' install scripts run (they do not, by default)
 //   update [id]        fetch an installed mod again from where it came from (all of them if no id)
 //   remove <id>        delete it
-//     --purge            also delete the files its Node part kept (<app folder>moddata<id>)
+//     --purge            also delete the files its Node part kept (<app folder>\moddata\<id>)
 //   list               what is installed, where it came from, and whether it loads
 //
 // Reading what a mod declares comes before putting it in place; there is no prompt, because the

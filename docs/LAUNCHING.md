@@ -126,7 +126,7 @@ app that is already up with DevTools is simply attached to.
 
 ```sh
 node src/cli.js start                 # now
-node src/cli.js autostart install     # at every logon, with no window; what it says goes to moddata.modkitmodkit.log in the app folder
+node src/cli.js autostart install     # at every logon, with no window; what it says goes to moddata\.modkit\modkit.log in the app folder
 node src/cli.js autostart status
 node src/cli.js autostart remove
 ```
