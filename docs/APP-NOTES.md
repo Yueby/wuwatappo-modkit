@@ -178,3 +178,33 @@ node src/cli.js extract-assets "E:\Programs\WuwaTappo\WuwaTappo.exe.orig" work/a
 Reading a stale bundle misleads: an earlier pass of this investigation analysed the
 1.0.1 sources against a running 1.0.2 app.
 
+## The panel's tab strip
+
+Measured from the running app, and what the MOD tab is built around:
+
+- **Highlight is driven by the main window, not by the click.** Pressing a tab sends
+  `tab-click` to the main window; it answers with a snapshot whose `activeTab` makes Vue
+  repaint `.tab-btn--active`. If the pressed tab is already the selected one the main
+  window sends nothing, so nothing repaints. Anything that removes the class by hand (the
+  MOD tab does, while its page is open) has to put it back itself.
+- **Two icon images per tab**, swapped by CSS when selected:
+  unselected 48x48, glyph ~26px, colour `240,206,169` (light, reads on the dark sidebar);
+  selected 54x54, glyph ~29px, colour `142,94,67` (dark, sits on the bright pill).
+  One dark image for both states makes the unselected tab vanish into the sidebar.
+- **Folding replaces every label with an empty comment node** (`v-if`) and adds
+  `.tab-bar--collapsed`; the buttons themselves are the same elements before and after.
+  Buttons are therefore identified by position, never by label text. The highlight stays
+  on the selected tab while folded.
+- The selected-state look (border, pill, label colour) comes from
+  `.tab-btn--active:not(:last-of-type)`. A button placed *before* the last one gets it for
+  free; that is why the MOD tab sits just before the fold toggle.
+
+### Testing it by hand
+
+Check the precondition before trusting any result: **the main window must consider the
+panel open**. Ask it (emit `cat-panel-action {type:"ready"}` and see whether a
+`cat-panel-state` snapshot comes back) instead of inferring it from the panel's DOM,
+which can show a stale, open-looking panel while the main window thinks it is closed.
+Several wrong conclusions in this project came from skipping that check; `tests/` does it.
+Use real mouse events (`Input.dispatchMouseEvent`), not `element.click()`.
+

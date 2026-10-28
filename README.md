@@ -44,10 +44,12 @@ src/lib/injector.js     session management + re-injection on navigation
 src/lib/mods.js         discovery of framework scripts and user mods, change detection
 src/runtime/            framework scripts injected into every window before any mod
                         (the MOD tab and page in the settings panel)
+src/lib/icon.js         draws the MOD tab's two icons (unselected / selected) at load time
 src/lib/patch.js        patches the installed exe in place (with backup)
 src/lib/launch.js       launching: detached, and through UAC
 src/lib/ps.js           one-off PowerShell (elevation, process control)
-scripts/                standalone asset/command extraction tools
+scripts/                standalone asset/command extraction tools, icon preview
+tests/                  behavioural tests for the panel UI (`npm test`, needs the app running)
 mods/                   your mods (files starting with _ are not loaded); the MOD page
                         lists them, so the framework itself is deliberately not in here
 docs/                   launch and modding notes

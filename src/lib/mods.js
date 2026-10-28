@@ -10,6 +10,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { iconDataUrls } from './icon.js';
 
 export const PROJECT_ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 export const DEFAULT_MODS_DIR = path.join(PROJECT_ROOT, 'mods');
@@ -60,8 +61,20 @@ export function discoverMods(dir = DEFAULT_MODS_DIR) {
   return readScripts(dir);
 }
 
-export function discoverCore() {
-  return readScripts(RUNTIME_DIR, { prefix: CORE_PREFIX, core: true });
+// Framework scripts may contain __MOD_ICON_INACTIVE__ / __MOD_ICON_ACTIVE__, replaced
+// by the generated icons (src/lib/icon.js) before the script is hashed or injected, so
+// the image is never a pasted blob that can drift from its generator.
+export async function discoverCore() {
+  const scripts = await readScripts(RUNTIME_DIR, { prefix: CORE_PREFIX, core: true });
+  const icons = iconDataUrls();
+  return scripts.map(script => {
+    const code = script.code
+      .replaceAll('__MOD_ICON_INACTIVE__', icons.inactive)
+      .replaceAll('__MOD_ICON_ACTIVE__', icons.active);
+    if (code === script.code) return script;
+    const digest = `${code.length}:${hash(code)}`;
+    return { ...script, code, version: digest, signature: digest };
+  });
 }
 
 // Everything to inject, in the order to inject it: framework first.
