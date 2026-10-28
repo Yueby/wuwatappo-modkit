@@ -65,6 +65,14 @@ async function click(selector, rowTitle) {
 
 const popupTitles = () => panel(`[...document.querySelectorAll('#modkit-popup-body .setting-title')].map(n => n.textContent.trim())`);
 const popupOpen = () => panel(`!!document.getElementById('modkit-popup')`);
+const overlayText = () => panel(`document.querySelector('#modkit-overlay .role-switch-emote-overlay__message')?.textContent ?? null`);
+const overlayOpen = () => panel(`!!document.getElementById('modkit-overlay')`);
+const toastText = () => panel(`document.querySelector('#modkit-toast .toast-text')?.textContent ?? null`);
+const press = async key => {
+  const session = app.session('panel');
+  for (const type of ['keyDown', 'keyUp']) await session.send('Input.dispatchKeyEvent', { type, key, code: key, windowsVirtualKeyCode: key === 'Escape' ? 27 : 13 });
+  await sleep(200);
+};
 const rowTitled = text => panel(`!![...document.querySelectorAll('#modkit-popup-body .setting-title')].find(n => n.textContent.includes(${json(text)}))`);
 
 before(async () => {
@@ -153,44 +161,58 @@ test('安装 opens the dialog with the registry\'s plugins, and the plugin has a
   assert.equal(await panel(`!!document.querySelector('#modkit-popup-body .setting-btn')`), true);
 });
 
-test('pressing 安装 on a plugin asks first: what it declares, and nothing is on disk until yes', async () => {
+test('pressing 安装 on a plugin asks first, over the list: what it declares, nothing on disk until yes', async () => {
   await click('.setting-btn', 'zz-plugin');
-  await until('the question is shown', () => rowTitled('装上它'));
-  const titles = await popupTitles();
-  assert.ok(titles.includes('Node 部分') && titles.includes('它声明要用'), `the declarations are shown: ${titles.join(' / ')}`);
-  assert.equal(await panel(`[...document.querySelectorAll('#modkit-popup-body .setting-value')].map(n => n.textContent).join('|')`).then(t => t.includes('有') && t.includes('files')), true);
+  await until('the question is shown', overlayOpen);
+  const asked = await overlayText();
+  for (const part of ['安装「', '1.0.0', 'Node 部分：有', '没有沙盒', '它声明要用：files', '网页脚本会在软件的窗口里运行']) {
+    assert.ok(asked.includes(part), `the question says "${part}":\n${asked}`);
+  }
+  assert.equal(await rowTitled('zz-plugin'), true, 'the list is still there under it: the page did not change');
   assert.deepEqual(await fs.readdir(modsDir), [], 'asked, not done');
 });
 
-test('取消 leaves nothing installed; 安装 then yes installs it, and the list says so', async () => {
-  await click('.setting-btn:nth-of-type(2)', '装上它');                       // 取消
-  await until('back at the list', () => rowTitled('zz-plugin'));
+test('取消 leaves nothing installed and takes the prompt away, and Escape does the same before it closes the dialog', async () => {
+  await click('#modkit-overlay .role-switch-emote-overlay__cancel');
+  await until('the prompt is gone', async () => !(await overlayOpen()));
+  assert.equal(await popupOpen(), true, 'the dialog stays');
   assert.deepEqual(await fs.readdir(modsDir), []);
 
   await click('.setting-btn', 'zz-plugin');
-  await until('the question is shown', () => rowTitled('装上它'));
-  await click('.setting-btn', '装上它');                                      // 安装
-  await until('it is installed', async () => (await fs.readdir(modsDir)).includes('zz-plugin'), 8000);
-  await until('the page says so', () => rowTitled('已安装 zz-plugin'));
-  await click('.setting-btn', '已安装 zz-plugin');                            // 好
-  await until('back at the list', () => rowTitled('zz-plugin'));
-  assert.equal(await panel(`document.querySelector('#modkit-popup-body').textContent.includes('已装 1.0.0')`), true, 'the row says it is installed');
+  await until('the question is shown', overlayOpen);
+  await press('Escape');
+  await until('the prompt is gone', async () => !(await overlayOpen()));
+  assert.equal(await popupOpen(), true, 'the first Escape only said no to the question');
+  assert.deepEqual(await fs.readdir(modsDir), [], 'and no is no');
 });
 
-test('卸载 asks, and removes it', async () => {
+test('安装 then yes installs it, a bubble says so and goes by itself, and the row now says it is installed', async () => {
+  await click('.setting-btn', 'zz-plugin');
+  await until('the question is shown', overlayOpen);
+  await click('#modkit-overlay .role-switch-emote-overlay__confirm');
+  await until('it is installed', async () => (await fs.readdir(modsDir)).includes('zz-plugin'), 8000);
+  await until('the bubble says so', async () => /已安装 zz-plugin/.test((await toastText()) ?? ''));
+  await until('the prompt is gone', async () => !(await overlayOpen()));
+  assert.equal(await panel(`document.querySelector('#modkit-popup-body').textContent.includes('已装 1.0.0')`), true, 'the row says it is installed');
+  await until('the bubble has gone by itself', async () => (await toastText()) === null, 6000);
+});
+
+test('卸载 asks (with the box for its data), and removes it; the bubble says so', async () => {
   await click('.setting-btn', 'zz-plugin');                                    // the row now has 卸载
-  await until('asked', () => rowTitled('卸载 '));
-  await click('.setting-btn', '卸载 ');
+  await until('asked', overlayOpen);
+  assert.match(await overlayText(), /卸载「/);
+  assert.equal(await panel(`!!document.querySelector('#modkit-overlay .role-switch-emote-overlay__checkbox input')`), true, 'the box for the plugin\'s data');
+  await click('#modkit-overlay .role-switch-emote-overlay__confirm');
   await until('it is gone', async () => !(await fs.readdir(modsDir)).includes('zz-plugin'), 8000);
-  await until('the page says so', () => rowTitled('已卸载 zz-plugin'));
+  await until('the bubble says so', async () => /已卸载 zz-plugin/.test((await toastText()) ?? ''));
 });
 
 test('closing the dialog while it is asking is a no', async () => {
-  await click('.setting-btn', '已卸载 zz-plugin');
-  await until('back at the list', () => rowTitled('zz-plugin'));
+  await until('the bubble has gone', async () => (await toastText()) === null, 6000);
   await click('.setting-btn', 'zz-plugin');
-  await until('the question is shown', () => rowTitled('装上它'));
-  await click('#modkit-popup .popup-close');
+  await until('the question is shown', overlayOpen);
+  await press('Escape');                                                       // the prompt
+  await press('Escape');                                                       // the dialog
   await until('closed', async () => !(await popupOpen()));
   await sleep(500);
   assert.deepEqual(await fs.readdir(modsDir), [], 'nothing was installed by closing');

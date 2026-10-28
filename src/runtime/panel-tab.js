@@ -314,7 +314,7 @@ function buildPopup() {
 }
 
 function onDialogKey(event) {
-  if (event.key === 'Escape') closeDialog();
+  if (event.key === 'Escape' && !cancelPrompt()) closeDialog();
 }
 
 function openDialog(next) {
@@ -335,14 +335,15 @@ function openDialog(next) {
 const openSettings = id => openDialog({ kind: 'settings', id });
 const openLog = () => openDialog({ kind: 'log' });
 const openPlugins = () => {
-  openDialog({ kind: 'plugins', phase: 'loading', plugins: [], problems: [] });
+  openDialog({ kind: 'plugins', phase: 'loading', plugins: [], problems: [], op: null });
   loadPlugins();
 };
 
 function closeDialog() {
   // An install waiting for its yes is a no, not something left hanging in the loader.
-  if (dialog?.kind === 'plugins' && dialog.phase === 'confirm') kit.manageAnswer(dialog.requestId, false);
+  if (dialog?.kind === 'plugins' && dialog.op?.type === 'confirm') kit.manageAnswer(dialog.requestId, false);
   dialog = null;
+  document.getElementById(OVERLAY_ID)?.remove();
   document.getElementById(POPUP_ID)?.remove();
   document.removeEventListener('keydown', onDialogKey);
 }
@@ -377,46 +378,201 @@ function renderSettingsDialog() {
 // The page cannot touch the disk or the network; the loader does (src/lib/manager.js), and checks every
 // download against the registry's index. What this page adds is the order of things: an install fetches the
 // plugin, then stops to say what it declares, and nothing is put in place until the person says yes here.
-// The dialog is the same layer and card as the settings dialog, and its rows are the app's settings rows.
+//
+// The dialog is the same layer and card as the settings dialog, and it is the list of plugins and stays that.
+// What happens to a plugin is not another page of it: a question, a wait, a failure is a prompt laid over the
+// list (the app's own confirm dialog, .role-switch-emote-overlay), and "installed" / "removed" is a bubble
+// (the app's own toast, .toast-wrapper) that goes by itself. So the list never jumps.
 
 const infoRow = (title, text, description) => row({ title, description, control: controls.value(text) });
 
-// One request to the loader, shown in the plugins dialog. The dialog is the one that was open when it was
-// made: if it has been closed since, a plugin waiting for its yes gets a no.
+// --- the prompt over the list --------------------------------------------------------------------------
+//
+// dialog.op is what is being asked or waited for, or null:
+//   { type: 'busy', text }                          waiting for the loader; nothing to press
+//   { type: 'confirm', info }                       an install or an update, with what the package declares
+//   { type: 'confirm-remove', plugin, purge }       a removal
+//   { type: 'error', message }                      it did not work; 好 closes it
+
+const OVERLAY_ID = 'modkit-overlay';
+const TOAST_ID = 'modkit-toast';
+const TOAST_MS = 2400;
+let toastTimer = 0;
+
+// A bubble in the middle, the app's own, that goes by itself. Above the dialog (z-index 99) and the prompt.
+function notify(text) {
+  clearTimeout(toastTimer);
+  document.getElementById(TOAST_ID)?.remove();
+  const body = el('p', 'toast-body');
+  body.appendChild(el('span', 'toast-text', text));
+  const content = el('div', 'toast-content');
+  content.appendChild(body);
+  const wrapper = el('div', 'toast-wrapper locale-zh');
+  wrapper.id = TOAST_ID;
+  wrapper.style.zIndex = '100001';
+  wrapper.appendChild(content);
+  (document.querySelector('.module-panel') ?? document.body).appendChild(wrapper);
+  toastTimer = setTimeout(() => wrapper.remove(), TOAST_MS);
+}
+
+// What each kind of prompt says and has to press.
+function promptFor(op) {
+  if (op.type === 'busy') return { lines: [op.text], buttons: [] };
+
+  if (op.type === 'error') {
+    return { lines: ['没有成功', op.message], buttons: [{ label: '好', kind: 'confirm', onClick: () => setOp(dialog, null) }] };
+  }
+
+  if (op.type === 'confirm-remove') {
+    return {
+      lines: [`卸载「${op.plugin.name}」？`, '删掉它的文件夹。它在软件里存的设置还在，装回来还能用。'],
+      checkbox: { label: '同时删除它在 moddata 里的数据', checked: op.purge, onChange: on => { op.purge = on; } },
+      buttons: [
+        { label: '取消', kind: 'cancel', onClick: () => setOp(dialog, null) },
+        { label: '卸载', kind: 'confirm', onClick: () => pluginRequest('remove', op.plugin, { purge: op.purge }) },
+      ],
+    };
+  }
+
+  const info = op.info;
+  const update = Boolean(info.before);
+  const lines = [update ? `把「${info.name ?? info.id}」从 ${info.before} 更新到 ${info.version}？` : `安装「${info.name ?? info.id}」${info.version ?? ''}？`];
+  if (info.description) lines.push(info.description);
+  lines.push(info.nodePart
+    ? 'Node 部分：有。它作为单独的程序运行，用您账号的权限，能读写文件、联网，没有沙盒。'
+    : 'Node 部分：没有。');
+  lines.push(`它声明要用：${info.permissions.length ? info.permissions.join('、') : '没写'}`);
+  const requires = Object.entries(info.requires ?? {}).map(([name, range]) => `${name} ${range}`);
+  if (requires.length) lines.push(`需要别的插件：${requires.join('、')}`);
+  if (info.dependencies.length) lines.push(`依赖包 ${info.dependencies.length} 个：${info.dependencies.join('、')}（用 npm 取，不运行它们的安装脚本）`);
+  if (info.warning) lines.push(`注意：${info.warning}`);
+  lines.push('它的网页脚本会在软件的窗口里运行，能做软件自己能做的一切。');
+  return {
+    lines,
+    buttons: [
+      { label: '取消', kind: 'cancel', onClick: () => answerPlugin(false) },
+      { label: update ? '更新' : '安装', kind: 'confirm', onClick: () => answerPlugin(true) },
+    ],
+  };
+}
+
+// Put the prompt for dialog.op on screen, or take it away. Built again only when what it says changes, so
+// that a box the person has ticked is not unticked by a redraw of the list.
+function syncOverlay() {
+  const op = dialog?.kind === 'plugins' ? dialog.op : null;
+  const existing = document.getElementById(OVERLAY_ID);
+  if (!op) {
+    existing?.remove();
+    return;
+  }
+  const key = JSON.stringify([op.type, op.text, op.message, op.info?.id, op.plugin?.id]);
+  if (existing?.dataset.key === key) return;
+  existing?.remove();
+
+  const prompt = promptFor(op);
+  const layer = el('div', 'role-switch-emote-overlay');
+  layer.id = OVERLAY_ID;
+  layer.dataset.key = key;
+  layer.addEventListener('mousedown', event => event.stopPropagation());   // the panel drags the window on mousedown
+
+  const card = el('div', 'role-switch-emote-overlay__panel');
+  const [title, ...rest] = prompt.lines;                                    // the first line says what it is about, apart from the rest
+  const message = el('p', 'role-switch-emote-overlay__message', rest.length ? `${title}\n\n${rest.join('\n')}` : title);
+  message.style.whiteSpace = 'pre-line';                                    // the lines are lines
+  card.appendChild(message);
+
+  if (prompt.checkbox) {
+    const label = el('label', 'role-switch-emote-overlay__checkbox');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.checked = !!prompt.checkbox.checked;
+    box.addEventListener('change', () => prompt.checkbox.onChange(box.checked));
+    label.append(box, el('span', null, prompt.checkbox.label));
+    card.appendChild(label);
+  }
+
+  if (prompt.buttons.length) {
+    const actions = el('div', 'role-switch-emote-overlay__actions');
+    for (const { label, kind, onClick } of prompt.buttons) {
+      const button = el('button', `role-switch-emote-overlay__${kind}`, label);
+      button.type = 'button';
+      button.addEventListener('click', onClick);
+      actions.appendChild(button);
+    }
+    card.appendChild(actions);
+  }
+
+  layer.appendChild(card);
+  (document.querySelector('.module-panel') ?? document.body).appendChild(layer);
+}
+
+// Set what is being asked, and draw it.
+function setOp(state, op) {
+  state.op = op;
+  if (dialog === state) {
+    syncOverlay();
+    renderPopup();
+  }
+}
+
+// Escape: the prompt first, when there is one that can be said no to; the dialog after.
+function cancelPrompt() {
+  const op = dialog?.kind === 'plugins' ? dialog.op : null;
+  if (!op || op.type === 'busy') return false;
+  if (op.type === 'confirm') answerPlugin(false);
+  else setOp(dialog, null);
+  return true;
+}
+
+// --- one request to the loader -----------------------------------------------------------------------------
+
+const DONE_TEXT = {
+  installed: r => `已安装 ${r.id}${r.version ? ` ${r.version}` : ''}`,
+  updated: r => `已更新到 ${r.version ?? '新版本'}`,
+  current: r => `已经是最新${r.version ? `（${r.version}）` : ''}`,
+  removed: r => `已卸载 ${r.id}${r.purged ? '，它的数据也删了' : ''}`,
+};
+
+const WORKING_TEXT = { get: '正在下载并核对', update: '正在下载并核对', remove: '正在卸载' };
+
+// The dialog is the one that was open when the request was made: if it has been closed since, a plugin
+// waiting for its yes gets a no, and what comes of the rest is only said in a bubble.
 function pluginRequest(action, plugin, args = {}) {
   const mine = dialog;
-  mine.current = { id: plugin.id, name: plugin.name, action };
   mine.cancelled = false;
-  mine.phase = 'working';
+  setOp(mine, { type: 'busy', text: `${WORKING_TEXT[action]}「${plugin.name}」…` });
   const { id, done } = kit.manage(action, { mod: plugin.id, ...args }, {
     onConfirm: info => {
       if (dialog !== mine) return void kit.manageAnswer(id, false);
-      mine.phase = 'confirm';
-      mine.info = info;
-      renderPopup();
+      setOp(mine, { type: 'confirm', info });
     },
   });
   mine.requestId = id;
-  renderPopup();
   done.then(result => {
+    const said = DONE_TEXT[result.done]?.(result);
+    if (said) notify(said);
     if (dialog !== mine) return;
     if (result.mods) {
       mine.plugins = result.mods;
       mine.problems = result.problems ?? [];
     }
-    if (mine.cancelled) {          // it was said no to meanwhile: the list is already showing
-      renderPopup();
-      return;
-    }
-    mine.phase = 'done';
-    mine.result = result;
-    renderPopup();
+    setOp(mine, null);
   }, err => {
-    if (dialog !== mine || mine.cancelled) return;
-    mine.phase = 'error';
-    mine.message = err.message;
-    renderPopup();
+    if (dialog !== mine) return notify(err.message);
+    if (mine.cancelled) return;
+    setOp(mine, { type: 'error', message: err.message });
   });
+}
+
+function answerPlugin(ok) {
+  const state = dialog;
+  kit.manageAnswer(state.requestId, ok);
+  if (!ok) {
+    state.cancelled = true;
+    setOp(state, null);
+    return;
+  }
+  setOp(state, { type: 'busy', text: `正在安装「${state.op.info.name ?? state.op.info.id}」…` });   // until the loader says it is done
 }
 
 function loadPlugins() {
@@ -433,37 +589,9 @@ function loadPlugins() {
     if (dialog !== mine) return;
     mine.phase = 'error';
     mine.message = err.message;
-    mine.failedToLoad = true;
     renderPopup();
   });
 }
-
-// Said before it is installed: what it is, and what it brings with it. (The loader has already checked
-// that this is what the registry's list said.)
-function declarationRows(info) {
-  const rows = [];
-  rows.push(infoRow('Node 部分', info.nodePart ? '有' : '没有',
-    info.nodePart ? '会作为单独的程序运行，用您账号的权限，能读写文件、联网，没有沙盒' : '只有网页脚本'));
-  rows.push(infoRow('它声明要用', info.permissions.length ? info.permissions.join('、') : '没写',
-    '这是作者自己写的，仓库的人看过它和代码对不对，但程序不会限制它'));
-  const requires = Object.entries(info.requires ?? {}).map(([name, range]) => `${name} ${range}`);
-  if (requires.length) rows.push(infoRow('需要别的插件', requires.join('、')));
-  if (info.dependencies.length) {
-    rows.push(infoRow('依赖包', `${info.dependencies.length} 个`, `${info.dependencies.join('、')}（用 npm 取，不运行它们的安装脚本）`));
-  }
-  if (info.warning) rows.push(infoRow('注意', '', info.warning));
-  return rows;
-}
-
-const DONE_TEXT = {
-  installed: r => `已安装 ${r.id}${r.version ? ` ${r.version}` : ''}`,
-  updated: r => `已更新到 ${r.version ?? '新版本'}`,
-  current: r => `已经是最新${r.version ? `（${r.version}）` : ''}`,
-  removed: r => `已卸载 ${r.id}${r.purged ? '，它的数据也删了' : ''}`,
-  declined: () => '没有装',
-};
-
-const WORKING_TEXT = { get: '正在下载并核对', update: '正在下载并核对', remove: '正在卸载' };
 
 // What a plugin's row says about where it stands, and the buttons that go with it.
 function pluginRow(plugin) {
@@ -479,7 +607,7 @@ function pluginRow(plugin) {
     buttons.push(controls.button({ label: '安装', onClick: () => pluginRequest('get', plugin) }));
   } else if (plugin.fromRegistry) {
     if (plugin.update) buttons.push(controls.button({ label: '更新', onClick: () => pluginRequest('update', plugin) }));
-    buttons.push(controls.button({ label: '卸载', onClick: () => { dialog.current = { id: plugin.id, name: plugin.name }; dialog.purge = false; dialog.phase = 'confirm-remove'; renderPopup(); } }));
+    buttons.push(controls.button({ label: '卸载', onClick: () => setOp(dialog, { type: 'confirm-remove', plugin, purge: false }) }));
   }
   return row({ title: `${plugin.name}  ${plugin.version}`, description, control: buttons });
 }
@@ -503,65 +631,14 @@ function renderPluginsDialog() {
       if (!state.plugins.length) next.appendChild(infoRow('仓库里还没有插件', ''));
       for (const plugin of state.plugins) next.appendChild(pluginRow(plugin));
       if (state.problems.length) next.appendChild(infoRow('有条目不合格，已跳过', `${state.problems.length} 个`, state.problems.join('；')));
-    } else if (state.phase === 'working') {
-      next.appendChild(infoRow(`${WORKING_TEXT[state.current.action ?? 'get']} ${state.current.name}`, '…', '从仓库下载，核对校验和，再看它自己的声明'));
-    } else if (state.phase === 'confirm') {
-      const info = state.info;
-      const update = Boolean(info.before);
-      next.appendChild(infoRow(info.name ?? info.id, info.version ?? '', info.description));
-      for (const item of declarationRows(info)) next.appendChild(item);
-      next.appendChild(row({
-        title: update ? `从 ${info.before} 更新到 ${info.version}？` : '装上它？',
-        description: '它的网页脚本会在软件的窗口里运行，能做软件自己能做的一切',
-        control: [
-          controls.button({ label: update ? '更新' : '安装', onClick: () => answerPlugin(true) }),
-          controls.button({ label: '取消', onClick: () => answerPlugin(false) }),
-        ],
-      }));
-    } else if (state.phase === 'confirm-remove') {
-      next.appendChild(row({
-        title: '同时删除它的数据',
-        description: 'moddata 里属于它的文件。它在软件里存的设置不在那里，装回来还在',
-        control: controls.toggle({ value: () => state.purge, onChange: on => { state.purge = on; } }),
-      }));
-      next.appendChild(row({
-        title: `卸载 ${state.current.name}？`,
-        description: '删掉它的文件夹',
-        control: [
-          controls.button({ label: '卸载', onClick: () => pluginRequest('remove', state.current, { purge: state.purge }) }),
-          controls.button({ label: '取消', onClick: () => { state.phase = 'list'; renderPopup(); } }),
-        ],
-      }));
-    } else if (state.phase === 'done') {
-      next.appendChild(row({
-        title: (DONE_TEXT[state.result.done] ?? (() => '完成'))(state.result),
-        control: controls.button({ label: '好', onClick: () => { state.phase = 'list'; renderPopup(); } }),
-      }));
     } else if (state.phase === 'error') {
       next.appendChild(row({
-        title: state.failedToLoad ? '读不到插件列表' : '没有成功',
+        title: '读不到插件列表',
         description: state.message,
-        control: controls.button({ label: state.failedToLoad ? '重试' : '返回', onClick: () => {
-          if (state.failedToLoad) { state.failedToLoad = false; loadPlugins(); return; }
-          state.phase = 'list';
-          renderPopup();
-        } }),
+        control: controls.button({ label: '重试', onClick: loadPlugins }),
       }));
     }
   });
-}
-
-function answerPlugin(ok) {
-  const state = dialog;
-  kit.manageAnswer(state.requestId, ok);
-  if (!ok) {
-    state.cancelled = true;
-    state.phase = 'list';
-    renderPopup();
-    return;
-  }
-  state.phase = 'working';       // until the loader says it is done
-  renderPopup();
 }
 
 // --- the log ---------------------------------------------------------------------
@@ -905,6 +982,7 @@ mod.onDispose(() => { for (const [btn, handler] of boundTabs) btn.removeEventLis
 mod.onDispose(() => clearInterval(retry));
 mod.onDispose(() => { kit.onChange = null; kit.onLive = null; });
 mod.onDispose(closeDialog);
+mod.onDispose(() => { clearTimeout(toastTimer); document.getElementById(TOAST_ID)?.remove(); });
 mod.onDispose(() => { kit.onLog = null; clearTimeout(logTimer); });
 mod.onDispose(() => document.getElementById(TAB_ID)?.remove());
 mod.onDispose(() => document.getElementById(VIEW_ID)?.remove());
