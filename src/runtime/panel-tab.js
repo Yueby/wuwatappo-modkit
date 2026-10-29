@@ -466,18 +466,20 @@ function notify(text) {
 const PERMISSION_LABELS = { files: '读写文件', network: '联网', clipboard: '读写剪贴板', run: '运行其他程序' };
 const permissionText = list => list.map(word => PERMISSION_LABELS[word] ?? word).join('、');
 
-// What each kind of prompt says and has to press. Plain words: it is read by someone deciding whether to
-// let somebody's code onto their computer.
+// What each kind of prompt says and has to press: { title, body, checkbox, buttons }. The title is what is
+// being asked; the body is what the person needs to know to answer, each item a paragraph, or [label, text]
+// for a fact. Plain words: it is read by someone deciding whether to let somebody's code onto their computer.
 function promptFor(op) {
-  if (op.type === 'busy') return { lines: [op.text], buttons: [] };
+  if (op.type === 'busy') return { title: op.text, body: [], buttons: [] };
 
   if (op.type === 'error') {
-    return { lines: [`${op.verb}没有成功`, op.message], buttons: [{ label: '好', kind: 'confirm', onClick: () => setOp(dialog, null) }] };
+    return { title: `${op.verb}没有成功`, body: [op.message], buttons: [{ label: '好', kind: 'confirm', onClick: () => setOp(dialog, null) }] };
   }
 
   if (op.type === 'confirm-remove') {
     return {
-      lines: [`卸载「${op.plugin.name}」？`, '会删除它的文件夹。它在软件里保存的设置会保留，以后再装回来还能用。'],
+      title: `卸载「${op.plugin.name}」？`,
+      body: ['会删除它的文件夹。它在软件里保存的设置会保留，以后再装回来还能用。'],
       checkbox: { label: '同时删除它保存的数据', checked: op.purge, onChange: on => { op.purge = on; } },
       buttons: [
         { label: '取消', kind: 'cancel', onClick: () => setOp(dialog, null) },
@@ -489,26 +491,55 @@ function promptFor(op) {
   const info = op.info;
   const name = info.name ?? info.id;
   const update = Boolean(info.before);
-  const lines = [update ? `将「${name}」从 ${info.before} 更新到 ${info.version}？` : `安装「${name}」${info.version ?? ''}？`];
-  if (info.description) lines.push(info.description);
-  lines.push('');
-  lines.push(info.permissions.length ? `作者声明的权限：${permissionText(info.permissions)}` : '作者没有声明需要特别的权限');
-  lines.push(info.nodePart
-    ? '后台程序：有。它会作为独立程序在电脑上运行，权限和您的账号一样，不受限制。'
-    : '后台程序：无');
+  const title = update ? `将「${name}」从 ${info.before} 更新到 ${info.version}？` : `安装「${name}」${info.version ?? ''}？`;
+  const body = [];
+  if (info.description) body.push(info.description);
+  body.push(['作者声明的权限', info.permissions.length ? permissionText(info.permissions) : '没有声明需要特别的权限']);
+  body.push(['后台程序', info.nodePart ? '有。它会作为独立程序在电脑上运行，权限和您的账号一样，不受限制。' : '无']);
   const requires = Object.entries(info.requires ?? {}).map(([required, range]) => `${required} ${range}`);
-  if (requires.length) lines.push(`需要先装好：${requires.join('、')}`);
-  if (info.dependencies.length) lines.push(`会一并下载 ${info.dependencies.length} 个组件：${info.dependencies.join('、')}`);
-  if (info.warning) lines.push(`提示：${info.warning}`);
-  lines.push('');
-  lines.push('插件的脚本会在软件窗口里运行，软件能做的它都能做。请只安装信得过的插件。');
+  if (requires.length) body.push(['需要先装好', requires.join('、')]);
+  if (info.dependencies.length) body.push([`会一并下载 ${info.dependencies.length} 个组件`, info.dependencies.join('、')]);
+  if (info.warning) body.push(['提示', info.warning]);
+  body.push('插件的脚本会在软件窗口里运行，软件能做的它都能做。请只安装信得过的插件。');
   return {
-    lines,
+    title,
+    body,
     buttons: [
       { label: '取消', kind: 'cancel', onClick: () => answerPlugin(false) },
       { label: update ? '更新' : '安装', kind: 'confirm', onClick: () => answerPlugin(true) },
     ],
   };
+}
+
+// The words of a prompt, set as the About dialog sets its own: the title big, bold and in the middle, and
+// under it, smaller, in the plain face and the paler brown, set from the left. (The app's own confirm
+// dialog has one short line, which is why .role-switch-emote-overlay__message is one size and centred.)
+const TITLE_FONT = '"975MaruSC-Bold", "975MaruSC", "Microsoft YaHei", sans-serif';
+const BOLD_BROWN = 'rgb(142, 94, 67)';
+const BODY_BROWN = 'rgb(142, 123, 106)';
+
+function promptText({ title, body }) {
+  const text = el('div', 'modkit-prompt');
+  const heading = el('h2', null, title);
+  Object.assign(heading.style, {
+    margin: '0 0 20px', fontFamily: TITLE_FONT, fontSize: '30px', lineHeight: '38px',
+    fontWeight: '700', color: BOLD_BROWN, textAlign: 'center',
+  });
+  text.appendChild(heading);
+  for (const item of body) {
+    const paragraph = el('p');
+    Object.assign(paragraph.style, { margin: '0 0 12px', fontSize: '20px', lineHeight: '32px', color: BODY_BROWN, textAlign: 'left' });
+    if (Array.isArray(item)) {
+      const label = el('span', null, `${item[0]}：`);
+      Object.assign(label.style, { fontFamily: TITLE_FONT, fontWeight: '700', color: BOLD_BROWN });
+      paragraph.append(label, item[1]);
+    } else {
+      paragraph.textContent = item;
+    }
+    text.appendChild(paragraph);
+  }
+  text.lastElementChild.style.marginBottom = '24px';   // room before the buttons or the box
+  return text;
 }
 
 // Put the prompt for dialog.op on screen, or take it away. Built again only when what it says changes, so
@@ -527,10 +558,7 @@ function syncOverlay() {
   const prompt = promptFor(op);
   const { layer, panel: card } = frame({ id: OVERLAY_ID });
   layer.dataset.key = key;
-  const [title, ...rest] = prompt.lines;                                    // the first line says what it is about, apart from the rest
-  const message = el('p', 'role-switch-emote-overlay__message', rest.length ? `${title}\n\n${rest.join('\n')}` : title);
-  message.style.whiteSpace = 'pre-line';                                    // the lines are lines
-  card.appendChild(message);
+  card.appendChild(promptText(prompt));
 
   if (prompt.checkbox) {
     const label = el('label', 'role-switch-emote-overlay__checkbox');

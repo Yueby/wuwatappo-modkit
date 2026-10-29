@@ -65,7 +65,7 @@ async function click(selector, rowTitle) {
 
 const popupTitles = () => panel(`[...document.querySelectorAll('#modkit-popup-body .setting-title')].map(n => n.textContent.trim())`);
 const popupOpen = () => panel(`!!document.getElementById('modkit-popup')`);
-const overlayText = () => panel(`document.querySelector('#modkit-overlay .role-switch-emote-overlay__message')?.textContent ?? null`);
+const overlayText = () => panel(`document.querySelector('#modkit-overlay .modkit-prompt')?.textContent ?? null`);
 const overlayOpen = () => panel(`!!document.getElementById('modkit-overlay')`);
 const toastText = () => panel(`document.querySelector('#modkit-toast .toast-text')?.textContent ?? null`);
 const press = async key => {
