@@ -1067,6 +1067,121 @@ const retry = setInterval(() => {
   if (document.getElementById(TAB_ID) || ++attempts > 50) clearInterval(retry);
 }, 200);
 
+// --- the app's snapshots, a few times a second and not once for every click --------------------------------
+//
+// While the panel is open the main window sends it a snapshot of the whole of its state (the bag, the atlas, the room,
+// the click counts, ...) every time any of it changes, and the panel draws all of it again. A click changes the
+// click count, so at the twenty clicks a second that a plugin can make, the panel is drawn twenty times a second:
+// it is busy nearly all the time, makes a gigabyte of garbage in an hour, and answers the person's own clicks late.
+//
+// A snapshot is the whole state, so the newest of a run of them makes the ones before it unnecessary. One that
+// changes what the panel shows (another tab, a list, the room, who is logged in) is passed on at once; one that
+// differs from the last passed on only in the counters, and the like, waits for the next SNAPSHOT_GAP_MS and
+// then the newest is passed on. The panel only wants revisions that go up (it ignores the rest), and they do.
+// The patch of the room's members (which is merged into the snapshot) is never passed before a snapshot that is
+// older than it: the held ones go first.
+//
+// The app's listeners are kept in T.callbacks (id -> function); they are wrapped there, and put back when this is
+// switched off. Nothing here is the app's code or the person's data: it only decides when the panel is told.
+// <snapshots>
+const SNAPSHOT_EVENT = 'cat-panel-state';
+const PATCH_EVENT = 'cat-panel-room-members-patch';
+const SNAPSHOT_GAP_MS = 200;
+
+const snapshots = (() => {
+  const listeners = window.__TAURI_INTERNALS__?.callbacks;
+  if (!(listeners instanceof Map)) return { stop() {}, stats: {} };
+
+  const flushers = new Set();
+  const stats = { passed: 0, held: 0 };
+  let stopped = false;
+
+  // What the panel would show differently: if this differs from the last one passed on, it is not held.
+  const shape = payload => {
+    if (!payload || typeof payload !== 'object') return null;
+    const p = payload;
+    return [p.activeTab, p.collapsed, p.isLoggedIn, p.roomMode, p.currentRoomId, p.roomIdInput, p.participantsLength,
+      p.bagListLoading, p.atlasListLoading, p.presetListLoading, p.panelUiEpoch, p.selectedRoleId, p.selectedPartId, p.streamId,
+      p.bagList?.length, p.atlasList?.length, p.presetList?.length, p.roomMembers?.length, p.userInfo?.id, p.localMemberId,
+      p.canCreateRoom, p.canJoinRoom, p.canLeaveRoom].join('|');
+  };
+
+  function wrap(original) {
+    let lastAt = 0;
+    let lastShape = null;
+    let newest = null;
+    let timer = 0;
+
+    const pass = data => {
+      lastAt = performance.now();
+      lastShape = shape(data.payload);
+      stats.passed += 1;
+      return original.call(null, data);
+    };
+    const flush = () => {
+      clearTimeout(timer);
+      timer = 0;
+      if (!newest) return;
+      const data = newest;
+      newest = null;
+      pass(data);
+    };
+    flushers.add(flush);
+
+    const wrapper = function (data) {
+      if (stopped) return original.apply(this, arguments);
+      if (data?.event === PATCH_EVENT) {
+        for (const run of flushers) run();                       // the snapshots held are older than this patch: they go first
+        return original.apply(this, arguments);
+      }
+      if (data?.event !== SNAPSHOT_EVENT) return original.apply(this, arguments);
+
+      const now = performance.now();
+      const changed = shape(data.payload) !== lastShape;         // not only the counters
+      if (changed || (!timer && now - lastAt >= SNAPSHOT_GAP_MS)) {
+        newest = null;                                            // this one is newer than whatever was held
+        clearTimeout(timer);
+        timer = 0;
+        return pass(data);
+      }
+      stats.held += 1;
+      newest = data;
+      if (!timer) timer = setTimeout(flush, Math.max(0, SNAPSHOT_GAP_MS - (now - lastAt)));
+      return undefined;
+    };
+    wrapper.original = original;
+    wrapper.flush = flush;
+    return wrapper;
+  }
+
+  const set = Map.prototype.set;
+  for (const [id, fn] of [...listeners]) {
+    if (typeof fn === 'function' && !fn.original) set.call(listeners, id, wrap(fn));
+  }
+  listeners.set = function (id, fn) {                             // a listener added later is wrapped too
+    return set.call(this, id, typeof fn === 'function' && !fn.original ? wrap(fn) : fn);
+  };
+
+  return {
+    stats,
+    // Off and on again without taking the listeners apart (what is held is passed on when it goes off).
+    pause(off) {
+      stopped = !!off;
+      if (stopped) for (const run of flushers) run();
+    },
+    stop() {
+      stopped = true;
+      delete listeners.set;                                       // the Map's own method again
+      for (const run of flushers) run();                          // whatever was held is passed on
+      for (const [id, fn] of [...listeners]) if (fn?.original) set.call(listeners, id, fn.original);
+      flushers.clear();
+    },
+  };
+})();
+// </snapshots>
+kit.snapshots = snapshots;
+mod.onDispose(() => snapshots.stop());
+
 // Disposers run in reverse order, so this one runs last: by then our page is gone, and
 // all that is left to undo is the app's own blocks we hid while it was open.
 mod.onDispose(hideModView);

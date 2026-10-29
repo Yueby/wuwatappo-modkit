@@ -292,6 +292,33 @@ server (`/app/dict/zh.json`), not the bundle, which is why they are not greppabl
 Measured on the live page, the MOD header and the room header agree on size, colour, line
 height, left edge and width.
 
+## What a click costs while the panel is open
+
+Measured on 1.0.2 with a plugin clicking 20 times a second (see `src/runtime/panel-feed.js`).
+
+- While the panel is open the main window sends it `cat-panel-state` with **the whole state** (bag, atlas, presets, the
+  room, the click counts, the user, ...) every time any of it changes. A click changes the counts, so twenty clicks a
+  second are about twenty snapshots a second, each written out as JSON, passed through the backend and read again by
+  the panel, which draws the page again. Measured: the panel's page busy 70-90% of the time, tens of megabytes of
+  garbage a second (over a gigabyte of unreclaimed heap after a while: it is garbage, a forced collection brings it
+  to ~40 MB), DOM changes 20-45 a second, stalls of up to 360 ms on the MOD page.
+- A snapshot made only of a click goes unnoticed in what it changes: take out `revision`, `localClickCount` and
+  `cumulativeClickCount` and it is the same text as the one before. That is what is compared to hold them back.
+- The panel only wants `revision` to go up (it ignores a snapshot whose revision is not greater than the last), so
+  snapshots can be left out. The members' patch (`cat-panel-room-members-patch`) is merged into the last snapshot,
+  so a snapshot held back must go out before a patch.
+- With the panel closed nothing is sent (`tt()` does nothing while the main window's panel flag is false), the
+  panel's heap does not grow, and its window reports `plugin:window|is_visible` = false (`visibilityState` says
+  "visible" either way: it is not usable for this).
+- **Tauri's `invoke` cannot be replaced**: `window.__TAURI_INTERNALS__`, and `invoke`, `ipc` and `postMessage` on it, are
+  read-only and not configurable (assigning silently does nothing). What can be: the global `fetch` the IPC ends in
+  (`fetch('http://ipc.localhost/plugin%3Aevent%7Cemit', { method: 'POST', body: '{"event":...,"payload":...}' })`
+  with the callback ids in the headers), and the Map `__TAURI_INTERNALS__.callbacks` (id -> function) that the
+  listeners are kept in; the answer to a call is read as `Tauri-Response: ok` plus the body.
+- Do not attach a profiler or a trace to the panel while it is open: `Tracing.start` and a 200 µs
+  `Profiler` made the panel (and with it a script waiting on it) not answer for minutes. Counters (`Performance`,
+  `Runtime.getHeapUsage`) are safe.
+
 ## What the seven windows share
 
 Measured on the running app, because the mod system's cross-window design rests on it:
