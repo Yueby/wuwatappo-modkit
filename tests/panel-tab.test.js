@@ -101,5 +101,22 @@ check('page is still the MOD page', await page(), 'MOD');
 await t.realClick('联机');
 check('can still leave', (await activeNames()).join(','), '联机');
 
+console.log('\n-- closed with its own button while the MOD page is open, and opened again');
+// The app draws its pages again when the panel is closed this way: they are new, and were showing together with ours.
+const blocksShowing = () => t.q(`[...document.querySelectorAll('.module-block')].filter(b => getComputedStyle(b).display !== 'none').length`);
+await t.realClick('MOD');
+const star = JSON.parse(await t.q(`(() => { const r = document.querySelector('.panel-close').getBoundingClientRect(); return JSON.stringify({ x: r.left + r.width / 2, y: r.top + r.height / 2 }); })()`));
+for (const type of ['mousePressed', 'mouseReleased']) await t.panel.send('Input.dispatchMouseEvent', { type, x: star.x, y: star.y, button: 'left', clickCount: 1 });
+await sleep(1500);
+check('the panel is closed', await t.q(`window.__TAURI_INTERNALS__.invoke('plugin:window|is_visible', { label: 'panel' })`).catch(() => null) ?? false, false);
+await t.ensureOpen();                                                       // opened again from the pet's button
+await sleep(1200);
+check('opened again: the MOD page is showing', await page(), 'MOD');
+check('opened again: MOD is the selected tab', (await activeNames()).join(','), 'MOD');
+check('opened again: nothing else is showing with it', await blocksShowing(), 1);
+await t.realClick('联机');
+check('and it can still be left', (await activeNames()).join(','), '联机');
+check('and the app\'s page shows then', (await page()) !== 'MOD', true);
+
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');
 t.close(); process.exit(failed ? 1 : 0);
