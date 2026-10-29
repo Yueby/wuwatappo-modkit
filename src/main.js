@@ -23,9 +23,10 @@ ${style.bold('Commands')}
     --log-file          also write to <app folder>\\moddata\\.modkit\\modkit.log
   dev [on <folder>|off]  Develop a plugin from its own folder: no install, every edit loaded as it is saved
   autostart <action>  install | remove | status (run start at logon)
-  mods <action>       list | install <source> | update [id] | remove <id>
-                        a source is a folder, .zip/.tgz, git URL, npm name or .js file
-    --force --no-deps --allow-scripts --purge
+  mods <action>       browse | get <name> | list | install <source> | update [id] | remove <id> | check <folder>
+                        browse / get: the plugin registry. A source for install is a folder, .zip/.tgz,
+                        git URL, npm name or .js file
+    --force --no-deps --allow-scripts --purge --yes --json
   lab                 Patch the installed app, then start it with DevTools
     --rebuild           force the patch to be re-applied
     --restore           put the unpatched original back
@@ -44,7 +45,7 @@ ${style.bold('Options')}
   --help              Show this help
   --version           Print the version
 
-${style.dim('Docs: docs/LAUNCHING.md, docs/MODDING.md, docs/PACKAGING.md')}
+${style.dim('Docs: docs/LAUNCHING.md, docs/MODDING.md, docs/REGISTRY.md, docs/PACKAGING.md, docs/RELEASING.md')}
 `;
 
 // With no command, the packaged exe opens its window (a double-click on it). Run from the repository it

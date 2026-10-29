@@ -38,9 +38,13 @@ node src/cli.js watch        # inject the mods of the app folder and keep them a
 ```
 
 Mods live in `<app folder>\mods` (empty to begin with: the program carries none. Install one from the plugin
-registry with the launcher's 插件… window or `mods get <name>`, see [docs/REGISTRY.md](docs/REGISTRY.md); or unpack
-a mod's folder there; or `mods install`). Edit a file there and it is re-injected within a couple of seconds. Stop with Ctrl+C.
-To write a mod, copy `examples/_template/` into it (see [docs/MODDING.md](docs/MODDING.md)).
+registry with the launcher's 插件… window, the MOD page's 插件 button or `mods get <name>`, see
+[docs/REGISTRY.md](docs/REGISTRY.md); or unpack a mod's folder there; or `mods install`). Edit a file there and it
+is re-injected within a couple of seconds. Stop with Ctrl+C.
+
+To write a mod, copy `examples/_template/` somewhere and use **dev mode**: `node src/cli.js dev on <folder>` (or the
+launcher window's 开发模式 box) runs the folder in place of any installed plugin of the same name, with no install,
+and loads every edit as it is saved (see [docs/MODDING.md](docs/MODDING.md)).
 `node src/cli.js --help` lists everything.
 
 ## Commands
@@ -53,7 +57,13 @@ To write a mod, copy `examples/_template/` into it (see [docs/MODDING.md](docs/M
 | `setup` / `setup status` / `uninstall` | One-time install: the app opens its DevTools port on every start, the loader starts at logon. After it, run `WuwaTappo.exe` any way you like |
 | `start` | Start the app with DevTools if it is not running, then stay resident (`--no-launch`, `--log-file`) |
 | `autostart install` / `remove` / `status` | Run `start` at logon, from a script in your Startup folder |
+| `window` | The launcher window with the install / uninstall buttons (what a double-click on the exe opens) |
+| `update` | Look on GitHub for a newer launcher and take it (`--check` only asks) |
+| `dev [on <folder>\|off]` | Develop a plugin from its own folder: no install, hot reload |
+| `mods browse` / `get <name>` | The plugin registry: what it lists, and installing one (it says what the plugin declares and asks first) |
 | `mods list` / `install <source>` / `update [id]` / `remove <id>` | Install a mod from a folder, `.zip`/`.tgz`, git URL, npm package or `.js` file |
+| `mods check <folder>` | Is this folder a mod that can be loaded (`--registry`: what the registry also needs) |
+| `selftest` | Check that this build works: what it can read, that a Node part starts |
 | `run` | Inject once into all windows, then exit (a mod's Node part is not started) |
 | `watch` | Resident injector and host of the Node parts; survives reloads and mod edits |
 | `eval <js>` | Evaluate an expression in every window |
@@ -73,18 +83,22 @@ Options: `--port <n>` (default 9222), `--mods-dir <path>` (default: `mods` in th
   WuwaTappo.exe.orig          the original, for uninstall
   mods\                       the mods that run: a folder (or a .js) each
   moddata\<mod>\              what a mod's Node part keeps (host.dataDir)
-  moddata\.modkit\            the loader's own: loader.lock and modkit.log
+  moddata\.modkit\            the loader's own: loader.lock, modkit.log, dev.json (dev mode)
 ```
 
 Nothing else is written outside the repository, apart from one registry value and one Startup script
-(see docs/LAUNCHING.md). `node src/cli.js setup` creates the folders, adds the mods that ship with the
-program that are not there yet (it never overwrites one that is), and moves data from where it used to be.
+(see docs/LAUNCHING.md). `node src/cli.js setup` creates the folders, patches the exe, and moves data from where it
+used to be. It puts no mods in `mods`.
 
 ## Layout
 
 ```
 src/
-  cli.js                entry point and usage text
+  cli.js                entry point when run from the repository
+  entry.js              entry point of the packaged exe (same commands; no command opens the window)
+  main.js               what a command line means, and the usage text
+  window.ps1            the launcher window (PowerShell + WinForms; runs this program for each button)
+  host-runner-main.js   what the loader forks to run a Node part when started from the repository (packaged, the exe forks itself)
   commands/             one file per CLI command; index.js is the registry
     options.js            argument parsing shared by all of them
   lib/                  everything the commands are built from (depends on nothing above)
@@ -94,6 +108,13 @@ src/
     injector.js           one live session per window; re-injects on navigation and edits
     host.js               a mod's Node part: starting and stopping it, carrying messages between pages and mods
     host-runner.js        what runs inside its child process (the `host` object a mod gets)
+    devmode.js            dev mode: the folders in use in place of installed plugins (dev.json)
+    registry.js           the plugin registry: reading its index, downloading and checking a package
+    manager.js            what the MOD page asks of the loader: browse, install, update, remove a plugin
+    release.js            GitHub releases: finding a newer launcher, downloading it, replacing the exe
+    layout.js             the folders in the app folder, and creating them
+    bundle.js             what the packaged exe carries, and reading it
+    version.js            this program's version
     app.js                is the app up, with a DevTools port; starting it
     webview-policy.js     the registry value that makes the app open its DevTools port by itself
     lock.js               one loader at a time
@@ -119,7 +140,7 @@ examples/               the _template* mods to copy. Not part of the program and
 scripts/                developer tools, not part of the CLI (icon preview)
 tests/                  `npm test` runs the offline ones (no app needed); `npm run test:app` needs the app running
 docs/                   launching, modding, and what is known about the app
-work/                   generated and git-ignored: the unpacked frontend
+work/ dist/             generated and git-ignored: the unpacked frontend and logs; the built exe
 ```
 
 Dependencies point one way: `scripts/` and `tests/` use `src/`; `src/commands/` uses
