@@ -134,10 +134,15 @@ Consequences for anything that fakes input:
   a paw-down image and the idle image roughly every 5 ms and 110 ms, which is the key route
   collapsing its own animation.
 
-There is also a client-side gate: the click handler refuses to open below
-`totalClickCount < As` before calling the API at all, and the animation function
-`wp()` already serialises clicks on its own timeline (it `await`s the animation
-before the next one counts).
+There is also a client-side gate: the chest handler refuses to open below
+`totalClickCount < As` before calling the API at all.
+
+Clicks are not serialised by the app: a `global-clap-mouse` event runs
+`incrementLocalClickCount()` and the paw animation at once, and nothing awaits anything, so every
+event is counted when it arrives. (An earlier version of this note said `wp()` serialises clicks. It does
+not: `wp()` is what starts a chest's 30-minute countdown, after the server has answered an open.)
+While the person is in a room, each click is also sent to the room (`emit("rc")`), so the other members
+see the paw; a plugin that clicks for them does the same, at its own rate.
 
 ## Native side — not yet examined
 

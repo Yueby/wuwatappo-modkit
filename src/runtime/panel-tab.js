@@ -871,7 +871,18 @@ function renderView() {
   });
 }
 
-kit.onChange = renderView;
+// A mod that changes many rows at once (a hundred added, a hundred taken away) says "changed" for each of them. The
+// page is drawn once for all of them, when that run of calls is over, and not once for each: drawn at every
+// call, the cost grows with the square of the number of rows.
+let drawQueued = false;
+kit.onChange = () => {
+  if (drawQueued) return;
+  drawQueued = true;
+  queueMicrotask(() => {
+    drawQueued = false;
+    if (kit.onChange) renderView();                              // not if the page has been taken down in the meantime
+  });
+};
 
 // --- switching between our page and the app's pages -------------------------
 
