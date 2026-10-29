@@ -193,7 +193,11 @@ test('files: it has a folder of its own, and its dispose hook runs when it is sw
 
   manager.onPageMessage('main', page.enabled('files', false));
   await until('stopped', () => Object.keys(manager.states()).length === 0);
-  await until('dispose hooks ran', async () => (await fs.readdir(dataDir)).includes('returned-cleanup'));
+  // The cleanup it returned runs first and the hooks it registered after it, one at a time: both are waited for.
+  await until('dispose hooks ran', async () => {
+    const written = await fs.readdir(dataDir);
+    return written.includes('returned-cleanup') && written.includes('disposed');
+  });
   assert.deepEqual((await fs.readdir(dataDir)).sort(), ['disposed', 'returned-cleanup', 'started']);
   assert.ok(app.find('hostReport?.("files", null').length, 'its report is cleared from the pages');
 

@@ -331,7 +331,7 @@ function Get-PluginFacts($Plugin) {
   $lines = @()
   $permissions = @($Plugin.permissions | ForEach-Object { if ($labels.ContainsKey($_)) { $labels[$_] } else { $_ } })
   if ($permissions.Count) { $lines += ('作者声明的权限：' + ($permissions -join '、')) } else { $lines += '作者没有声明需要特别的权限' }
-  if ($Plugin.nodePart) { $lines += '后台程序：有。它会作为独立程序在电脑上运行，权限和您的账号一样，不受限制。' }
+  if ($Plugin.nodePart) { $lines += '后台程序：有。作为独立程序在电脑上运行，权限和当前用户一样，不受限制。' }
   else { $lines += '后台程序：无' }
   $needs = @($Plugin.requires.PSObject.Properties | ForEach-Object { "$($_.Name) $($_.Value)" })
   if ($needs.Count) { $lines += ('需要先装好：' + ($needs -join '、')) }

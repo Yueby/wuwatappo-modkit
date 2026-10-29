@@ -1,6 +1,6 @@
 {
   "name": "wuwatappo-modkit",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "CDP-based mod loader for Wuwa Tappo (Tauri 2 / WebView2)",
   "private": true,
   "type": "module",

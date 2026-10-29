@@ -495,7 +495,7 @@ function promptFor(op) {
   const body = [];
   if (info.description) body.push(info.description);
   body.push(['作者声明的权限', info.permissions.length ? permissionText(info.permissions) : '没有声明需要特别的权限']);
-  body.push(['后台程序', info.nodePart ? '有。它会作为独立程序在电脑上运行，权限和您的账号一样，不受限制。' : '无']);
+  body.push(['后台程序', info.nodePart ? '有。作为独立程序在电脑上运行，权限和当前用户一样，不受限制。' : '无']);
   const requires = Object.entries(info.requires ?? {}).map(([required, range]) => `${required} ${range}`);
   if (requires.length) body.push(['需要先装好', requires.join('、')]);
   if (info.dependencies.length) body.push([`会一并下载 ${info.dependencies.length} 个组件`, info.dependencies.join('、')]);

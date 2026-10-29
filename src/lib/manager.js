@@ -39,7 +39,7 @@ const REASONS = [
   [/no longer has a plugin/, '仓库里已经没有这个插件了。'],
   [/did not come from the registry/, '这个插件不是从仓库安装的，没法在这里更新。'],
   [/is in use from a dev folder/, '这个插件正在开发模式里用本地文件夹，不能在这里安装、更新或卸载。先在启动器里关掉开发模式。'],
-  [/the registry now has/, '仓库里这个插件的版本刚刚变了，不是您看到的那一个，没有安装。请刷新列表再看一遍。'],
+  [/the registry now has/, '仓库里这个插件的版本刚刚变了，与列表里显示的不同，没有安装。请刷新列表后重试。'],
   [/is already installed/, '这个插件已经装过了。'],
   [/does not match its checksum/, '下载的文件和仓库登记的校验值对不上，已丢弃，没有安装。'],
   [/stopped at \d+|bytes, not the/, '下载得不完整，已丢弃，请再试一次。'],
