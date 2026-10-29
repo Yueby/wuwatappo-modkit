@@ -104,6 +104,7 @@ check('can still leave', (await activeNames()).join(','), '联机');
 console.log('\n-- closed with its own button while the MOD page is open, and opened again');
 // The app draws its pages again when the panel is closed this way: they are new, and were showing together with ours.
 const blocksShowing = () => t.q(`[...document.querySelectorAll('.module-block')].filter(b => getComputedStyle(b).display !== 'none').length`);
+await t.realClick('背包');                                                  // a page that loads its content: the others (设置, 联机) are not drawn again
 await t.realClick('MOD');
 const star = JSON.parse(await t.q(`(() => { const r = document.querySelector('.panel-close').getBoundingClientRect(); return JSON.stringify({ x: r.left + r.width / 2, y: r.top + r.height / 2 }); })()`));
 for (const type of ['mousePressed', 'mouseReleased']) await t.panel.send('Input.dispatchMouseEvent', { type, x: star.x, y: star.y, button: 'left', clickCount: 1 });

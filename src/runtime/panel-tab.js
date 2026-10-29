@@ -889,6 +889,10 @@ kit.onChange = () => {
 // Whether our page is showing. See leaveModView for what leaving has to hand back.
 let modOpen = false;
 
+// Which stock tab (its place among them) was selected when ours was chosen: the page the app itself thinks the panel
+// is on. It is what the app draws again when the panel is closed and opened (see keepModView).
+let modFrom = -1;
+
 const stockTabs = () => tabButtons().filter(b => !b.dataset.modkitOwn);
 
 function showModView() {
@@ -928,6 +932,34 @@ function hideModView() {
   }
 }
 
+// While our page is the one open, it is the only one showing. The app draws its own pages again when the panel is
+// closed with its own button and opened again, if the page it was on loads something (the bag, the atlas, the
+// synthesis page; not the settings or the room page): the blocks are new elements, which are not marked as put
+// away, so the app's page and ours showed together, with the app's first. So what the app has drawn is put away
+// again, and the tab it lights is not lit.
+//
+// Unless it lights another page than the one it was on when ours was chosen: then the app is being told to show
+// that page (open the bag from the pet's menu), and it is shown.
+function keepModView() {
+  const host = moduleHost();
+  if (!host) return;
+
+  const tabs = stockTabs();
+  const lit = tabs.map((tab, index) => (tab.classList.contains('tab-btn--active') ? index : -1)).filter(index => index >= 0);
+  if (lit.length && modFrom >= 0 && !lit.includes(modFrom)) {
+    leaveModView(null);
+    return;
+  }
+
+  const view = host.querySelector('#' + VIEW_ID);
+  const stray = [...host.querySelectorAll(BLOCK_SELECTOR)].filter(block => block.id !== VIEW_ID && block.dataset.modkitHidden !== '1');
+  if (view && view.style.display !== 'none' && !stray.length && !lit.length) return;
+
+  for (const index of lit) tabs[index].classList.remove('tab-btn--active');
+  document.getElementById(TAB_ID)?.classList.add('tab-btn--active');
+  showModView();
+}
+
 // --- the tab ----------------------------------------------------------------
 
 function buildTab() {
@@ -957,6 +989,8 @@ function buildTab() {
   btn.append(icon, label);
 
   btn.addEventListener('click', () => {
+    const from = stockTabs().findIndex(other => other.classList.contains('tab-btn--active'));
+    if (from >= 0) modFrom = from;
     // The app will not mark a button it does not know about, so the one-active-tab
     // invariant is ours to keep: take the highlight from the stock tab, give it to us.
     for (const other of tabButtons()) other.classList.toggle('tab-btn--active', other === btn);
@@ -1050,6 +1084,7 @@ function ensureTab() {
     if (modOpen) tab.classList.add('tab-btn--active');
     // Re-seat on every pass: Vue may have moved the strip around.
     if (tab.nextElementSibling !== collapse) bar.insertBefore(tab, collapse);
+    if (modOpen) keepModView();
   } finally {
     planting = false;
   }
