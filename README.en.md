@@ -15,6 +15,7 @@ The plugins live in their own repository, [wuwatappo-mods](https://github.com/Yu
 | **自动点击** (Auto click) | Clicks the pet at the interval set, raising the click count. In a room, the people in the room see every click | off |
 | **自动开箱子** (Auto chest) | Opens a chest when it is ready (opening costs clicks). The upper and the lower chest are switched separately | off |
 | **房间历史** (Room history) | Records who comes into and leaves a room, with the room number, the time and how long each person stayed. Kept on this computer only | on |
+| **记住桌宠位置** (Pet position) | Remembers where the pet was last dragged to; when a restart or a room moves it, drags it back | on |
 
 Plugins that act on the account (auto click, auto chest) are **off** after they are installed; they are switched on on the MOD page.
 
@@ -69,6 +70,11 @@ Every time the window opens, the launcher looks for a newer version of itself; i
 
 **Room history**: while it is on, it writes down who comes in, who leaves and who drops out of the room, with the room number, the time and how long they stayed. In the plugin's **设置** the records are grouped by room: **展开** shows what happened in a room, **复制** copies the room number, **清空** deletes all the records, and **最多保留** is how many records are kept (300 by default). Records stay on this computer. If the plugin is switched on when people are already in the room, the ones already there are only read while the settings panel is open; enter the room again for a complete record.
 
+**Pet position**: it works as soon as it is installed, with nothing to set up. Drag the pet where it should be and the plugin remembers it (the plugin's **设置** shows the remembered place and its state). After that, when a restart, or the app moving the pet for a room, puts it somewhere else, the plugin drags it back, as a person would, once the mouse is still: it takes a second or two. With **位置被挤动后拖回去** off it only keeps the place the app saves (which matters at the next start) and never moves the pet while the app runs. **记下现在的位置** takes the place the pet is at now as the one to keep. Some things to know:
+- Changing where the pet goes (the corner) or its size in the app's own settings lets the old place go; a new one is taken afterwards. The same when the screen's resolution changes.
+- What it sends to drag the pet are the same events the mouse makes, so it does nothing while the mouse is moving or a button is held, and lets go at once if the mouse starts moving in the middle of a drag, trying again later. When a room holds the place and the app will not let the pet go back, it tries again after longer and longer waits, and does not fight the app.
+- Each time it drags the pet back the app counts one more click (pressing the pet counts as a click).
+
 ## What it does to the computer
 
 For anyone who wants to know before installing:
@@ -77,7 +83,7 @@ For anyone who wants to know before installing:
 - **The registry**: a value named `WuwaTappo.exe` under `HKCU\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments`, set to `--remote-debugging-port=9222`. It applies to this app only, and makes it open a debugging port when it starts: that is how plugins are loaded. The port can only be reached from this computer (127.0.0.1). Writing it needs administrator rights, so installing and removing each ask for UAC once.
 - **Startup**: a small script with no window in the Windows Startup folder, which waits in the background for the app to start after logon.
 - **Folders**: in the app's install folder, `mods` (plugins), `moddata` (what plugins save) and `moddata\.modkit` (a copy of the loader, and its log).
-- **The network**: only the launcher's check for updates and the plugin list go out, to GitHub. The loader itself does not read or send login information. Whether a plugin uses the network or files is declared in the plugin list and shown before installing; none of the three plugins above uses the network.
+- **The network**: only the launcher's check for updates and the plugin list go out, to GitHub. The loader itself does not read or send login information. Whether a plugin uses the network or files is declared in the plugin list and shown before installing; none of the plugins above uses the network.
 
 ### Removing it
 
