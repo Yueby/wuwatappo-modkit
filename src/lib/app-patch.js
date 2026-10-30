@@ -35,6 +35,20 @@ export const RULES = [
     boundary: true,
   },
   {
+    // The window is cut to the places of the pets (the native hit region: only there is it drawn and clickable), and
+    // the app tells the native side again after it moves a pet. A pet set from outside needs the same, or it is not
+    // drawn until something else (a click on any pet) makes the app do it. The pieces sit in one destructuring:
+    //   const{syncMainHitRegion:A,scheduleHitRegionAfterRoomCatsDomUpdate:B,scheduleSyncHitRegionAfterPaint:C,...}=...
+    name: 'hit-region',
+    find: new RegExp(`const\\{syncMainHitRegion:(${ID}),((?:${ID}:${ID},?)*?)\\}=`),
+    build(m) {
+      const paint = new RegExp(`scheduleSyncHitRegionAfterPaint:(${ID})`).exec(m[2]);
+      if (!paint) return null;
+      return { at: m.index, text: `;(window.__wuwaApp??={}).hit={sync:()=>${m[1]}(),afterPaint:()=>${paint[1]}()};` };
+    },
+    boundary: true,
+  },
+  {
     // The person let go of their own pet after dragging it (the drag-end function reads `movedDuringDrag` first).
     name: 'pet-dragged',
     find: new RegExp(`async function ${ID}\\(\\)\\{if\\(!(${ID})\\.value\\)\\{${ID}\\(\\);return\\}const (${ID})=(${ID})\\.value,${ID}=${ID};`),

@@ -447,3 +447,14 @@ What does work, measured on 1.0.3 in WebView2:
 - 1.0.2 and 1.0.3 both have the same shapes, with different local names (`Fd`/`Hd` for the drag end of a player's pet,
   `Pt`/`Mt` for the set of pets the app places by itself, `mt`/`vt` for the writer); only the names of what is returned
   (`dockLeft`, `dockTop`, ...) are relied on, besides the shapes.
+
+## The window is cut to where the pets are
+
+Found when pets set from outside "disappeared until a click": the main window is a full-screen transparent window
+whose native hit region is rebuilt from the pets' places (`syncMainHitRegion`, with `rgnBuildDurationMs` /
+`nativeHitRegionDurationMs` in its timings); a pet outside that region is neither drawn nor clickable, and the app
+rebuilds the region after its own moves (the end of a drag: `Fe(()=>syncMainHitRegion())`). A place written to the refs
+or to a member does not do that by itself; a click on any pet makes the app do it, which is why a click "showed" the
+missing ones. Seen on a screenshot of the screen: the pet set to another place was not drawn anywhere until
+`scheduleSyncHitRegionAfterPaint()` and then `syncMainHitRegion()` were called, then it was. `app-patch.js` hands both
+out as `__wuwaApp.hit`, and `mod.app.pet.move` / `mod.app.members.place` call them after every setting.

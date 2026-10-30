@@ -8,7 +8,7 @@
 //
 // WebView2 does not run `Page.addScriptToEvaluateOnNewDocument`, but it does hold and answer requests.
 
-import { mayHoldPet, patchScript } from './app-patch.js';
+import { RULES, mayHoldPet, patchScript } from './app-patch.js';
 
 const SCRIPTS = { urlPattern: '*/assets/*.js', requestStage: 'Response' };
 const LOADED_MS = 15_000;
@@ -78,7 +78,9 @@ export class AppOpener {
   async open() {
     await this.#hold();
     let state = await this.state();
-    if (state.open || this.#reloaded) return state;
+    // A page that was patched by an older loader (fewer pieces than there are now) is loaded again too, once.
+    const complete = state.open && !!state.patch && RULES.every(rule => state.patch.applied.includes(rule.name) || state.patch.missing.includes(rule.name));
+    if (complete || this.#reloaded) return state;
     this.#reloaded = true;
     this.#log('main: loading the page again to open the app\'s state');
     await this.#session.send('Page.reload', { ignoreCache: true });

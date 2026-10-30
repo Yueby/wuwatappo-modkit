@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { patchScript, mayHoldPet } from '../src/lib/app-patch.js';
+import { RULES, patchScript, mayHoldPet } from '../src/lib/app-patch.js';
 import { AppOpener } from '../src/lib/app-opener.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -25,10 +25,11 @@ const Lm=new Map();
 function Li(e){if(!Lm.has(e.id))Lm.set(e.id,W({left:e.left,top:e.top}));return Lm.get(e.id)}
 function en(e){return Li(e).value}function vt(e,t){const o=Li(e);o.value={...o.value,...t}}
 function Hd(){const e=Pt.value;if(e===null)return;const t=Pr+Ln,o=Tr+Bn;(Math.abs(Ln)>.5||Math.abs(Bn)>.5)&&Mt.delete(e);const l=Mr(t,o),f=de.value.find(ee=>ee.id===e);f&&tn(f)&&(f.left=l.left,f.top=l.top,vt(f,l));Pt.value=null}
+const syncs=[];const{syncMainHitRegion:Me,scheduleHitRegionAfterRoomCatsDomUpdate:on,scheduleSyncHitRegionAfterPaint:mn}={syncMainHitRegion:()=>syncs.push('sync'),scheduleHitRegionAfterRoomCatsDomUpdate:()=>syncs.push('dom'),scheduleSyncHitRegionAfterPaint:()=>syncs.push('paint')};
 function make(){const C=W(100),F=W(200),N=W(true),U=W(true),ae=0;function st(){}
 async function Ge(){if(!N.value){st();return}const J=U.value,ve=ae;N.value=false}
 function Jt(){}return{dockLeft:C,dockTop:F,movedDuringDrag:U,onWindowResize:Jt,finishDockPointerGesture:Ge}}
-const api={make,Hd,Pt,Mt,de,vt,en,Li,W};
+const api={make,Hd,Pt,Mt,de,vt,en,Li,W,syncs};
 window.__test=api;
 `;
 const withText = 'data-room-cat-id dockLeft:';
@@ -41,7 +42,7 @@ function run(script) {
 
 test('the four things are added to a script of the shape the app has, and it still runs', async () => {
   const { text, applied, missing } = patchScript(SCRIPT);
-  assert.deepEqual(applied, ['pet', 'pet-dragged', 'members', 'member-dragged']);
+  assert.deepEqual(applied.sort(), ['hit-region', 'member-dragged', 'members', 'pet', 'pet-dragged']);
   assert.deepEqual(missing, []);
   const window = run(text);
   const t = window.__test;
@@ -66,6 +67,11 @@ test('the four things are added to a script of the shape the app has, and it sti
   assert.equal(members.place(99, 1, 1), false, 'nor one that is not there');
   assert.deepEqual(members.clamp(5000, 5000), { left: 1000, top: 500 }, 'the app\'s own clamping');
   assert.deepEqual(members.list().map(m => m.id), [7, 8]);
+
+  // the window is cut to where the pets are: the native side can be told again
+  window.__wuwaApp.hit.afterPaint();
+  window.__wuwaApp.hit.sync();
+  assert.deepEqual(t.syncs, ['paint', 'sync']);
 });
 
 test('letting go of a pet after dragging it is told, a moment later: the person\'s own, and a player\'s', async () => {
@@ -92,7 +98,7 @@ test('letting go of a pet after dragging it is told, a moment later: the person\
 
 test('what it does not find, it leaves alone, and says so; the script is then the one it was', () => {
   const none = 'const a=1;function b(){return{x:1}}';
-  assert.deepEqual(patchScript(none), { text: none, applied: [], missing: ['pet', 'pet-dragged', 'members', 'member-dragged'] });
+  assert.deepEqual(patchScript(none), { text: none, applied: [], missing: ['pet', 'hit-region', 'pet-dragged', 'members', 'member-dragged'] });
 });
 
 test('a script that is not the app\'s main one is not looked at', () => {
@@ -106,11 +112,11 @@ const real = [
 ];
 for (const [version, dir] of real) {
   const main = fs.existsSync(dir) ? fs.readdirSync(dir).find(name => /^index-.*\.js$/.test(name) && mayHoldPet(fs.readFileSync(path.join(dir, name), 'utf8'))) : null;
-  test(`the app's own ${version} main script: all four are found, and the result is still a script`, { skip: main ? false : `${dir} is not extracted` }, () => {
+  test(`the app's own ${version} main script: all five are found, and the result is still a script`, { skip: main ? false : `${dir} is not extracted` }, () => {
     const script = fs.readFileSync(path.join(dir, main), 'utf8');
     const { text, applied, missing } = patchScript(script);
     assert.deepEqual(missing, []);
-    assert.equal(applied.length, 4);
+    assert.equal(applied.length, 5);
     assert.ok(text.length > script.length && text.length - script.length < 2000, 'a few hundred characters, not more');
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'patch-')), 'main.mjs');
     fs.writeFileSync(file, text);
@@ -122,10 +128,10 @@ for (const [version, dir] of real) {
 // --- holding and answering the script in a window ---------------------------------------------------------------
 
 // A window as the opener sees it: it sends commands and hears events; the page answers what is evaluated.
-function fakeSession({ scripts = {}, open = false, patchedByReload = true } = {}) {
+function fakeSession({ scripts = {}, open = false, patchedByReload = true, applied = RULES.map(rule => rule.name) } = {}) {
   const sent = [];
   const listeners = new Set();
-  const page = { open, patch: null, readyState: 'complete' };
+  const page = { open, patch: open ? { applied, missing: [] } : null, readyState: 'complete' };
   const session = {
     closed: false,
     sent,
@@ -171,7 +177,7 @@ test('a window that was loaded without it is loaded again once, with its scripts
   const opener = new AppOpener({ session });
   const state = await opener.open();
   assert.equal(state.open, true);
-  assert.deepEqual(state.patch.applied, ['pet', 'pet-dragged', 'members', 'member-dragged']);
+  assert.deepEqual(state.patch.applied, ['pet', 'hit-region', 'pet-dragged', 'members', 'member-dragged']);
   const methods = sent.map(s => s.method);
   assert.equal(methods[0], 'Fetch.enable');
   assert.equal(methods.filter(m => m === 'Page.reload').length, 1, 'once');
@@ -195,6 +201,14 @@ test('a window that has it already is not loaded again', async () => {
   assert.equal(sent.some(s => s.method === 'Page.reload'), false);
 });
 
+test('a page that an older loader patched with fewer pieces is loaded again once', async () => {
+  const { session, sent } = fakeSession({ open: true, applied: ['pet', 'members'], scripts: { main: SCRIPT + withText } });
+  const opener = new AppOpener({ session });
+  const state = await opener.open();
+  assert.equal(sent.filter(s => s.method === 'Page.reload').length, 1);
+  assert.equal(state.patch.applied.length, RULES.length);
+});
+
 test('a script that is not what it looked for is let through as it was, and the window is loaded again only once', async () => {
   const odd = 'const a=1; /* ' + withText + ' */';
   const { session, sent } = fakeSession({ scripts: { main: odd } });
@@ -206,7 +220,7 @@ test('a script that is not what it looked for is let through as it was, and the 
   await opener.open();
   assert.equal(sent.filter(s => s.method === 'Page.reload').length, 1);
   assert.equal(opener.last.applied.length, 0);
-  assert.deepEqual(opener.last.missing.length, 4);
+  assert.deepEqual(opener.last.missing.length, 5);
 });
 
 test('whatever goes wrong while a script is held, it is never left held', async () => {

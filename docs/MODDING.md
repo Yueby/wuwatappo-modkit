@@ -445,10 +445,10 @@ each time the app starts (a second or two). With no such mod installed, nothing 
 mod.app.available()             // true when it is open in this window (the main one); false elsewhere
 mod.app.status()                // { applied, missing }: what the loader could add to the app's script, or null
 mod.app.pet.position()          // { left, top } of the person's own pet, in the page's pixels, or null
-mod.app.pet.move(left, top)     // put it there, as if it had been dragged there (the app clamps it and saves it)
+mod.app.pet.move(left, top)     // put it there, as if it had been dragged there (the app clamps it and saves it, and the window is told where it is)
 mod.app.pet.onDragged(fn)       // the person let go of it after dragging it; returns what stops listening
 mod.app.members.list()          // [{ id, left, top, draggable }]: the other players' pets in the room
-mod.app.members.place(id, l, t) // put one there; false when it is not in the room or cannot be moved
+mod.app.members.place(id, l, t) // put one there (and the window is told where it is); false when it is not in the room or cannot be moved
 mod.app.members.clamp(l, t)     // { left, top }: the nearest place the app lets a pet be at
 mod.app.members.onDragged(fn)   // fn(id): the person let go of a player's pet after dragging it
 ```

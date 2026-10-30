@@ -681,6 +681,14 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
       //   members.onDragged(fn)   fn(id) when the person let go of one after dragging it
       app: (() => {
         const internals = () => window.__wuwaApp;
+        // The window is cut to where the pets are: the native side is told after the page has drawn them in their new
+        // places, and again a moment later (the app does the same after a drag), or a pet is not shown until a click.
+        const tellHit = () => {
+          const hit = internals()?.hit;
+          if (!hit) return;
+          hit.afterPaint();
+          setTimeout(() => { if (!running.dead) hit.sync(); }, 120);
+        };
         const listen = (name, fn) => {
           const handler = event => { if (!running.dead) fn(event.detail); };
           window.addEventListener(name, handler);
@@ -704,6 +712,7 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
               // The app lets its own window resizing settle a pet: it keeps it inside what is free, tells the
               // native side where it is, and saves it.
               window.dispatchEvent(new Event('resize'));
+              tellHit();
               return true;
             },
             onDragged: fn => listen('wuwa-pet-dragged', () => fn()),
@@ -715,7 +724,11 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
               return members.list().map(m => ({ id: m.id, ...members.where(m), draggable: members.draggable(m) }))
                 .map(({ id, left, top, draggable }) => ({ id, left, top, draggable }));
             },
-            place: (id, left, top) => !!internals()?.members?.place(id, left, top),
+            place(id, left, top) {
+              const placed = !!internals()?.members?.place(id, left, top);
+              if (placed) tellHit();
+              return placed;
+            },
             clamp: (left, top) => internals()?.members?.clamp(left, top) ?? null,
             onDragged: fn => listen('wuwa-member-dragged', detail => fn(detail?.id)),
           },
