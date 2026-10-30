@@ -463,7 +463,7 @@ function notify(text) {
 }
 
 // What a permission word in a plugin's package.json is called to the person. Anything else is shown as it is.
-const PERMISSION_LABELS = { files: '读写文件', network: '联网', clipboard: '读写剪贴板', run: '运行其他程序' };
+const PERMISSION_LABELS = { files: '读写文件', network: '联网', clipboard: '读写剪贴板', run: '运行其他程序', 'app-internals': '读取并改动应用内部状态（桌宠的位置）' };
 const permissionText = list => list.map(word => PERMISSION_LABELS[word] ?? word).join('、');
 
 // What each kind of prompt says and has to press: { title, body, checkbox, buttons }. The title is what is

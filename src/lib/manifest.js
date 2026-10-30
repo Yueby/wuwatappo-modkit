@@ -28,8 +28,9 @@ import { validRange } from './semver.js';
 // The version of the interface a mod is written against (what the loader and the page runtime give
 // it). A mod that says a higher number than this one was written for a newer modkit and is listed
 // as broken with that said, instead of failing in some way nobody can read. Raise it when something
-// a mod could rely on changes in a way that breaks it.
-export const LOADER_API = 1;
+// a mod could rely on changes in a way that breaks it, or something is added that a mod can then not do without.
+// 2: `mod.app` and the "app-internals" permission (the app's own state, see app-patch.js).
+export const LOADER_API = 2;
 
 export const WINDOWS = ['main', 'panel', 'login', 'update', 'toast', 'about', 'oss-notice'];
 

@@ -1,6 +1,6 @@
 {
   "name": "wuwatappo-modkit",
-  "version": "0.3.6",
+  "version": "0.4.0",
   "description": "CDP-based mod loader for Wuwa Tappo (Tauri 2 / WebView2)",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
     "lab": "node src/cli.js lab",
     "watch": "node src/cli.js watch",
     "run": "node src/cli.js run",
-    "test": "node --test --test-timeout=120000 tests/mods.test.js tests/semver.test.js tests/host.test.js tests/host-page.test.js tests/loader.test.js tests/install.test.js tests/webview-policy.test.js tests/layout.test.js tests/dev.test.js tests/release.test.js tests/setup.test.js tests/registry.test.js tests/manager.test.js tests/snapshot-throttle.test.js tests/panel-feed.test.js",
+    "test": "node --test --test-timeout=120000 tests/mods.test.js tests/semver.test.js tests/host.test.js tests/host-page.test.js tests/loader.test.js tests/install.test.js tests/webview-policy.test.js tests/layout.test.js tests/dev.test.js tests/release.test.js tests/setup.test.js tests/registry.test.js tests/manager.test.js tests/snapshot-throttle.test.js tests/panel-feed.test.js tests/app-patch.test.js",
     "test:app": "node --test --test-concurrency=1 --test-timeout=120000 tests/modkit-runtime.test.js tests/mod-dialog.test.js tests/modkit-host.test.js tests/mod-plugins.test.js tests/window.test.js && node tests/panel-tab.test.js"
   },
   "engines": {

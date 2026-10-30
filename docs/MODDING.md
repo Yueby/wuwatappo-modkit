@@ -71,7 +71,7 @@ the window-to-file map is `modkit.windows`).
 | `modkit.defaultEnabled` | whether the master switch starts on; default `true` |
 | `modkit.windows` | which file runs in which window: `{ "main": "main.js", "panel": "ui.js" }`, or `"*"` for all of them. Default: `index.js` in every window, or none when there is a Node part |
 | `modkit.host` | the mod's Node part, an ES module in the folder: `"host.js"` (see [The Node part](#the-node-part)) |
-| `modkit.api` | the version of modkit's interface the mod was written for; default `1`. A mod that says more than this modkit has is listed as broken ("update modkit") instead of failing in ways nobody can read |
+| `modkit.api` | the version of modkit's interface the mod was written for; default `1`; `2` is what has `mod.app` (below). A mod that says more than this modkit has is listed as broken ("update modkit") instead of failing in ways nobody can read |
 | `modkit.requires` | other mods it needs, with the versions that will do: `{ "other-mod": "^1.2.0" }` (see [Mods using each other](#mods-using-each-other)) |
 | `modkit.permissions` | what it will do beyond showing a page, for whoever installs it to read: `["network", "files"]`. Declared, **not enforced** |
 | `engines.node` | the standard field: the Node versions it works with, e.g. `">=22"`. A mod needing a newer Node than runs the loader is listed as broken |
@@ -142,6 +142,7 @@ mod.onDispose(fn)              // run fn when the mod stops: reload, deletion, m
 mod.entry({ title, ... })      // add a row from code (below)
 mod.log(...args)               // to the console and to the MOD page's log, under the mod's name
 mod.warn(...args)              // the same, as a warning
+mod.app                        // the app's own state: the pets' places (API 2, below)
 ```
 
 A key that is not declared under `modkit.settings` throws, on purpose: a typo should be an error, not a
@@ -423,6 +424,48 @@ destroys everything a mod added; `watch` notices the navigation and re-injects
 within about a second and a half. One-shot `run` does not — use `watch` while
 developing.
 
+## The app's own state: `mod.app`
+
+Some of what the app knows is in no command and no element: where the person's pet is, and where each other
+player's pet is, are variables inside the app's own script (the page is drawn from them, so editing the page
+changes nothing the app knows about, and the saved place is read once, at start). A mod that needs them says so in
+`package.json`, and the loader opens them:
+
+```json
+"modkit": { "api": 2, "permissions": ["app-internals"], "windows": { "main": "main.js" } }
+```
+
+While an installed mod declares `app-internals`, the loader holds the main window's scripts at their response, adds a
+few statements to the app's main one on its way into the page (`src/lib/app-patch.js`: they hand out what is
+listed below, nothing else is changed, and nothing on disk is touched), and loads that window once more so that the
+page reads it. The person is told when they install it ("读取并改动应用内部状态"), and the main window loads again once
+each time the app starts (a second or two). With no such mod installed, nothing is held or changed.
+
+```js
+mod.app.available()             // true when it is open in this window (the main one); false elsewhere
+mod.app.status()                // { applied, missing }: what the loader could add to the app's script, or null
+mod.app.pet.position()          // { left, top } of the person's own pet, in the page's pixels, or null
+mod.app.pet.move(left, top)     // put it there, as if it had been dragged there (the app clamps it and saves it)
+mod.app.pet.onDragged(fn)       // the person let go of it after dragging it; returns what stops listening
+mod.app.members.list()          // [{ id, left, top, draggable }]: the other players' pets in the room
+mod.app.members.place(id, l, t) // put one there; false when it is not in the room or cannot be moved
+mod.app.members.clamp(l, t)     // { left, top }: the nearest place the app lets a pet be at
+mod.app.members.onDragged(fn)   // fn(id): the person let go of a player's pet after dragging it
+```
+
+The places of the other players' pets are the app's own and local: setting one does not send anything to the room.
+The pets are told as `left` / `top` of the dock, the same numbers the page's `style` has. A pet that is not yet in
+its slot (`data-room-cat-positioned` is not `"true"` on its element) has no place of its own to set.
+
+The script is minified, so the loader looks for the shape of the functions it needs and for the names of what they
+return (property names survive minifying, local names do not). When an app version changes the shape, the piece it
+cannot find is listed in `status().missing`, `available()` is false, and nothing of the app is broken: the mod says it
+cannot work with that version and waits for a loader that can. The extracted scripts of 1.0.2 and 1.0.3 are both
+found by it (`tests/app-patch.test.js` runs on them when they are extracted).
+
+What a mod does with it is its own: the pet-position plugin in the registry is the example (remember where the person
+dragged each pet, put it back after a restart or a room).
+
 ## What a mod can and cannot reach
 
 A mod lives in the page's JavaScript world. That gives it:
@@ -431,7 +474,8 @@ A mod lives in the page's JavaScript world. That gives it:
 - every registered Tauri backend command, with the app's privileges;
 - `localStorage`, shared by every window of the app (it is where the login and the modkit's
   settings live), and `BroadcastChannel` between windows;
-- network requests from the page, with the user's session cookies.
+- network requests from the page, with the user's session cookies;
+- with "app-internals", the pets' places (above).
 
 It does **not** give it: Rust-side logic, the input hook, the scheduled task, the
 updater, or anything else outside the webview. Those need native work (see

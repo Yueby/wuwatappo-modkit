@@ -666,6 +666,61 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
           observer.observe(document.documentElement, { childList: true, subtree: true });
         });
       },
+
+      // The app's own state, which no command or element gives: the pets' places. Only in the main window, and only
+      // when the mod declares "app-internals" in `modkit.permissions` (the loader then opens it, see
+      // docs/MODDING.md). Everything is read and written in the page's pixels, as the page is drawn.
+      //   available()             true when it is open here
+      //   status()                { applied, missing } of what the loader could open, or null when it did not try
+      //   pet.position()          { left, top } of the person's own pet, or null
+      //   pet.move(left, top)     puts it there, as if it had been dragged there (the app clamps and keeps it)
+      //   pet.onDragged(fn)       the person let go of it after dragging; returns what stops listening
+      //   members.list()          [{ id, left, top, draggable }] the other players' pets in the room
+      //   members.place(id, l, t) puts one there; false when it is not there or cannot be moved
+      //   members.clamp(l, t)     { left, top } the nearest place the app lets a pet be at
+      //   members.onDragged(fn)   fn(id) when the person let go of one after dragging it
+      app: (() => {
+        const internals = () => window.__wuwaApp;
+        const listen = (name, fn) => {
+          const handler = event => { if (!running.dead) fn(event.detail); };
+          window.addEventListener(name, handler);
+          const remove = () => window.removeEventListener(name, handler);
+          onDispose(remove);
+          return remove;
+        };
+        return {
+          available: () => !!internals()?.pet,
+          status: () => window.__wuwaAppPatch ?? null,
+          pet: {
+            position() {
+              const pet = internals()?.pet;
+              return pet ? { left: pet.left.value, top: pet.top.value } : null;
+            },
+            move(left, top) {
+              const pet = internals()?.pet;
+              if (!pet || !Number.isFinite(left) || !Number.isFinite(top)) return false;
+              pet.left.value = left;
+              pet.top.value = top;
+              // The app lets its own window resizing settle a pet: it keeps it inside what is free, tells the
+              // native side where it is, and saves it.
+              window.dispatchEvent(new Event('resize'));
+              return true;
+            },
+            onDragged: fn => listen('wuwa-pet-dragged', () => fn()),
+          },
+          members: {
+            list() {
+              const members = internals()?.members;
+              if (!members) return [];
+              return members.list().map(m => ({ id: m.id, ...members.where(m), draggable: members.draggable(m) }))
+                .map(({ id, left, top, draggable }) => ({ id, left, top, draggable }));
+            },
+            place: (id, left, top) => !!internals()?.members?.place(id, left, top),
+            clamp: (left, top) => internals()?.members?.clamp(left, top) ?? null,
+            onDragged: fn => listen('wuwa-member-dragged', detail => fn(detail?.id)),
+          },
+        };
+      })(),
     };
   }
 

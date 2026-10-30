@@ -421,3 +421,29 @@ function to every window (the app's WebView2 supports it), and a call to it arri
   within 6 s of the last beat;
 - `Runtime.removeBinding`, sent from another session, did not take it out of the page that was
   already open; `delete window.<name>` did. Probes that add a binding must clean up like that.
+
+## Setting a pet's place from outside
+
+The person's own pet is the refs `dockLeft` / `dockTop` (returned by the composable that also has `draggingDock`,
+`finishDockPointerGesture`, `snapDockToContentOrigin`); the other players' pets are `member.left` / `member.top` plus the
+place the page is drawn from (`function where(e){return store(e).value}` / `function write(e,t){...}`, side by side).
+None of it is reachable from outside: Vue's instances are there (`#app._vnode`, `component`, `subTree`), but the
+setup state is empty (the components are compiled in inline mode), and an element has no `__vnode` / `__vueParentComponent`.
+What does work, measured on 1.0.3 in WebView2:
+
+- `Page.addScriptToEvaluateOnNewDocument` is ignored (see `injector.js`), but CDP `Fetch` works: `Fetch.enable` with
+  `{ urlPattern: '*/assets/*.js', requestStage: 'Response' }`, `getResponseBody`, `fulfillRequest` with a changed body,
+  `Page.reload { ignoreCache: true }`. The main script is answered with a few statements added (`src/lib/app-patch.js`),
+  and the page then has `window.__wuwaApp` (`pet`, `members`) and fires `wuwa-pet-dragged` / `wuwa-member-dragged`.
+  `src/lib/app-opener.js` does it; the loader does it for the main window while an installed mod declares
+  `app-internals`.
+- Setting `pet.left.value` / `pet.top.value` moves the pet at once, and `window.dispatchEvent(new Event('resize'))` makes
+  the app do what it does after a resize (`Lc`: the composable's `onWindowResize` and the reconcile that clamps and
+  saves). `members.place(id, l, t)` does what the end of a drag does (`Mt.delete(id)`, `m.left`/`m.top`, `write(m, ...)`).
+- Why not the mouse: the hook is global and the app takes the pointer from the last `mouse-move` it was told of. The
+  real mouse sent hundreds of `mouse-move` per second while a plugin's events were being sent, the press landed
+  somewhere else, and the pet did not move, or followed the real mouse. A drag by events only works while the real
+  mouse is completely still (seen: 0 real moves, it worked; 100 to 650, it did not).
+- 1.0.2 and 1.0.3 both have the same shapes, with different local names (`Fd`/`Hd` for the drag end of a player's pet,
+  `Pt`/`Mt` for the set of pets the app places by itself, `mt`/`vt` for the writer); only the names of what is returned
+  (`dockLeft`, `dockTop`, ...) are relied on, besides the shapes.

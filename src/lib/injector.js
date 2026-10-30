@@ -9,6 +9,11 @@ import { targetList, windowLabel } from './targets.js';
 import { compileCore, compileMod, retireMissing } from './page-scripts.js';
 import { modsSignature, unitFor } from './mods.js';
 import { HOST_BINDING } from './host.js';
+import { AppOpener } from './app-opener.js';
+
+// A mod that declares this permission is given the app's own state (the pets' places): the main window's script is
+// patched on its way in (app-patch.js).
+export const APP_PERMISSION = 'app-internals';
 
 // What is worth a line in the log. 'idle' (the mod has no script for this window) and
 // 'already-installed' would be noise: every mod is installed in every window.
@@ -20,6 +25,7 @@ export class Injector {
   #only;
   #mods = [];
   #signature = '';
+  #wantsApp = false;
   #sessions = new Map(); // target id -> { target, session, needsInject }
 
   // Set to receive what the pages send to their mods' Node parts: (windowLabel, jsonText).
@@ -56,6 +62,7 @@ export class Injector {
     if (signature === this.#signature) return false;
     this.#mods = mods;
     this.#signature = signature;
+    this.#wantsApp = mods.some(m => !m.core && m.permissions?.includes(APP_PERMISSION));
     // A changed mod must be re-evaluated even in windows we already injected into; the
     // page compares versions and disposes the old copy itself.
     for (const entry of this.#sessions.values()) entry.needsInject = true;
@@ -116,6 +123,8 @@ export class Injector {
       const thisWindow = [];
 
       try {
+        if (label === 'main') await this.#tendApp(entry);
+
         // Drop anything whose file is gone first, so a deleted mod's UI does not outlive it.
         for (const name of await session.evaluate(retireMissing(this.#mods.map(m => m.name))) ?? []) {
           thisWindow.push({ window: label, mod: name, status: 'removed' });
@@ -141,6 +150,20 @@ export class Injector {
       reports.push(...thisWindow);
     }
     return reports;
+  }
+
+  // The main window's script is held and patched while a mod wants the app's state, and let go of when none does.
+  async #tendApp(entry) {
+    if (!this.#wantsApp) {
+      if (entry.opener) {
+        await entry.opener.close();
+        entry.opener = null;
+      }
+      return;
+    }
+    entry.opener ??= new AppOpener({ session: entry.session, log: text => this.#log(text) });
+    const state = await entry.opener.open();
+    if (!state.open) this.#log('main: the state of the app is not open (its script is not what was looked for); mods that need it will say so');
   }
 
   // One mod into one window. A mod that fails to even compile (a syntax error) must not stop
