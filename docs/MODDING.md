@@ -454,8 +454,9 @@ mod.app.members.clamp(l, t)     // { left, top }: the nearest place the app lets
 mod.app.members.onDragged(fn)   // fn(id): the person let go of a player's pet after dragging it
 ```
 
-Two more need no change of the app's script, and work in every window (declare `"api": 3`, and "app-internals" so that
-the person is told):
+Two more need no change of the app's script, and work in every window (declare `"api": 3`, and the words that say what
+the mod does, which the person is shown: `app-state` for reading the stores, `app-commands` for sending commands;
+`app-internals` is for the patched pieces above, and is the only word that makes the loader load the main window once more):
 
 ```js
 mod.app.store.available()        // the app's stores (Pinia) can be read here
@@ -489,7 +490,7 @@ dragged each pet, put it back after a restart or a room).
 
 Every window is a page drawn from Vue components with names (`MainPanelBagTab`, `SettingsModule`, `EmotionMenu`, ...). `mod.page`
 finds them, tells when one appears (a tab opened, a dialog shown), and puts a node of the mod's own into the page and
-keeps it there when the app draws that part again. It works in every window (declare `"api": 4`), and needs nothing
+keeps it there when the app draws that part again. It works in every window (declare `"api": 4` and `page`), and needs nothing
 patched:
 
 ```js
