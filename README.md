@@ -1,162 +1,205 @@
-# Wuwa Tappo modkit
+# Wuwa Tappo 插件加载器
 
-CDP-based mod loader for **Wuwa Tappo** (Kuro's Tauri 2 / WebView2 desktop app).
-Mods are JavaScript injected into the app's webviews, and, if they want, a Node half that runs as a
-process of its own (files, sockets, any npm package). Each is a folder with a `package.json` that
-declares the switches and numbers it shows on the MOD page (remembered across restarts, one master
-switch per mod), what it needs, and what it will do. The installed executable gets one
-length-preserving byte edit (it stops demanding administrator) and nothing else.
+中文 · [English](README.en.md)
 
-## Quick start
+给 **Wuwa Tappo**（鸣潮主题桌宠软件）装插件的小工具。装好之后，软件的设置面板里会多出一个 **MOD** 页：在里面开关插件、调整插件的设置，也可以直接从插件仓库安装新的插件。
 
-With the single exe (`npm run build` makes `dist/modkit.exe`): put it in the app folder and double-click it. A
-window opens with **安装** and **卸载** buttons, and what is in place. Install once; after that just run
-`WuwaTappo.exe`. Mods are folders: unpack one into the `mods` folder beside the app (the window has a button that
-opens it). Nothing is installed *into* the exe, and nothing is shipped with it.
+> 这是个非官方的第三方项目，和软件的开发商没有关系。它只在本机上工作，不会替换或绕开软件自己的任何服务器规则（见下面的[注意事项](#注意事项)）。
 
-From the repository, the same by command:
+## 现有插件
 
-```sh
-node src/cli.js setup        # once (one UAC prompt). From then on just run WuwaTappo.exe: the mods start with it
-node src/cli.js uninstall    # takes that away again
-```
+插件放在单独的仓库 [wuwatappo-mods](https://github.com/Yueby/wuwatappo-mods)，在启动器或 MOD 页里点“安装”就能装，不用手动下载。
 
-`setup` has the app open its DevTools port by itself on every start, and has the loader start at every
-logon, waiting for the app. Nothing has to launch the app for you.
+| 插件 | 做什么 | 默认 |
+|---|---|---|
+| **自动点击** | 按设定的间隔自动点击桌宠，增加点击数。在房间里时，房间里的人也会看到每一次点击 | 关闭 |
+| **自动开箱子** | 宝箱可以开的时候自动点开（开箱子要消耗点击数）。上面、下面两个宝箱可以分别开关 | 关闭 |
+| **房间历史** | 按房间记录进入和离开的玩家，带房间号、时间和待了多久，只保存在这台电脑上 | 开启 |
 
-Without installing anything, for one session:
+会替玩家操作账号的插件（自动点击、自动开箱子）安装后默认是关的，需要在 MOD 页自己打开。
 
-```sh
-node src/cli.js start        # patch if needed, start the app with DevTools, keep mods applied (stays running)
-```
+## 安装
 
-or in two steps, which is what to use while writing a mod:
+1. 到 [Releases 页面](https://github.com/Yueby/wuwatappo-modkit/releases/latest)下载 `modkit.exe`（约 90 MB，里面带着运行环境，所以比较大）。同一页的 `modkit.exe.sha256` 是它的校验值，想核对可以对一下。
+2. 把 `modkit.exe` 放进 Wuwa Tappo 的安装文件夹，也就是有 `WuwaTappo.exe` 的那个文件夹。
+3. 双击 `modkit.exe`，在打开的窗口里点 **安装**。过程中会弹出**一次**管理员权限确认（UAC），点“是”。
+4. 如果软件正在运行，安装时会先把它关掉，装完再自动打开。
 
-```sh
-node src/cli.js lab          # patch the installed app, start it with DevTools on :9222
-node src/cli.js watch        # inject the mods of the app folder and keep them applied
-```
+装一次就够了。以后像平时一样打开 Wuwa Tappo 就行，插件会跟着一起启动。**软件自己更新之后，再打开 `modkit.exe` 点一次“安装”。**
 
-Mods live in `<app folder>\mods` (empty to begin with: the program carries none. Install one from the plugin
-registry with the launcher's 插件… window, the MOD page's 插件 button or `mods get <name>`, see
-[docs/REGISTRY.md](docs/REGISTRY.md); or unpack a mod's folder there; or `mods install`). Edit a file there and it
-is re-injected within a couple of seconds. Stop with Ctrl+C.
+系统要求：Windows。开发和测试用的是 Wuwa Tappo 1.0.2。
 
-To write a mod, copy `examples/_template/` somewhere and use **dev mode**: `node src/cli.js dev on <folder>` (or the
-launcher window's 开发模式 box) runs the folder in place of any installed plugin of the same name, with no install,
-and loads every edit as it is saved (see [docs/MODDING.md](docs/MODDING.md)).
-`node src/cli.js --help` lists everything.
+## 使用
 
-## Commands
+### 打开 MOD 页
 
-| command | does |
+点桌宠的设置按钮打开设置面板，左侧最下面的标签就是 **MOD**。
+
+- 每个插件一行：名字、说明，右边是 **设置** 按钮和**开关**。开关是总开关，关掉就是这个插件完全不运行；设置可以在关着的时候改。
+- 页面右上角有两个按钮：**日志**（插件输出的信息，出问题时看这里）和 **安装**（插件列表）。
+
+### 安装、更新、卸载插件
+
+在 MOD 页点 **安装**，或者在启动器窗口点 **插件…**，会打开插件列表（需要联网）：
+
+- 选中一个插件，右边会显示它的说明和**它声明要做什么**：读写文件、联网、读写剪贴板、有没有单独的后台程序。看完再点 **安装**，装好立刻生效，不用重启软件。
+- 已装的插件有新版本时，按钮会变成 **更新**。
+- **卸载** 会删除插件的文件夹；勾上“同时删除它保存的数据”才会连数据一起删，不勾的话以后装回来设置还在。
+
+也可以手动装：把插件的文件夹放进软件目录下的 `mods` 文件夹（启动器窗口里的 **打开插件文件夹** 按钮可以直接打开它）。
+
+### 启动器窗口
+
+双击 `modkit.exe` 打开的就是它。窗口里：
+
+| 按钮 | 作用 |
 |---|---|
-| `lab` | Patch the installed app in place, then start it with DevTools |
-| `lab --rebuild` | Re-apply the patch from the stock backup |
-| `lab --restore` | Put the unpatched original back |
-| `setup` / `setup status` / `uninstall` | One-time install: the app opens its DevTools port on every start, the loader starts at logon. After it, run `WuwaTappo.exe` any way you like |
-| `start` | Start the app with DevTools if it is not running, then stay resident (`--no-launch`, `--log-file`) |
-| `autostart install` / `remove` / `status` | Run `start` at logon, from a script in your Startup folder |
-| `window` | The launcher window with the install / uninstall buttons (what a double-click on the exe opens) |
-| `update` | Look on GitHub for a newer launcher and take it (`--check` only asks) |
-| `dev [on <folder>\|off]` | Develop a plugin from its own folder: no install, hot reload |
-| `mods browse` / `get <name>` | The plugin registry: what it lists, and installing one (it says what the plugin declares and asks first) |
-| `mods list` / `install <source>` / `update [id]` / `remove <id>` | Install a mod from a folder, `.zip`/`.tgz`, git URL, npm package or `.js` file |
-| `mods check <folder>` | Is this folder a mod that can be loaded (`--registry`: what the registry also needs) |
-| `selftest` | Check that this build works: what it can read, that a Node part starts |
-| `run` | Inject once into all windows, then exit (a mod's Node part is not started) |
-| `watch` | Resident injector and host of the Node parts; survives reloads and mod edits |
-| `eval <js>` | Evaluate an expression in every window |
-| `state` | Which mods are live in which window |
-| `stop` | Stop every instance, elevating if needed |
-| `extract-assets [--exe p] [--out d]` | Unpack the frontend bundle out of the exe |
-| `backend-commands [--assets d]` | List the backend commands the frontend calls |
+| 安装 / 卸载 | 安装或卸载加载器本身（不是插件） |
+| 打开插件文件夹 | 打开软件目录下放插件的 `mods` 文件夹 |
+| 刷新 | 重新检查当前状态和有没有新版本 |
+| 插件… | 打开插件列表 |
 
-Options: `--port <n>` (default 9222), `--mods-dir <path>` (default: `mods` in the app folder), `--force`
-(re-inject even if already present). An unknown `--option` is an error, not ignored.
+每次打开窗口，启动器会去检查自己有没有新版本，有的话会自动下载、校验、替换并重新打开，窗口左上角显示当前版本（例如 `启动器 v0.3.6`）。
 
-## Where things are
+## 各插件怎么用
+
+**自动点击**：MOD 页打开“自动点击”的开关就开始点。设置里的 **点击间隔（毫秒）** 是两次点击之间的时间，范围 50–5000，默认 200；越小点得越快。下面两行显示当前状态和本次已点击的次数。需要已经登录。关掉开关或重载插件会立刻停止。
+
+**自动开箱子**：打开开关后，宝箱到时间就会自动按下去。**开上面的箱子**、**开下面的箱子** 可以分别开关；**检查间隔（秒）** 是多久看一次宝箱能不能开，默认 3 秒。开宝箱要消耗点击数，点击数不够时开不了，会隔一阵再试，间隔越试越长。状态行会显示两个宝箱各自还要多久。
+
+**房间历史**：开着就会记录所在房间里谁进来、谁离开、谁掉线，附带房间号、时间和待了多久。在插件的 **设置** 里能看到按房间整理的记录：点 **展开** 看每个房间里发生的事，**复制** 把房间号复制到剪贴板，**清空** 删掉全部记录。**最多保留** 控制记录的条数（默认 300）。记录只存在这台电脑上。如果打开插件时人已经在房间里，房间里原有的人要在设置面板开着时才读得到；想要完整的记录，重新进入一次房间。
+
+## 它在电脑上做了什么
+
+装之前想知道改了什么，这里列全：
+
+- **软件的 exe**：去掉“必须以管理员身份运行”的要求（只改一个标记，文件大小不变）。原版备份为同目录下的 `WuwaTappo.exe.orig`。
+- **注册表**：写入 `HKCU\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments` 下名为 `WuwaTappo.exe` 的一项，值是 `--remote-debugging-port=9222`。它只对这个软件有效，让它启动时在本机开放一个调试接口，插件就是通过这个接口加载的。该接口只在本机（127.0.0.1）可访问。写这一项需要管理员权限，所以安装和卸载时各弹一次 UAC。
+- **启动项**：Windows“启动”文件夹里放一个没有窗口的小脚本，登录后在后台等软件启动。
+- **文件夹**：软件目录下新建 `mods`（插件）、`moddata`（插件保存的数据），以及 `moddata\.modkit`（加载器的副本和日志）。
+- **联网**：只有启动器检查更新、读取插件列表时会访问 GitHub。加载器本身不读取也不上传登录信息。每个插件会不会联网、读写文件，在插件列表里声明，装之前能看到；目前三个插件都不联网。
+
+### 卸载
+
+在启动器窗口点 **卸载**：停掉后台加载器，删掉启动项和注册表那一项，**把软件的 exe 还原成原版**（软件在运行的话会先关闭，还原后再打开）。`mods` 和 `moddata` 里的插件和数据会留在原处，想删的话手动删除就行。
+
+## 注意事项
+
+- **自动点击、自动开箱子会替玩家操作账号。** 它们做的事和手动点击一样（自动开箱子只按软件自己显示的按钮），但自动化是否符合软件的使用条款，需要玩家自己判断，风险自担。
+- 这两个插件会检查“是否已登录”（只看有没有登录标记，不读取内容），没登录时不会点。
+- **插件是别人写的代码，运行时拥有软件窗口里能做的一切。** 仓库里的插件在合并前都由人工看过，装之前也会显示它声明的权限，但仍然请只安装信得过的插件。
+- 宝箱的计时、开出什么，都是服务器决定的。加载器和插件改不了这些，也不会去改。
+
+## 常见问题
+
+**打开软件后没有 MOD 标签。** 先确认是通过启动器的“安装”装的，并且装完之后软件重新启动过（安装时会自动重启）。打开启动器窗口点“刷新”能看到当前状态。软件更新过的话，需要重新点一次“安装”。
+
+**Windows 提示“未知发布者”，或者杀毒软件报警。** `modkit.exe` 没有代码签名，又会改另一个程序，所以容易被拦。源码在这个仓库里，可以自己用 `npm run build` 构建，也可以用 Releases 页的 `modkit.exe.sha256` 核对下载的文件。
+
+**登录状态会丢吗？** 不会。软件的数据目录和登录信息没有被改动。
+
+**设置面板有点卡。** 自动点击的间隔设得很小（每秒点很多次）时，打开着的设置面板要处理很多刷新，会比平时慢。加载器已经把这些刷新合并了；还是觉得卡的话，把间隔调大一些，或者不用的时候关掉面板。
+
+**不想用了。** 只是不想用某个插件：在 MOD 页关掉它的开关，或者卸载它。全部不用了：在启动器窗口点“卸载”。
+
+**遇到问题。** 到 [Issues](https://github.com/Yueby/wuwatappo-modkit/issues) 反馈，最好附上 MOD 页“日志”里的内容和启动器窗口里的版本号。
+
+---
+
+# 参与开发
+
+下面是给想写插件、改加载器的人看的。只是想用的话，上面的内容就够了。
+
+## 写一个插件
+
+插件就是一个文件夹，里面有一个 `package.json`（声明名字、版本、有哪些设置、在哪个窗口运行）和要运行的脚本。**开发模式**让改了就生效，不用安装：
+
+- 启动器窗口里勾选 **开发模式**，选择插件所在的文件夹；或者命令行 `node src/cli.js dev on <文件夹>`。
+- 保存文件后一两秒内就会重新载入到软件里；关闭开发模式（`dev off`）回到仓库里装的版本。
+- 从 `examples/_template/` 复制一份开始。完整的接口、`package.json` 字段、后台程序（Node 部分）见 [docs/MODDING.md](docs/MODDING.md)（英文）。
+
+写好之后投稿到 [wuwatappo-mods](https://github.com/Yueby/wuwatappo-mods)（见那边的 [CONTRIBUTING.md](https://github.com/Yueby/wuwatappo-mods/blob/main/CONTRIBUTING.md)）。MOD 页的界面用软件自己的样式，显示给玩家的文字写成标签和陈述，不用“我、您、他”这类人称，这些规则在 CONTRIBUTING 里。
+
+## 从源码运行
+
+需要 Node 22 或更新版本，运行时没有 npm 依赖（构建需要 `esbuild`、`postject`，`npm install` 会装）。
+
+```sh
+node src/cli.js setup        # 一次性安装（会弹一次 UAC）；之后直接开软件，插件跟着启动
+node src/cli.js uninstall    # 全部还原
+node src/cli.js start        # 不安装，只在这一次：补丁、带调试接口启动软件、保持插件生效（保持运行）
+node src/cli.js --help       # 全部命令
+```
+
+写插件时推荐分两步：`lab`（给软件打补丁并带调试接口启动），`watch`（注入插件，改了文件几秒内重新载入）。
+
+### 命令
+
+| 命令 | 作用 |
+|---|---|
+| `lab` / `lab --rebuild` / `lab --restore` | 给已装的软件打补丁并带调试接口启动 / 重新打补丁 / 还原原版 |
+| `setup` / `setup status` / `uninstall` | 一次性安装：软件每次启动都开调试接口，加载器随登录启动；`uninstall` 还原 |
+| `start` | 软件没运行就带调试接口启动，然后常驻（`--no-launch`、`--log-file`） |
+| `window` | 打开启动器窗口（安装/卸载按钮；双击 exe 打开的就是它） |
+| `update` | 检查 GitHub 上有没有新版启动器并更新（`--check` 只检查） |
+| `dev [on <文件夹>\|off]` | 开发模式：直接用某个文件夹里的插件，改了就生效 |
+| `mods browse` / `get <名字>` | 看插件仓库里有什么 / 安装一个（会先显示它声明的内容并询问） |
+| `mods list` / `install <来源>` / `update [id]` / `remove <id>` | 管理已装的插件；来源可以是文件夹、`.zip`/`.tgz`、git 地址、npm 包或 `.js` 文件 |
+| `mods check <文件夹>` | 检查这个文件夹能不能作为插件加载（`--registry`：加上仓库的要求） |
+| `run` / `watch` | 注入一次后退出 / 常驻注入并托管插件的后台程序 |
+| `eval <js>` / `state` | 在每个窗口执行表达式 / 看哪些插件在哪些窗口里 |
+| `stop` / `selftest` | 停掉所有实例 / 检查这个构建能不能正常工作 |
+| `extract-assets` / `backend-commands` | 解出软件的前端 / 列出前端调用的后台命令 |
+
+选项：`--port <n>`（调试端口，默认 9222）、`--mods-dir <路径>`（插件目录，默认软件目录下的 `mods`）、`--force`。写错的选项会报错，不会被忽略。
+
+### 文件放在哪
 
 ```
-<app folder>\                 where WuwaTappo.exe is (E:\Programs\WuwaTappo; WUWA_INSTALL_DIR overrides it)
-  WuwaTappo.exe               the patched exe
-  WuwaTappo.exe.orig          the original, for uninstall
-  mods\                       the mods that run: a folder (or a .js) each
-  moddata\<mod>\              what a mod's Node part keeps (host.dataDir)
-  moddata\.modkit\            the loader's own: loader.lock, modkit.log, dev.json (dev mode)
+<软件目录>\                   有 WuwaTappo.exe 的文件夹（环境变量 WUWA_INSTALL_DIR 可以指定）
+  WuwaTappo.exe               打过补丁的 exe
+  WuwaTappo.exe.orig          原版，卸载时还原用
+  mods\                       正在运行的插件：每个一个文件夹（或一个 .js）
+  moddata\<插件>\             插件的后台程序保存的数据
+  moddata\.modkit\            加载器自己的：loader.lock、modkit.log、dev.json（开发模式）
 ```
 
-Nothing else is written outside the repository, apart from one registry value and one Startup script
-(see docs/LAUNCHING.md). `node src/cli.js setup` creates the folders, patches the exe, and moves data from where it
-used to be. It puts no mods in `mods`.
-
-## Layout
+### 目录结构
 
 ```
 src/
-  cli.js                entry point when run from the repository
-  entry.js              entry point of the packaged exe (same commands; no command opens the window)
-  main.js               what a command line means, and the usage text
-  window.ps1            the launcher window (PowerShell + WinForms; runs this program for each button)
-  host-runner-main.js   what the loader forks to run a Node part when started from the repository (packaged, the exe forks itself)
-  commands/             one file per CLI command; index.js is the registry
-    options.js            argument parsing shared by all of them
-  lib/                  everything the commands are built from (depends on nothing above)
-    paths.js              every directory the tool reads or writes, named once
-    cdp.js                Chrome DevTools Protocol client (no dependencies)
-    targets.js            finding the app's windows over the DevTools HTTP endpoint
-    injector.js           one live session per window; re-injects on navigation and edits
-    host.js               a mod's Node part: starting and stopping it, carrying messages between pages and mods
-    host-runner.js        what runs inside its child process (the `host` object a mod gets)
-    devmode.js            dev mode: the folders in use in place of installed plugins (dev.json)
-    registry.js           the plugin registry: reading its index, downloading and checking a package
-    manager.js            what the MOD page asks of the loader: browse, install, update, remove a plugin
-    release.js            GitHub releases: finding a newer launcher, downloading it, replacing the exe
-    layout.js             the folders in the app folder, and creating them
-    bundle.js             what the packaged exe carries, and reading it
-    version.js            this program's version
-    app.js                is the app up, with a DevTools port; starting it
-    webview-policy.js     the registry value that makes the app open its DevTools port by itself
-    lock.js               one loader at a time
-    autostart.js          the logon script in the Startup folder
-    install.js            installing, updating, removing and listing mods
-    semver.js             version ranges, for "requires" and "engines"
-    page-scripts.js       generates the JavaScript that is evaluated *inside* the page
-    manifest.js           a mod's package.json: parsing and validation
-    mods.js               discovery of framework scripts and user mods (files and folders)
-    patch.js              patches the installed exe in place, with backup and restore
-    launch.js             starting the app detached
-    ps.js                 PowerShell: process count, kill, run-as-administrator
-    assets.js             unpacking the frontend out of the exe
-    frontend-commands.js  finding the backend commands in the unpacked frontend
-    icon.js               draws the MOD tab's two icons
-    output.js             console formatting
-  runtime/              framework scripts injected into every window before any mod
-    modkit-registry.js    window.modkit: mod lifecycle, settings, master switch, state shared
-                          between windows (every window)
-    panel-tab.js          the MOD tab and page in the settings panel (panel window only)
-examples/               the _template* mods to copy. Not part of the program and never installed by it:
-                          <app folder>\mods starts empty. Real plugins live in the registry repository.
-scripts/                developer tools, not part of the CLI (icon preview)
-tests/                  `npm test` runs the offline ones (no app needed); `npm run test:app` needs the app running
-docs/                   launching, modding, and what is known about the app
-work/ dist/             generated and git-ignored: the unpacked frontend and logs; the built exe
+  cli.js / entry.js / main.js   命令行入口 / 打包后的 exe 入口 / 命令行的含义和帮助文字
+  window.ps1                    启动器窗口（PowerShell + WinForms，每个按钮调用本程序）
+  commands/                     每个命令一个文件，index.js 是登记表
+  lib/                          命令用到的所有东西（cdp 客户端、注入器、插件发现与校验、补丁、
+                                安装/更新/仓库、开发模式、版本更新……）
+  runtime/                      注入到每个窗口的框架脚本（先于插件运行）
+    modkit-registry.js            window.modkit：插件生命周期、设置、总开关、窗口间共享的状态
+    panel-tab.js                  设置面板里的 MOD 标签和页面（只在面板窗口生效）
+    panel-feed.js                 主窗口给设置面板发状态的频率（只在主窗口生效）
+examples/                       _template* 示例插件，复制一份开始写
+scripts/                        开发用的工具（构建 exe、图标预览）
+tests/                          `npm test` 跑离线的；`npm run test:app` 需要软件在运行
+docs/                           各主题的说明（英文）
 ```
 
-Dependencies point one way: `scripts/` and `tests/` use `src/`; `src/commands/` uses
-`src/lib/`; `src/lib/` uses nothing of ours above it. `runtime/` is not imported by anything:
-it is read from disk and sent into the page.
+依赖方向是单向的：`scripts/` 和 `tests/` 用 `src/`；`src/commands/` 用 `src/lib/`；`src/lib/` 不依赖上面的任何东西。`runtime/` 不被任何文件导入，它是从磁盘读出来再发进页面的。
 
-## Requirements
+### 测试和构建
 
-Node 22+ (uses the built-in `WebSocket`). No runtime npm dependencies. `npm run build` makes the single
-exe, `dist/modkit.exe` (see [docs/PACKAGING.md](docs/PACKAGING.md)); that needs the devDependencies (esbuild, postject).
+```sh
+npm test            # 离线测试，不需要软件
+npm run test:app    # 实机测试：需要软件在运行并已注入；会点击设置面板（先告知使用者，并确保自动点击、自动开箱子是关着的）
+npm run build       # 生成 dist/modkit.exe 和 dist/modkit.exe.sha256
+```
 
-## Docs
+推送到 `main` 且 `package.json` 里的版本号变了，GitHub Actions 会自动跑测试、构建并发布新版本。
 
-- [docs/LAUNCHING.md](docs/LAUNCHING.md) — why the exe needs patching, what it changes
-- [docs/MODDING.md](docs/MODDING.md) — mod API, backend command reference, gotchas
-- [docs/PACKAGING.md](docs/PACKAGING.md) — the one exe: how it is built, what was checked for it
-- [docs/RELEASING.md](docs/RELEASING.md) — making a release, and how the exe updates itself from it
-- [docs/REGISTRY.md](docs/REGISTRY.md) — the plugin registry: listing, installing, what is checked
-- [docs/APP-NOTES.md](docs/APP-NOTES.md) — what the app does, where its state lives
+### 文档（英文）
+
+- [docs/MODDING.md](docs/MODDING.md)：插件接口、`package.json`、后台程序、注意事项
+- [docs/REGISTRY.md](docs/REGISTRY.md)：插件仓库：列表、安装、检查了什么
+- [docs/LAUNCHING.md](docs/LAUNCHING.md)：为什么要给 exe 打补丁，改了什么
+- [docs/PACKAGING.md](docs/PACKAGING.md)：单个 exe 是怎么构建的
+- [docs/RELEASING.md](docs/RELEASING.md)：发布，以及 exe 怎么自己更新
+- [docs/APP-NOTES.md](docs/APP-NOTES.md)：软件本身是怎么工作的、数据放在哪、实测过的事实
