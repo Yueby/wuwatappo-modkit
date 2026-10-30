@@ -238,6 +238,26 @@ the 1.0.3 app was started without the DevTools port, so none of this was tried l
   and of a player's pet (`left`, `top` first).
 - New: `data-room-cat-ui-hidden` on a player's pet. Nothing here uses it.
 
+## What the native mouse events are, and are not
+
+Seen while a plugin took them for the person dragging a pet (pet-position 0.2.0, and what 0.2.1 does instead):
+
+- The hook is global: `mouse-button` comes for every press and release the person makes, on any program, not only
+  on the pet. A release is not a drag, and a pet that moved between a press and a release moved because something
+  else did, too: for some seconds after the app starts it arranges the pets (the person's own one slides to its
+  place, the players' pets are put in slots 138 to 158 px apart), and a click on a dialog in that time looked like a
+  drag of every pet that was moving.
+- `mouse-button` carries `{ button, action }` and, for a press over a player's pet, `memberId` (the hook says
+  whose pet it is; `mouse-move` carries it too). The position is the last `mouse-move`: neither button event has one.
+- The person's own pet has no id: what is under the pointer (`elementFromPoint(...).closest('.pet-dock-content')`)
+  is the way to tell.
+- Dragging a player's pet is local (`Fd` sets the style and the member's place, and nothing is sent); pressing the
+  person's own pet counts a click (`incrementLocalClickCount`) and the room sees it.
+- Events sent with `plugin:event|emit` reach the same handlers, and a plugin's drag is taken by the app only if
+  the app takes input at that moment. With the Windows lock screen up it did not (`state` said the pet could not get
+  back, and the pet did not move at all); the cause was not read out of the app, only the lock screen was seen to be
+  in front. The plugin tries again later and later and nothing is lost.
+
 ## The panel's tab strip
 
 Measured from the running app, and what the MOD tab is built around:
