@@ -207,11 +207,36 @@ names carry content hashes and all of them change on an update. After the app up
 re-extract from the stock backup before reading any code:
 
 ```sh
-node src/cli.js extract-assets "E:\Programs\WuwaTappo\WuwaTappo.exe.orig" work/assets
+node src/cli.js extract-assets --exe "E:\Programs\WuwaTappo\WuwaTappo.exe.orig" --out work/assets
 ```
+
+The backup is only refreshed when `setup` / `lab` runs after an update. Until then
+`WuwaTappo.exe.orig` is the old build, and `extract-assets` with no arguments reads it; pass `--exe`
+(the installed exe is the stock new build when `setup status` says "exe patched no") to read the new one.
+The options are `--exe` and `--out`: two bare paths are ignored, and the command then extracts the backup
+into `work/assets` without a word.
 
 Reading a stale bundle misleads: an earlier pass of this investigation analysed the
 1.0.1 sources against a running 1.0.2 app.
+
+## 1.0.3 against 1.0.2
+
+Compared by extracting both bundles (1.0.3 from the installed exe, 1.0.2 from the backup). Read, not run:
+the 1.0.3 app was started without the DevTools port, so none of this was tried live.
+
+- Every chunk file name changed (the content hashes). The Rust side is the same crates (`tauri 2.10.3`,
+  `tao 0.34.6`, `wry 0.54.4`), so what the runtime hooks (`window.fetch` to `ipc.localhost`, the callbacks map)
+  is unchanged.
+- 6 backend commands more, none removed: `get_app_shortcuts`, `set_app_shortcuts`, `set_shortcut_capture`
+  (a shortcuts setting) and the opener plugin's `open_url`, `open_path`, `reveal_item_in_dir`.
+- Still there, spelled the same: the events (`cat-panel-state`, `cat-panel-room-members-patch`,
+  `cat-panel-action`, `mouse-move`, `mouse-button`), the localStorage keys (`wuwatappo-settings`,
+  `wuwatappo-main-pet-placement-v1`), the classes the plugins and the panel code look for (`pet-dock`,
+  `pet-dock-content`, `reward-btn`, `settings-btn`, `panel-close`, `tab-btn--active`), `data-room-cat-id` and
+  `data-room-cat-positioned`, `--pet-scale`, the native press handler (a press over a player's pet, over
+  `.pet-dock-content`, over a button), and the style of the dock (`left`, `top`, `right: auto`, `bottom: auto`)
+  and of a player's pet (`left`, `top` first).
+- New: `data-room-cat-ui-hidden` on a player's pet. Nothing here uses it.
 
 ## The panel's tab strip
 

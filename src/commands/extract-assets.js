@@ -12,6 +12,7 @@ import { log, style } from '../lib/output.js';
 
 export default async function extract(argv) {
   const options = parseOptions(argv);
+  if (options.positional.length) throw new Error(`extract-assets takes --exe <path> and --out <dir>, not bare paths (${options.positional.join(' ')})`);
   const exe = options.exe ?? (fs.existsSync(APP_EXE_BACKUP) ? APP_EXE_BACKUP : APP_EXE);
   const outDir = options.out ?? ASSETS_DIR;
 
