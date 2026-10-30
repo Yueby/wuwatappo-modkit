@@ -15,7 +15,7 @@ The plugins live in their own repository, [wuwatappo-mods](https://github.com/Yu
 | **自动点击** (Auto click) | Clicks the pet at the interval set, raising the click count. In a room, the people in the room see every click | off |
 | **自动开箱子** (Auto chest) | Opens a chest when it is ready (opening costs clicks). The upper and the lower chest are switched separately | off |
 | **房间历史** (Room history) | Records who comes into and leaves a room, with the room number, the time and how long each person stayed. Kept on this computer only | on |
-| **记住桌宠位置** (Pet position) | Remembers where the pet was last dragged to; when a restart or a room moves it, drags it back | on |
+| **记住桌宠位置** (Pet position) | Remembers where your pet, and each other player's pet in the room, was last dragged to; when a restart or a room moves them, drags them back | on |
 
 Plugins that act on the account (auto click, auto chest) are **off** after they are installed; they are switched on on the MOD page.
 
@@ -70,10 +70,11 @@ Every time the window opens, the launcher looks for a newer version of itself; i
 
 **Room history**: while it is on, it writes down who comes in, who leaves and who drops out of the room, with the room number, the time and how long they stayed. In the plugin's **设置** the records are grouped by room: **展开** shows what happened in a room, **复制** copies the room number, **清空** deletes all the records, and **最多保留** is how many records are kept (300 by default). Records stay on this computer. If the plugin is switched on when people are already in the room, the ones already there are only read while the settings panel is open; enter the room again for a complete record.
 
-**Pet position**: it works as soon as it is installed, with nothing to set up. Drag the pet where it should be and the plugin remembers it (the plugin's **设置** shows the remembered place and its state). After that, when a restart, or the app moving the pet for a room, puts it somewhere else, the plugin drags it back, as a person would, once the mouse is still: it takes a second or two. With **位置被挤动后拖回去** off it only keeps the place the app saves (which matters at the next start) and never moves the pet while the app runs. **记下现在的位置** takes the place the pet is at now as the one to keep. Some things to know:
+**Pet position**: it works as soon as it is installed, with nothing to set up. Drag the pet where it should be and the plugin remembers it; the same for the other players' pets in the room, kept for each player (the plugin's **设置** shows the remembered places and its state). After that, when a restart, or the app moving the pets for a room (the app puts the other players' pets back in its default slots every time a room is entered), puts them somewhere else, the plugin drags them back, as a person would, once the mouse is still: one pet at a time, a second or two each. With **也记住其他玩家的桌宠** off it only looks after your own pet. With **位置被挤动后拖回去** off it only keeps the place the app saves (which matters at the next start) and never moves the pet while the app runs. **记下现在的位置** takes the places all the pets are at now as the ones to keep. Some things to know:
 - Changing where the pet goes (the corner) or its size in the app's own settings lets the old place go; a new one is taken afterwards. The same when the screen's resolution changes.
 - What it sends to drag the pet are the same events the mouse makes, so it does nothing while the mouse is moving or a button is held, and lets go at once if the mouse starts moving in the middle of a drag, trying again later. When a room holds the place and the app will not let the pet go back, it tries again after longer and longer waits, and does not fight the app.
-- Each time it drags the pet back the app counts one more click (pressing the pet counts as a click).
+- Dragging your own pet back counts one more click in the app (pressing the pet counts as a click), which the people in the room see; dragging another player's pet is only on this computer and is not sent to the room.
+- The places of the other players are kept for each player, up to 60; past that the ones set longest ago are forgotten. A pet that is covered by another pet and cannot be clicked is not dragged at; it is tried again later.
 
 ## What it does to the computer
 
