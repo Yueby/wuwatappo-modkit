@@ -682,12 +682,12 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
       // Not needing the patch (any window, same permission):
       //   store.available()       the app's stores (Pinia) can be read here
       //   store.names()           the stores there are, e.g. ["GlobalState"]
-      //   store.state(name)       a plain copy of a store's state (what looks like a secret is left out), or null
+      //   store.state(name)       a plain copy of a store's state, or null
+      //   store.raw(name)         the store itself (its state and its actions), or null
       //   store.onAction(name, fn) fn({ action, args, after(cb), onError(cb) }) each time the app runs an action of the
       //                           store (it is only watched: nothing is replaced); returns what stops watching
-      //   action(type, payload)   sends the app's main window one of the commands its panel sends (events
-      //                           "cat-panel-action"): set-pet-hidden { hidden }, set-room-id-input { value },
-      //                           create-room, join-room, leave-room, toggle-room-member { memberId }; others throw
+      //   action(type, payload)   sends the app's main window a command of the kind its panel sends (the event
+      //                           "cat-panel-action"), any of them: set-pet-hidden { hidden }, join-room, leave-room, ...
       app: (() => {
         const internals = () => window.__wuwaApp;
         // The window is cut to where the pets are: the native side is told after the page has drawn them in their new
@@ -699,17 +699,15 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
           setTimeout(() => { if (!running.dead) hit.sync(); }, 120);
         };
         const pinia = () => document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$pinia;
-        // What is handed out of a store is a plain copy, with what looks like a secret left out (a login's token...).
-        const SECRET = /token|secret|password|cookie|auth|login|sign|session/i;
+        // A plain copy of what a store holds, so that reading it cannot change it by accident.
         const plain = (value, depth = 0) => {
           if (value === null || typeof value !== 'object') return typeof value === 'function' ? undefined : value;
           if (depth > 6) return null;
           if (Array.isArray(value)) return value.map(item => plain(item, depth + 1));
           const copy = {};
-          for (const [key, item] of Object.entries(value)) if (!SECRET.test(key)) copy[key] = plain(item, depth + 1);
+          for (const [key, item] of Object.entries(value)) copy[key] = plain(item, depth + 1);
           return copy;
         };
-        const COMMANDS = new Set(['set-pet-hidden', 'set-room-id-input', 'create-room', 'join-room', 'leave-room', 'toggle-room-member']);
         const listen = (name, fn) => {
           const handler = event => { if (!running.dead) fn(event.detail); };
           window.addEventListener(name, handler);
@@ -745,6 +743,7 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
               const store = pinia()?._s?.get(name);
               return store ? plain(store.$state) : null;
             },
+            raw: name => pinia()?._s?.get(name) ?? null,
             onAction(name, fn) {
               const store = pinia()?._s?.get(name);
               if (!store) throw new Error(`no store called "${name}" (store.names() lists them)`);
@@ -757,7 +756,7 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
             },
           },
           action(type, payload = {}) {
-            if (!COMMANDS.has(type)) throw new Error(`"${type}" is not a command mods may send (${[...COMMANDS].join(', ')})`);
+            if (typeof type !== 'string' || !type) throw new Error('action needs the name of a command');
             return T.invoke('plugin:event|emit', { event: 'cat-panel-action', payload: { ...payload, type } });
           },
           members: {

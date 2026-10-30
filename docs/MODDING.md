@@ -459,15 +459,17 @@ the person is told):
 ```js
 mod.app.store.available()        // the app's stores (Pinia) can be read here
 mod.app.store.names()            // ["GlobalState"]
-mod.app.store.state(name)        // a plain copy of a store's state, or null; what looks like a secret (token, login, ...) is left out
+mod.app.store.state(name)        // a plain copy of a store's state, or null (all of it: the login too)
+mod.app.store.raw(name)          // the store itself, with its actions (updateUserInfo, setLocalClickCount, ...); null when there is none
 mod.app.store.onAction(name, fn) // fn({ action, args, after(cb), onError(cb) }) when the app runs one of the store's actions
                                  // (applyClickReportSuccess, setLocalClickCount, ...); it is only watched, nothing is replaced
-mod.app.action(type, payload)    // one of the commands the app's panel sends its main window: set-pet-hidden { hidden },
-                                 // set-room-id-input { value }, create-room, join-room, leave-room, toggle-room-member { memberId }
+mod.app.action(type, payload)    // a command of the kind the app's panel sends its main window (the event "cat-panel-action"):
+                                 // set-pet-hidden { hidden }, set-room-id-input { value }, create-room, join-room, leave-room,
+                                 // toggle-room-member { memberId }, ... (APP-NOTES.md lists the ones the app has)
 ```
 
-`action` is a list that is kept short on purpose: what changes a count or an account (`clear-local-clicks`, `pet-clap`,
-`redeem-success`, ...) is not on it, and anything else throws.
+Nothing here is held back: a mod can read all of a store and call its actions, and send any command, as it could
+through `mod.invoke` and the page anyway; what it does is the mod's own, and is what its `permissions` should say.
 
 The places of the other players' pets are the app's own and local: setting one does not send anything to the room.
 The pets are told as `left` / `top` of the dock, the same numbers the page's `style` has. A pet that is not yet in

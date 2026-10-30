@@ -466,13 +466,13 @@ Seen in other projects and checked here on 1.0.3: the page has Pinia, reachable 
 `loginInfo`, `localClickCount`, `countdownEndTime`, `serverClickSpend`, ...; actions `incrementLocalClickCount`,
 `setLocalClickCount`, `applyClickReportSuccess`, `applyChestClickConsume`, `spendClickCount`, `updateUserInfo`, ...).
 `store.$onAction(fn, true)` watches the actions as they run without replacing them (it saw the app's own
-`applyClickReportSuccess` and `setLocalClickCount` come by). `mod.app.store` is that, with a plain copy of the state and
-what looks like a secret left out.
+`applyClickReportSuccess` and `setLocalClickCount` come by). `mod.app.store` is that, with a plain copy of the state, or
+the store itself (`raw`).
 
 The main window listens for `cat-panel-action` (the panel's way of telling it things): `set-pet-hidden`, `ready`, `close`,
 `tab-click`, `set-room-id-input`, `create-room`, `join-room`, `leave-room`, `toggle-room-member`, `select-appearance`,
 `collect-change`, `dismiss-all-new-assets`, `create-preset`, `delete-preset`, `apply-preset`, `synthesis-success`,
 `emote-preview-active`, `reorder-emotes`, `redeem-success`, `clear-local-clicks`, `pet-clap` (the last counts a click, and
-`clear-local-clicks` sets the count). `mod.app.action` sends only the first group (pet hidden, the room commands).
+`clear-local-clicks` sets the count). `mod.app.action` sends any of them.
 Official keys that other tools keep away from: F7 (closes game mode), F8 (next display), F9 (hide or show the pets),
 Ctrl+Alt+P (mouse passes through), Ctrl+Alt+1..5 (the equipped emotes).
