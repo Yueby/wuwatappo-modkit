@@ -31,7 +31,8 @@ import { validRange } from './semver.js';
 // a mod could rely on changes in a way that breaks it, or something is added that a mod can then not do without.
 // 2: `mod.app` and the "app-internals" permission (the app's own state, see app-patch.js).
 // 3: `mod.app.store` (the app's Pinia stores, read and watched) and `mod.app.action` (the panel's commands).
-export const LOADER_API = 3;
+// 4: `mod.page` (the components of each window, watching them, putting nodes into them) and the pet's elements.
+export const LOADER_API = 4;
 
 export const WINDOWS = ['main', 'panel', 'login', 'update', 'toast', 'about', 'oss-notice'];
 

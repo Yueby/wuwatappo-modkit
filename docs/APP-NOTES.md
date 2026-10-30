@@ -459,6 +459,17 @@ missing ones. Seen on a screenshot of the screen: the pet set to another place w
 `scheduleSyncHitRegionAfterPaint()` and then `syncMainHitRegion()` were called, then it was. `app-patch.js` hands both
 out as `__wuwaApp.hit`, and `mod.app.pet.move` / `mod.app.members.place` call them after every setting.
 
+## Without patching: the components of a page
+
+Vue's instances are reachable from `#app._vnode` in every window (a walk of `vnode.component`, `subTree`, `children`,
+`dynamicChildren`), each with its name (`type.__name`) and props; the setup state is empty (inline templates), and there is
+no `__vnode` on an element. That is what `mod.page` is built on (checked on 1.0.3: main `App > RouterView > index >
+EmotionMenu, RewardCountdownBubble`; panel `... MainModulePanel > SettingsModule > ShortcutInput` or `MainPanelBagTab >
+BagAtlasTypeTabs > BagAtlasGroupList > BagAtlasVirtualList > BagAtlasItem`; login `LoginDialogs > LoginSelectDialog >
+ForeignRoleSelectDialog > UidLoginDialog`). A node put into a component's element by hand survives the app's own
+updates (Vue only removes what it made), and is put back by `mount` when the part is drawn anew. Seen on a screenshot:
+`mod.app.pet.css` gave the pet a glow and `mod.page.mount` put a badge over it.
+
 ## Without patching: the stores and the panel's commands
 
 Seen in other projects and checked here on 1.0.3: the page has Pinia, reachable from any window as

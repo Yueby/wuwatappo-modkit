@@ -71,7 +71,7 @@ the window-to-file map is `modkit.windows`).
 | `modkit.defaultEnabled` | whether the master switch starts on; default `true` |
 | `modkit.windows` | which file runs in which window: `{ "main": "main.js", "panel": "ui.js" }`, or `"*"` for all of them. Default: `index.js` in every window, or none when there is a Node part |
 | `modkit.host` | the mod's Node part, an ES module in the folder: `"host.js"` (see [The Node part](#the-node-part)) |
-| `modkit.api` | the version of modkit's interface the mod was written for; default `1`; `2` has `mod.app` (below), `3` has `mod.app.store` and `mod.app.action`. A mod that says more than this modkit has is listed as broken ("update modkit") instead of failing in ways nobody can read |
+| `modkit.api` | the version of modkit's interface the mod was written for; default `1`; `2` has `mod.app` (below), `3` has `mod.app.store` and `mod.app.action`, `4` has `mod.page` and the pets' elements. A mod that says more than this modkit has is listed as broken ("update modkit") instead of failing in ways nobody can read |
 | `modkit.requires` | other mods it needs, with the versions that will do: `{ "other-mod": "^1.2.0" }` (see [Mods using each other](#mods-using-each-other)) |
 | `modkit.permissions` | what it will do beyond showing a page, for whoever installs it to read: `["network", "files"]`. Declared, **not enforced** |
 | `engines.node` | the standard field: the Node versions it works with, e.g. `">=22"`. A mod needing a newer Node than runs the loader is listed as broken |
@@ -143,6 +143,7 @@ mod.entry({ title, ... })      // add a row from code (below)
 mod.log(...args)               // to the console and to the MOD page's log, under the mod's name
 mod.warn(...args)              // the same, as a warning
 mod.app                        // the app's own state: the pets' places (API 2, below)
+mod.page                       // the pages: each window's components, watching them, putting nodes in (API 4, below)
 ```
 
 A key that is not declared under `modkit.settings` throws, on purpose: a typo should be an error, not a
@@ -483,6 +484,43 @@ found by it (`tests/app-patch.test.js` runs on them when they are extracted).
 
 What a mod does with it is its own: the pet-position plugin in the registry is the example (remember where the person
 dragged each pet, put it back after a restart or a room).
+
+## The pages: `mod.page` and the pets as elements
+
+Every window is a page drawn from Vue components with names (`MainPanelBagTab`, `SettingsModule`, `EmotionMenu`, ...). `mod.page`
+finds them, tells when one appears (a tab opened, a dialog shown), and puts a node of the mod's own into the page and
+keeps it there when the app draws that part again. It works in every window (declare `"api": 4`), and needs nothing
+patched:
+
+```js
+mod.page.window                     // "main", "panel", "login", "update", "toast", "about", "oss-notice"
+mod.page.route()                    // "/", "/panel", ...
+mod.page.components()               // [{ name, el, props }] on the page now; el is null for one without an element of its own
+mod.page.find(name)                 // the first with that name, or null
+mod.page.onComponent(name, fn)      // fn({ name, el, props }) now and each time one appears; what fn returns runs when it goes away
+mod.page.onElement(selector, fn)    // the same for an element, by selector
+mod.page.mount(target, node, opts)  // put a node in and keep it there; target is an element, a selector, or { component: name };
+                                    // opts.where is "append" (default), "prepend", "before" or "after"; returns what takes it away
+
+mod.app.pet.element()               // .pet-dock       (the whole dock)
+mod.app.pet.content()               // .pet-dock-content (the pet's body)
+mod.app.pet.onElement(fn)           // fn(el) when the body appears (and again if the app draws it anew)
+mod.app.pet.css(text)               // a stylesheet nested under the pet's body: mod.app.pet.css('.cat-mainbox { filter: drop-shadow(0 0 10px gold) }')
+mod.app.members.element(id)         // a player's pet as an element
+mod.app.members.onElement(fn)       // fn(el) for each player's pet as it appears
+mod.app.members.css(text, id?)      // a stylesheet for all the players' pets, or the one
+```
+
+`mount` is what a mod puts things on a page with: the page is drawn again by the app (a tab is left and opened again, a
+list is redrawn), and what was put in by hand is gone, so the node is looked after: when its target is drawn anew it is put
+back, when the target is gone it is taken out, and when the mod stops it goes. Components are named by the app's own
+source (they survive minifying): the pet window has `index`, `EmotionMenu`, `RewardCountdownBubble`; the panel has
+`MainModulePanel` with a tab each (`SettingsModule`, `MainPanelBagTab`, `MainPanelRoomTab`, ...), and inside them `BagAtlas*`,
+`ShortcutInput`, `RoleSwitchEmoteConfirmOverlay`; the login window has `LoginDialogs`, `LoginSelectDialog`,
+`ForeignRoleSelectDialog`, `UidLoginDialog`. `mod.page.components()` lists what a page has now.
+
+What is put into a component is plain DOM (the page is not Vue's to the mod): the app does not know of it, and an update
+of the app can change a component's markup. A mod keeps to the component's outer element and its own nodes.
 
 ## What a mod can and cannot reach
 

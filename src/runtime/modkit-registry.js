@@ -568,6 +568,142 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
       return fn;
     };
 
+    // The pages: what each window shows, as the Vue components the app draws it from. Works in every window.
+    //   window                    the window's label ("main", "panel", "login", ...)
+    //   route()                   the page it shows ("/", "/panel", ...)
+    //   components()              [{ name, el, props }] the components on the page now (el is null for one without a
+    //                             single element of its own)
+    //   find(name)                the first one with that name, or null
+    //   onComponent(name, fn)     fn({ el, props, name }) for each component with that name, now and whenever one
+    //                             appears (a tab being opened, a dialog); what fn returns is called when it goes away;
+    //                             returns what stops listening
+    //   onElement(selector, fn)   the same for an element, by selector
+    //   mount(target, node, opts) puts a node of the mod's own into the page and keeps it there, though the app draws
+    //                             the part again. target: an element, a selector, or { component: name }; opts.where:
+    //                             "append" (default), "prepend", "before", "after"; returns what takes the node away
+    const pageApi = (() => {
+      const rootNode = () => document.querySelector('#app')?._vnode ?? null;
+      const nameOf = instance => instance.type?.__name || instance.type?.name || '';
+      // every component instance under the app's root, outermost first
+      const walk = () => {
+        const found = [];
+        const seen = new Set();
+        const visit = (vnode, depth) => {
+          if (!vnode || depth > 60 || seen.has(vnode)) return;
+          seen.add(vnode);
+          const instance = vnode.component;
+          if (instance) {
+            const el = instance.subTree?.el;
+            found.push({ name: nameOf(instance), el: el?.nodeType === 1 ? el : null, props: instance.props, instance });
+            visit(instance.subTree, depth + 1);
+          }
+          if (Array.isArray(vnode.children)) vnode.children.forEach(child => visit(child, depth + 1));
+          if (vnode.dynamicChildren) vnode.dynamicChildren.forEach(child => visit(child, depth + 1));
+        };
+        visit(rootNode(), 0);
+        return found;
+      };
+      const info = ({ name, el, props }) => ({ name, el, props });
+
+      // One watcher for everything that asks "when does this appear": the page is looked at again, a moment after
+      // it changed, and the ones that came and went are told.
+      const watchers = new Set();
+      let observer = null;
+      let scheduled = null;
+      const scan = () => {
+        scheduled = null;
+        if (running.dead) return;
+        const components = watchers.size ? walk() : [];
+        for (const watcher of [...watchers]) watcher(components);
+      };
+      const schedule = () => {
+        if (scheduled === null) scheduled = setTimeout(scan, 60);
+      };
+      const addWatcher = fn => {
+        watchers.add(fn);
+        if (!observer) {
+          observer = new MutationObserver(schedule);
+          observer.observe(document.documentElement, { childList: true, subtree: true });
+        }
+        schedule();
+        return () => {
+          watchers.delete(fn);
+          if (!watchers.size) { observer?.disconnect(); observer = null; }
+        };
+      };
+      // `items(components)` gives the things now there, each with a key; `fn(item)` may return a cleanup
+      const track = (items, fn) => {
+        const alive = new Map();
+        const stop = addWatcher(components => {
+          const now = new Set();
+          for (const item of items(components)) {
+            now.add(item.key);
+            if (alive.has(item.key)) continue;
+            let cleanup;
+            try { cleanup = fn(item.value); } catch (err) { console.error(`[${id}] page watcher failed`, err); }
+            alive.set(item.key, typeof cleanup === 'function' ? cleanup : null);
+          }
+          for (const [key, cleanup] of [...alive]) {
+            if (now.has(key)) continue;
+            alive.delete(key);
+            try { cleanup?.(); } catch (err) { console.error(`[${id}] page cleanup failed`, err); }
+          }
+        });
+        const remove = () => {
+          stop();
+          for (const cleanup of alive.values()) { try { cleanup?.(); } catch { /* going away anyway */ } }
+          alive.clear();
+        };
+        onDispose(remove);
+        return remove;
+      };
+
+      const resolve = target => {
+        if (target instanceof Element) return target.isConnected ? target : null;
+        if (typeof target === 'string') return document.querySelector(target);
+        if (target && typeof target === 'object' && target.component) return walk().find(c => c.name === target.component && c.el)?.el ?? null;
+        return null;
+      };
+      const attach = (target, node, where) => {
+        if (where === 'before') target.before(node);
+        else if (where === 'after') target.after(node);
+        else if (where === 'prepend') target.prepend(node);
+        else target.append(node);
+      };
+      const placed = (target, node, where) => {
+        if (where === 'before') return node.parentNode === target.parentNode && node.nextSibling === target;
+        if (where === 'after') return node.parentNode === target.parentNode && node.previousSibling === target;
+        return node.parentNode === target;
+      };
+
+      return {
+        window: label,
+        route: () => (location.hash.replace(/^#/, '') || '/'),
+        components: () => walk().map(info),
+        find: name => { const found = walk().find(c => c.name === name); return found ? info(found) : null; },
+        onComponent: (name, fn) => track(components => components.filter(c => c.name === name).map(c => ({ key: c.instance, value: info(c) })), fn),
+        onElement: (selector, fn) => track(() => [...document.querySelectorAll(selector)].map(el => ({ key: el, value: el })), fn),
+        mount(target, node, { where = 'append' } = {}) {
+          let removed = false;
+          const keep = () => {
+            if (removed || running.dead) return;
+            const el = resolve(target);
+            if (el && !placed(el, node, where)) attach(el, node, where);
+            else if (!el && node.isConnected) node.remove();
+          };
+          const stop = addWatcher(keep);
+          const remove = () => {
+            removed = true;
+            stop();
+            node.remove();
+          };
+          onDispose(remove);
+          keep();
+          return remove;
+        },
+      };
+  })();
+
     return {
       name: id,
       invoke: (cmd, args) => T.invoke(cmd, args),
@@ -688,6 +824,8 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
       //                           store (it is only watched: nothing is replaced); returns what stops watching
       //   action(type, payload)   sends the app's main window a command of the kind its panel sends (the event
       //                           "cat-panel-action"), any of them: set-pet-hidden { hidden }, join-room, leave-room, ...
+      page: pageApi,
+
       app: (() => {
         const internals = () => window.__wuwaApp;
         // The window is cut to where the pets are: the native side is told after the page has drawn them in their new
@@ -708,6 +846,15 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
           for (const [key, item] of Object.entries(value)) copy[key] = plain(item, depth + 1);
           return copy;
         };
+        const scopedCss = (scope, text) => {
+          const style = document.createElement('style');
+          style.textContent = scope + '{' + text + '}';
+          style.dataset.wuwaMod = id;
+          (document.head ?? document.documentElement).appendChild(style);
+          const remove = () => style.remove();
+          onDispose(remove);
+          return remove;
+        };
         const listen = (name, fn) => {
           const handler = event => { if (!running.dead) fn(event.detail); };
           window.addEventListener(name, handler);
@@ -719,6 +866,11 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
           available: () => !!internals()?.pet,
           status: () => window.__wuwaAppPatch ?? null,
           pet: {
+            // the pet's elements, and a stylesheet for them (the rules are nested under the pet's content)
+            element: () => document.querySelector('.pet-dock'),
+            content: () => document.querySelector('.pet-dock-content'),
+            onElement: fn => pageApi.onElement('.pet-dock-content', fn),
+            css: text => scopedCss('.pet-dock-content', text),
             position() {
               const pet = internals()?.pet;
               return pet ? { left: pet.left.value, top: pet.top.value } : null;
@@ -760,6 +912,10 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
             return T.invoke('plugin:event|emit', { event: 'cat-panel-action', payload: { ...payload, type } });
           },
           members: {
+            // a player's pet as an element, a stylesheet for them (all, or the one with the id), and when one appears
+            element: memberId => document.querySelector('[data-room-cat-id="' + memberId + '"]'),
+            onElement: fn => pageApi.onElement('[data-room-cat-id]', fn),
+            css: (text, memberId) => scopedCss(memberId === undefined ? '[data-room-cat-id]' : '[data-room-cat-id="' + memberId + '"]', text),
             list() {
               const members = internals()?.members;
               if (!members) return [];
