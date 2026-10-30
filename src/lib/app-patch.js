@@ -109,14 +109,22 @@ function esc(text) {
   return text.replace(/[$]/g, '\\$&');
 }
 
-// The script with what it can be given added. Returns { text, applied: [name], missing: [name] }; `text` is the
-// script as it was when nothing applied.
+// The script with what it can be given added. Returns { text, applied: [name], missing: [name], ambiguous: [name] };
+// `text` is the script as it was when nothing applied. A shape that is found twice is as good as not found (which of
+// the two is the app's own is not known): the rule is left out, and named in `ambiguous` as well as in `missing`.
 export function patchScript(script) {
   const applied = [];
   const missing = [];
+  const ambiguous = [];
   const edits = [];
   for (const rule of RULES) {
-    const match = rule.find.exec(script);
+    const found = [...script.matchAll(new RegExp(rule.find.source, 'g'))];
+    if (found.length > 1) {
+      missing.push(rule.name);
+      ambiguous.push(rule.name);
+      continue;
+    }
+    const match = found[0] ?? null;
     const edit = match ? rule.build(match, script) : null;
     if (!edit || (rule.boundary && !/[};]$/.test(script.slice(Math.max(0, edit.at - 40), edit.at).trimEnd()))) {
       missing.push(rule.name);
@@ -128,7 +136,7 @@ export function patchScript(script) {
   // From the end, so that the places of the earlier ones stay where they were found.
   let text = script;
   for (const { at, text: added } of edits.sort((a, b) => b.at - a.at)) text = text.slice(0, at) + added + text.slice(at);
-  return { text, applied, missing };
+  return { text, applied, missing, ambiguous };
 }
 
 // Is this script one that can hold any of it: the app's main window script is the one with the pet in it.

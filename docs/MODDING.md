@@ -71,7 +71,7 @@ the window-to-file map is `modkit.windows`).
 | `modkit.defaultEnabled` | whether the master switch starts on; default `true` |
 | `modkit.windows` | which file runs in which window: `{ "main": "main.js", "panel": "ui.js" }`, or `"*"` for all of them. Default: `index.js` in every window, or none when there is a Node part |
 | `modkit.host` | the mod's Node part, an ES module in the folder: `"host.js"` (see [The Node part](#the-node-part)) |
-| `modkit.api` | the version of modkit's interface the mod was written for; default `1`; `2` is what has `mod.app` (below). A mod that says more than this modkit has is listed as broken ("update modkit") instead of failing in ways nobody can read |
+| `modkit.api` | the version of modkit's interface the mod was written for; default `1`; `2` has `mod.app` (below), `3` has `mod.app.store` and `mod.app.action`. A mod that says more than this modkit has is listed as broken ("update modkit") instead of failing in ways nobody can read |
 | `modkit.requires` | other mods it needs, with the versions that will do: `{ "other-mod": "^1.2.0" }` (see [Mods using each other](#mods-using-each-other)) |
 | `modkit.permissions` | what it will do beyond showing a page, for whoever installs it to read: `["network", "files"]`. Declared, **not enforced** |
 | `engines.node` | the standard field: the Node versions it works with, e.g. `">=22"`. A mod needing a newer Node than runs the loader is listed as broken |
@@ -452,6 +452,22 @@ mod.app.members.place(id, l, t) // put one there (and the window is told where i
 mod.app.members.clamp(l, t)     // { left, top }: the nearest place the app lets a pet be at
 mod.app.members.onDragged(fn)   // fn(id): the person let go of a player's pet after dragging it
 ```
+
+Two more need no change of the app's script, and work in every window (declare `"api": 3`, and "app-internals" so that
+the person is told):
+
+```js
+mod.app.store.available()        // the app's stores (Pinia) can be read here
+mod.app.store.names()            // ["GlobalState"]
+mod.app.store.state(name)        // a plain copy of a store's state, or null; what looks like a secret (token, login, ...) is left out
+mod.app.store.onAction(name, fn) // fn({ action, args, after(cb), onError(cb) }) when the app runs one of the store's actions
+                                 // (applyClickReportSuccess, setLocalClickCount, ...); it is only watched, nothing is replaced
+mod.app.action(type, payload)    // one of the commands the app's panel sends its main window: set-pet-hidden { hidden },
+                                 // set-room-id-input { value }, create-room, join-room, leave-room, toggle-room-member { memberId }
+```
+
+`action` is a list that is kept short on purpose: what changes a count or an account (`clear-local-clicks`, `pet-clap`,
+`redeem-success`, ...) is not on it, and anything else throws.
 
 The places of the other players' pets are the app's own and local: setting one does not send anything to the room.
 The pets are told as `left` / `top` of the dock, the same numbers the page's `style` has. A pet that is not yet in

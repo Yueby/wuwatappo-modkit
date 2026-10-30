@@ -49,11 +49,11 @@ export class AppOpener {
       const { body, base64Encoded } = await session.send('Fetch.getResponseBody', { requestId });
       const script = base64Encoded ? Buffer.from(body, 'base64').toString('utf8') : body;
       if (!mayHoldPet(script)) return await session.send('Fetch.continueRequest', { requestId });
-      const { text, applied, missing } = patchScript(script);
-      this.last = { applied, missing };
-      this.#log(`main script: ${applied.length ? `opened ${applied.join(', ')}` : 'nothing could be opened'}${missing.length ? `; not found: ${missing.join(', ')}` : ''}`);
+      const { text, applied, missing, ambiguous } = patchScript(script);
+      this.last = { applied, missing, ambiguous };
+      this.#log(`main script: ${applied.length ? `opened ${applied.join(', ')}` : 'nothing could be opened'}${missing.length ? `; not found: ${missing.filter(name => !ambiguous.includes(name)).join(', ') || '-'}` : ''}${ambiguous.length ? `; found more than once, left alone: ${ambiguous.join(', ')}` : ''}`);
       if (!applied.length) return await session.send('Fetch.continueRequest', { requestId });
-      const marker = `window.__wuwaAppPatch=${JSON.stringify({ applied, missing })};`;
+      const marker = `window.__wuwaAppPatch=${JSON.stringify({ applied, missing, ambiguous })};`;
       const headers = (params.responseHeaders ?? []).filter(h => !/^content-(length|encoding)$/i.test(h.name));
       await session.send('Fetch.fulfillRequest', {
         requestId,

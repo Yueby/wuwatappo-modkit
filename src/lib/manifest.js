@@ -30,7 +30,8 @@ import { validRange } from './semver.js';
 // as broken with that said, instead of failing in some way nobody can read. Raise it when something
 // a mod could rely on changes in a way that breaks it, or something is added that a mod can then not do without.
 // 2: `mod.app` and the "app-internals" permission (the app's own state, see app-patch.js).
-export const LOADER_API = 2;
+// 3: `mod.app.store` (the app's Pinia stores, read and watched) and `mod.app.action` (the panel's commands).
+export const LOADER_API = 3;
 
 export const WINDOWS = ['main', 'panel', 'login', 'update', 'toast', 'about', 'oss-notice'];
 

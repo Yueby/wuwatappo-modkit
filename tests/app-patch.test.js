@@ -98,7 +98,17 @@ test('letting go of a pet after dragging it is told, a moment later: the person\
 
 test('what it does not find, it leaves alone, and says so; the script is then the one it was', () => {
   const none = 'const a=1;function b(){return{x:1}}';
-  assert.deepEqual(patchScript(none), { text: none, applied: [], missing: ['pet', 'hit-region', 'pet-dragged', 'members', 'member-dragged'] });
+  assert.deepEqual(patchScript(none), { text: none, applied: [], missing: ['pet', 'hit-region', 'pet-dragged', 'members', 'member-dragged'], ambiguous: [] });
+});
+
+test('a shape that is found twice is left alone, and named: which of the two is the one of the app is not known', () => {
+  const twice = SCRIPT + SCRIPT.slice(SCRIPT.indexOf('function Hd()'), SCRIPT.indexOf('function make()'));
+  const { text, applied, missing, ambiguous } = patchScript(twice);
+  assert.deepEqual(ambiguous.sort(), ['hit-region', 'member-dragged', 'members']);
+  assert.ok(missing.includes('members') && missing.includes('member-dragged'));
+  assert.deepEqual(applied.sort(), ['pet', 'pet-dragged']);
+  assert.ok(!text.includes('.members='), 'nothing was added for the ambiguous ones');
+  assert.ok(!text.includes('wuwa-member-dragged'));
 });
 
 test('a script that is not the app\'s main one is not looked at', () => {

@@ -458,3 +458,21 @@ or to a member does not do that by itself; a click on any pet makes the app do i
 missing ones. Seen on a screenshot of the screen: the pet set to another place was not drawn anywhere until
 `scheduleSyncHitRegionAfterPaint()` and then `syncMainHitRegion()` were called, then it was. `app-patch.js` hands both
 out as `__wuwaApp.hit`, and `mod.app.pet.move` / `mod.app.members.place` call them after every setting.
+
+## Without patching: the stores and the panel's commands
+
+Seen in other projects and checked here on 1.0.3: the page has Pinia, reachable from any window as
+`#app.__vue_app__.config.globalProperties.$pinia._s` (a Map of stores). There is one, `GlobalState` (`userInfo`,
+`loginInfo`, `localClickCount`, `countdownEndTime`, `serverClickSpend`, ...; actions `incrementLocalClickCount`,
+`setLocalClickCount`, `applyClickReportSuccess`, `applyChestClickConsume`, `spendClickCount`, `updateUserInfo`, ...).
+`store.$onAction(fn, true)` watches the actions as they run without replacing them (it saw the app's own
+`applyClickReportSuccess` and `setLocalClickCount` come by). `mod.app.store` is that, with a plain copy of the state and
+what looks like a secret left out.
+
+The main window listens for `cat-panel-action` (the panel's way of telling it things): `set-pet-hidden`, `ready`, `close`,
+`tab-click`, `set-room-id-input`, `create-room`, `join-room`, `leave-room`, `toggle-room-member`, `select-appearance`,
+`collect-change`, `dismiss-all-new-assets`, `create-preset`, `delete-preset`, `apply-preset`, `synthesis-success`,
+`emote-preview-active`, `reorder-emotes`, `redeem-success`, `clear-local-clicks`, `pet-clap` (the last counts a click, and
+`clear-local-clicks` sets the count). `mod.app.action` sends only the first group (pet hidden, the room commands).
+Official keys that other tools keep away from: F7 (closes game mode), F8 (next display), F9 (hide or show the pets),
+Ctrl+Alt+P (mouse passes through), Ctrl+Alt+1..5 (the equipped emotes).
