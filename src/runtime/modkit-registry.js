@@ -38,6 +38,7 @@ kit.mods ??= new Map();       // id -> manifest, for every user mod installed in
 kit.units ??= new Map();      // id -> this window's installation of it
 kit.reports ??= new Map();    // id -> Map(window label -> { status, error }), from every window
 kit.live ??= new Map();       // id -> Map(key -> value), from every window
+kit.assetNamer ??= null;      // the app's own function that gives a skin, an accessory or an emote its name (see mod.app.assetName)
 kit.watchers ??= [];          // { id, key, fn }: mods listening for a setting to change
 kit.hostCalls ??= new Map();  // callId -> { resolve, reject, timer }: calls to a Node part, unanswered
 kit.hostListeners ??= [];     // { id, name, fn }: mod.host.on
@@ -822,6 +823,8 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
       //   store.raw(name)         the store itself (its state and its actions), or null
       //   store.onAction(name, fn) fn({ action, args, after(cb), onError(cb) }) each time the app runs an action of the
       //                           store (it is only watched: nothing is replaced); returns what stops watching
+      //   assetName(type, file)   the name the app shows for an item (type: "character_skin", "accessory", "emote", with
+      //                           or without "_atlas"; file: its asset_name), as a promise; null when it cannot be told
       //   action(type, payload)   sends the app's main window a command of the kind its panel sends (the event
       //                           "cat-panel-action"), any of them: set-pet-hidden { hidden }, join-room, leave-room, ...
       page: pageApi,
@@ -906,6 +909,34 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
               onDispose(stop);
               return stop;
             },
+          },
+          // The app has a function for the names it shows (resolveAssetDisplayName, in the script that the windows share,
+          // exported under a short name): it is found by that name in the script's export list, and used as it is.
+          async assetName(type, file) {
+            kit.assetNamer ??= (async () => {
+              const urls = new Set([...document.querySelectorAll('link[rel=modulepreload]')].map(link => link.href));
+              for (const entry of performance.getEntriesByType('resource')) if (entry.name.includes('/assets/') && entry.name.includes('.js')) urls.add(entry.name);
+              for (const url of urls) {
+                const text = await (await fetch(url)).text();
+                const tail = text.slice(text.lastIndexOf('export{'));
+                const at = tail.indexOf('resolveAssetDisplayName as ');
+                if (at < 0) continue;
+                const fn = (await import(url))[tail.slice(at + 27).split(/[,}]/)[0]];
+                if (typeof fn === 'function') return fn;
+              }
+              return null;
+            })().catch(() => null);
+            const namer = await kit.assetNamer;
+            if (!namer) {
+              kit.assetNamer = null;                 // asked for again next time: the page may not have loaded it yet
+              return null;
+            }
+            try {
+              const name = namer(type, file);
+              return typeof name === 'string' && name ? name : null;
+            } catch {
+              return null;
+            }
           },
           action(type, payload = {}) {
             if (typeof type !== 'string' || !type) throw new Error('action needs the name of a command');

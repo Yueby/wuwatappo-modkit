@@ -32,7 +32,8 @@ import { validRange } from './semver.js';
 // 2: `mod.app` and the "app-internals" permission (the app's own state, see app-patch.js).
 // 3: `mod.app.store` (the app's Pinia stores, read and watched) and `mod.app.action` (the panel's commands).
 // 4: `mod.page` (the components of each window, watching them, putting nodes into them) and the pet's elements.
-export const LOADER_API = 4;
+// 5: `mod.app.assetName` (the name the app shows for a skin, an accessory, an emote).
+export const LOADER_API = 5;
 
 export const WINDOWS = ['main', 'panel', 'login', 'update', 'toast', 'about', 'oss-notice'];
 

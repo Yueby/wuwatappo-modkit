@@ -71,7 +71,7 @@ the window-to-file map is `modkit.windows`).
 | `modkit.defaultEnabled` | whether the master switch starts on; default `true` |
 | `modkit.windows` | which file runs in which window: `{ "main": "main.js", "panel": "ui.js" }`, or `"*"` for all of them. Default: `index.js` in every window, or none when there is a Node part |
 | `modkit.host` | the mod's Node part, an ES module in the folder: `"host.js"` (see [The Node part](#the-node-part)) |
-| `modkit.api` | the version of modkit's interface the mod was written for; default `1`; `2` has `mod.app` (below), `3` has `mod.app.store` and `mod.app.action`, `4` has `mod.page` and the pets' elements. A mod that says more than this modkit has is listed as broken ("update modkit") instead of failing in ways nobody can read |
+| `modkit.api` | the version of modkit's interface the mod was written for; default `1`; `2` has `mod.app` (below), `3` has `mod.app.store` and `mod.app.action`, `4` has `mod.page` and the pets' elements, `5` has `mod.app.assetName`. A mod that says more than this modkit has is listed as broken ("update modkit") instead of failing in ways nobody can read |
 | `modkit.requires` | other mods it needs, with the versions that will do: `{ "other-mod": "^1.2.0" }` (see [Mods using each other](#mods-using-each-other)) |
 | `modkit.permissions` | what it will do beyond showing a page, for whoever installs it to read: `["network", "files"]`. Declared, **not enforced** |
 | `engines.node` | the standard field: the Node versions it works with, e.g. `">=22"`. A mod needing a newer Node than runs the loader is listed as broken |
@@ -465,6 +465,8 @@ mod.app.store.state(name)        // a plain copy of a store's state, or null (al
 mod.app.store.raw(name)          // the store itself, with its actions (updateUserInfo, setLocalClickCount, ...); null when there is none
 mod.app.store.onAction(name, fn) // fn({ action, args, after(cb), onError(cb) }) when the app runs one of the store's actions
                                  // (applyClickReportSuccess, setLocalClickCount, ...); it is only watched, nothing is replaced
+mod.app.assetName(type, file)     // the name the app shows for an item (type "character_skin", "accessory", "emote", with or without
+                                 // "_atlas"; file the item's asset_name), as a promise of a string, or null when it cannot be told
 mod.app.action(type, payload)    // a command of the kind the app's panel sends its main window (the event "cat-panel-action"):
                                  // set-pet-hidden { hidden }, set-room-id-input { value }, create-room, join-room, leave-room,
                                  // toggle-room-member { memberId }, ... (APP-NOTES.md lists the ones the app has)
