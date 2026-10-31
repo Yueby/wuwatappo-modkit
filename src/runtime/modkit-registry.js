@@ -839,6 +839,9 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
           hit.afterPaint();
           setTimeout(() => { if (!running.dead) hit.sync(); }, 120);
         };
+        // the taskbar's room at the edges of the screen, for the free area a pet is kept in
+        const askTaskbar = () => T.invoke('get_main_taskbar_insets').then(insets => { kit.taskbar = insets; }, () => {});
+        askTaskbar();
         const pinia = () => document.querySelector('#app')?.__vue_app__?.config?.globalProperties?.$pinia;
         // A plain copy of what a store holds, so that reading it cannot change it by accident.
         const plain = (value, depth = 0) => {
@@ -858,6 +861,106 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
           onDispose(remove);
           return remove;
         };
+        // What the person does to a pet is told by the app's own state (is it held, has it moved while held), looked at
+        // once a frame, and only while somebody listens: press, dragstart, drag { vx, vy } (px a second), release
+        // { moved, heldMs }, and click { heldMs } when it was let go without having moved.
+        const trackers = new Set();
+        let frame = 0;
+        const pump = () => {
+          frame = 0;
+          if (running.dead) return;
+          const now = performance.now();
+          for (const tick of [...trackers]) {
+            try { tick(now); } catch (err) { console.error(`[${id}] interaction watcher failed`, err); }
+          }
+          if (trackers.size) frame = requestAnimationFrame(pump);
+        };
+        const track = tick => {
+          trackers.add(tick);
+          if (!frame) frame = requestAnimationFrame(pump);
+          const remove = () => trackers.delete(tick);
+          onDispose(remove);
+          return remove;
+        };
+        // One gesture at a time: `read()` says { held, moved, left, top } of what is watched, or null when it is not there.
+        const gesture = (read, send) => {
+          let down = false;
+          let moved = false;
+          let since = 0;
+          let last = null;
+          return now => {
+            const state = read();
+            if (!state) return;
+            if (state.held && !down) {
+              down = true;
+              moved = false;
+              since = now;
+              last = { left: state.left, top: state.top, t: now };
+              send({ type: 'press' });
+            } else if (state.held && down) {
+              if (state.moved && !moved) {
+                moved = true;
+                send({ type: 'dragstart' });
+              }
+              if (moved && last && now > last.t) {
+                const seconds = (now - last.t) / 1000;
+                send({ type: 'drag', vx: (state.left - last.left) / seconds, vy: (state.top - last.top) / seconds });
+              }
+              last = { left: state.left, top: state.top, t: now };
+            } else if (!state.held && down) {
+              down = false;
+              send({ type: 'release', moved, heldMs: now - since });
+              if (!moved) send({ type: 'click', heldMs: now - since });
+            }
+          };
+        };
+        // A pet let go with a speed goes on by itself: it slows down (friction, a share of the speed lost each second),
+        // bounces off the edges of the free area (restitution, a share of the speed kept), and is put down where it
+        // stops. `target` says how: { read() -> { left, top }, write(left, top), bounds() -> { minLeft, maxLeft, minTop,
+        // maxTop }, held() -> the person has taken it again, commit(left, top), announce() }.
+        const glide = (target, { vx = 0, vy = 0, friction = 2.6, bounce = 0.72, minSpeed = 30, onFrame, onBump, onEnd } = {}) => {
+          kit.gliding ??= 0;
+          const bounds = target.bounds();
+          let { left, top } = target.read();
+          let last = performance.now();
+          let slow = 0;
+          let done = false;
+          let remove = () => {};
+          const finish = why => {
+            if (done) return;
+            done = true;
+            remove();
+            kit.gliding -= 1;
+            target.commit(left, top);
+            target.announce();
+            try { onEnd?.({ why, left, top }); } catch (err) { console.error(`[${id}] glide end failed`, err); }
+          };
+          kit.gliding += 1;
+          const tick = now => {
+            if (target.held()) return finish('grabbed');
+            const dt = Math.min(0.034, Math.max(0.001, (now - last) / 1000));
+            last = now;
+            const keep = Math.exp(-friction * dt);
+            vx *= keep;
+            vy *= keep;
+            left += vx * dt;
+            top += vy * dt;
+            for (const [axis, low, high] of [['x', bounds.minLeft, bounds.maxLeft], ['y', bounds.minTop, bounds.maxTop]]) {
+              const value = axis === 'x' ? left : top;
+              if (value >= low && value <= high) continue;
+              const speed = Math.abs(axis === 'x' ? vx : vy);
+              if (axis === 'x') { left = value < low ? low : high; vx = -vx * bounce; } else { top = value < low ? low : high; vy = -vy * bounce; }
+              if (speed > 120) { try { onBump?.({ axis, speed, side: value < low ? 'min' : 'max' }); } catch (err) { console.error(`[${id}] glide bump failed`, err); } }
+            }
+            target.write(left, top);
+            try { onFrame?.({ vx, vy, left, top }); } catch (err) { console.error(`[${id}] glide frame failed`, err); }
+            slow = Math.hypot(vx, vy) < minSpeed ? slow + dt : 0;
+            if (slow > 0.12) finish('rest');
+          };
+          remove = track(tick);
+          onDispose(() => finish('stopped'));
+          return { stop: () => finish('stopped') };
+        };
         const listen = (name, fn) => {
           const handler = event => { if (!running.dead) fn(event.detail); };
           window.addEventListener(name, handler);
@@ -865,7 +968,7 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
           onDispose(remove);
           return remove;
         };
-        return {
+        const self = {
           available: () => !!internals()?.pet,
           status: () => window.__wuwaAppPatch ?? null,
           pet: {
@@ -873,6 +976,46 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
             element: () => document.querySelector('.pet-dock'),
             content: () => document.querySelector('.pet-dock-content'),
             onElement: fn => pageApi.onElement('.pet-dock-content', fn),
+            // true while a mod is gliding a pet (what puts a pet back in its place waits)
+            busy: () => (kit.gliding ?? 0) > 0,
+            // Let go of the pet with a speed (px a second): it goes on, slows down, bounces off the edges of the free area, and
+            // is put down where it stops (the app saves the place, and `onDragged` is told, as after a drag).
+            //   { vx, vy, friction = 2.6, bounce = 0.72, onFrame({ vx, vy, left, top }), onBump({ axis, speed, side }), onEnd({ why }) }
+            // returns { stop() }; it also stops when the person takes the pet again.
+            glide(options) {
+              const pet = internals()?.pet;
+              if (!pet?.held) return null;
+              askTaskbar();
+              return glide({
+                read: () => ({ left: pet.left.value, top: pet.top.value }),
+                write(left, top) {
+                  pet.left.value = left;
+                  pet.top.value = top;
+                  internals()?.hit?.afterPaint();
+                },
+                // the dock, as a box, inside what is free (the screen without the taskbar)
+                bounds() {
+                  const box = document.querySelector('.pet-dock').getBoundingClientRect();
+                  const offLeft = box.left - pet.left.value;
+                  const offTop = box.top - pet.top.value;
+                  const insets = kit.taskbar ?? { left: 0, top: 0, right: 0, bottom: 0 };
+                  return {
+                    minLeft: insets.left - offLeft,
+                    maxLeft: window.innerWidth - insets.right - box.width - offLeft,
+                    minTop: insets.top - offTop,
+                    maxTop: window.innerHeight - insets.bottom - box.height - offTop,
+                  };
+                },
+                held: () => !!pet.held.value,
+                commit: (left, top) => { self.pet.move(left, top); },
+                announce: () => window.dispatchEvent(new CustomEvent('wuwa-pet-dragged')),
+              }, options);
+            },
+            // fn({ type: 'press' | 'dragstart' | 'drag' | 'release' | 'click', ... }) for what the person does to the pet
+            onInteraction: fn => track(gesture(() => {
+              const pet = internals()?.pet;
+              return pet?.held ? { held: !!pet.held.value, moved: !!pet.moved?.value, left: pet.left.value, top: pet.top.value } : null;
+            }, fn)),
             css: text => scopedCss('.pet-dock-content', text),
             position() {
               const pet = internals()?.pet;
@@ -946,6 +1089,58 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
             // a player's pet as an element, a stylesheet for them (all, or the one with the id), and when one appears
             element: memberId => document.querySelector('[data-room-cat-id="' + memberId + '"]'),
             onElement: fn => pageApi.onElement('[data-room-cat-id]', fn),
+            // Let go of a player's pet with a speed: the same as for the person's own pet (in the room's free area).
+            glide(memberId, options) {
+              const members = internals()?.members;
+              const member = members?.list().find(m => String(m.id) === String(memberId));
+              if (!member) return null;
+              const key = String(memberId);
+              return glide({
+                read: () => {
+                  const place = members.where(member);
+                  return { left: place.left, top: place.top };
+                },
+                write(left, top) {
+                  members.place(key, left, top);
+                  internals()?.hit?.afterPaint();
+                },
+                bounds() {
+                  const low = members.clamp(-1e5, -1e5);
+                  const high = members.clamp(1e5, 1e5);
+                  return { minLeft: low.left, maxLeft: high.left, minTop: low.top, maxTop: high.top };
+                },
+                held: () => String(members.held?.()) === key,
+                commit: (left, top) => { self.members.place(key, left, top); },
+                announce: () => window.dispatchEvent(new CustomEvent('wuwa-member-dragged', { detail: { id: key } })),
+              }, options);
+            },
+            // fn({ id, type, ... }): the same, for each player's pet (it has moved when it is 3 px from where it was held)
+            onInteraction(fn) {
+              const gestures = new Map();
+              const held = new Map();
+              return track(now => {
+                const id = internals()?.members?.held?.();
+                const open = id === null || id === undefined ? null : String(id);
+                for (const key of new Set([...gestures.keys(), ...(open ? [open] : [])])) {
+                  if (!gestures.has(key)) {
+                    held.set(key, null);
+                    gestures.set(key, gesture(() => {
+                      const box = document.querySelector('[data-room-cat-id="' + key + '"]')?.getBoundingClientRect();
+                      if (!box) return null;
+                      if (key === open && !held.get(key)) held.set(key, { left: box.left, top: box.top });
+                      const origin = held.get(key);
+                      return { held: key === open, moved: !!origin && Math.hypot(box.left - origin.left, box.top - origin.top) > 3, left: box.left, top: box.top };
+                    }, event => fn({ id: key, ...event })));
+                  }
+                  gestures.get(key)(now);
+                  if (key !== open && gestures.has(key)) {
+                    // let go: it was told at that tick; the next one forgets it
+                    gestures.delete(key);
+                    held.delete(key);
+                  }
+                }
+              });
+            },
             css: (text, memberId) => scopedCss(memberId === undefined ? '[data-room-cat-id]' : '[data-room-cat-id="' + memberId + '"]', text),
             list() {
               const members = internals()?.members;
@@ -962,6 +1157,7 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
             onDragged: fn => listen('wuwa-member-dragged', detail => fn(detail?.id)),
           },
         };
+        return self;
       })(),
     };
   }

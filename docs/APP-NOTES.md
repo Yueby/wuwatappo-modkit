@@ -448,6 +448,27 @@ What does work, measured on 1.0.3 in WebView2:
   `Pt`/`Mt` for the set of pets the app places by itself, `mt`/`vt` for the writer); only the names of what is returned
   (`dockLeft`, `dockTop`, ...) are relied on, besides the shapes.
 
+## Whether a pet is held
+
+The composable of the person's own pet returns `draggingDock` (true from the press on the pet until the button goes up)
+and `movedDuringDrag` (true once the pointer has moved more than a few pixels while held; reset at the next press);
+for a player's pet the id being dragged is the ref the drag-end function reads first (null when none is). `app-patch.js`
+hands them out (`pet.held`, `pet.moved`, `members.held()`), and `mod.app.*.onInteraction` looks at them once a frame
+and tells press, dragstart, drag (with the speed), release and click. A real press and release are native events that
+the app turns into this state, so it is also what a drag made of emitted events looks like.
+
+## Where a pet can be, and moving it every frame
+
+The free area is the screen less the taskbar's room (`get_main_taskbar_insets` gives { left, top, right, bottom }; the
+taskbar was 48 px at the bottom). A player's pet is kept by the app's own clamp so that its body is inside it (1.0.3 at
+scale 0.75: shell left -25 to 2385, top -52.75 to 1181 on a 2560 x 1440 screen). The person's own pet is kept so that the
+whole dock box is inside it: the box is 204 x 248.25 at that scale, drawn 31 px right of and 82.75 px below the
+`left`/`top` the page says (the dock is scaled around (124, 331)), so `left` is from -31 to 2325 and `top` from -82.75
+to 1061, which is where the saved places stop. Setting the refs every frame moves the pet at once; the native hit region
+has to be told as often (`scheduleSyncHitRegionAfterPaint`, once a frame at most), or the pet is cut off while it moves.
+`mod.app.*.glide` does this: speed, friction, bounce at those edges, and `commit` (the app's own resize handling, which
+clamps and saves) where it stops.
+
 ## The window is cut to where the pets are
 
 Found when pets set from outside "disappeared until a click": the main window is a full-screen transparent window

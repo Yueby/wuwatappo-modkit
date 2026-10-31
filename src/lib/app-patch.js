@@ -20,6 +20,10 @@
 
 const ID = '[\\w$]+';
 
+// Raised when what a rule adds changes (not only when a rule is added): a page that was patched by an older version of the
+// rules is loaded again, once, to have the new ones.
+export const PATCH_VERSION = 2;
+
 // Every rule: `name`, `find` (a RegExp on the whole script) and `build(match)` -> { at, text }, where `at` is an
 // index in the script (before the match, or after a part of it) and `text` what is inserted there.
 export const RULES = [
@@ -27,10 +31,17 @@ export const RULES = [
     // The composable that owns the person's pet: `return{dockLeft:C,dockTop:F,...,clampDockPositionIfNeeded:X,...}`.
     name: 'pet',
     find: new RegExp(`return\\{dockLeft:(${ID}),dockTop:(${ID}),`),
-    build: m => ({
-      at: m.index,
-      text: `;(window.__wuwaApp??={}).pet={left:${m[1]},top:${m[2]}};`,
-    }),
+    // It also names whether the pet is held (`draggingDock`) and has moved while held (`movedDuringDrag`), if the
+    // object that is returned has them: a press, a drag and a release can be told from those.
+    build(m, script) {
+      const rest = script.slice(m.index, m.index + 900);
+      const held = new RegExp(`draggingDock:(${ID})`).exec(rest);
+      const moved = new RegExp(`movedDuringDrag:(${ID})`).exec(rest);
+      return {
+        at: m.index,
+        text: `;(window.__wuwaApp??={}).pet={left:${m[1]},top:${m[2]}${held ? `,held:${held[1]}` : ''}${moved ? `,moved:${moved[1]}` : ''}};`,
+      };
+    },
     // Only at a statement boundary: after `}` or `;`.
     boundary: true,
   },
@@ -71,7 +82,7 @@ export const RULES = [
     // functions that read and write the place the page is drawn from sit side by side:
     //   function where(e){return store(e).value}function write(e,t){const o=store(e);o.value={...o.value,...t}}
     build(m, script) {
-      const [, , , , , , auto, clamp, member, list] = m;
+      const [, , , heldRef, , , auto, clamp, member, list] = m;
       const rest = script.slice(m.index, m.index + 2600);
       const draggable = new RegExp(`${esc(member)}&&(${ID})\\(${esc(member)}\\)&&`).exec(rest);
       const pair = new RegExp(
@@ -84,6 +95,7 @@ export const RULES = [
         at: m.index,
         text: `;(window.__wuwaApp??={}).members={` +
           `list:()=>${list}.value,` +
+          `held:()=>${heldRef}.value,` +
           `where:m=>({...${where}(m)}),` +
           `draggable:m=>!!${draggable[1]}(m),` +
           `place:(id,left,top)=>{const m=${list}.value.find(x=>String(x.id)===String(id));if(!m||!${draggable[1]}(m))return false;` +

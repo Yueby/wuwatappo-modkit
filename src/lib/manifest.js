@@ -33,7 +33,9 @@ import { validRange } from './semver.js';
 // 3: `mod.app.store` (the app's Pinia stores, read and watched) and `mod.app.action` (the panel's commands).
 // 4: `mod.page` (the components of each window, watching them, putting nodes into them) and the pet's elements.
 // 5: `mod.app.assetName` (the name the app shows for a skin, an accessory, an emote).
-export const LOADER_API = 5;
+// 6: `mod.app.pet.onInteraction` and `mod.app.members.onInteraction` (press, drag, release, click on a pet).
+// 7: `mod.app.pet.glide` and `mod.app.members.glide` (a pet let go with a speed goes on and bounces off the edges), `pet.busy`.
+export const LOADER_API = 7;
 
 export const WINDOWS = ['main', 'panel', 'login', 'update', 'toast', 'about', 'oss-notice'];
 

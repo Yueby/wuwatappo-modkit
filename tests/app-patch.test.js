@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { RULES, patchScript, mayHoldPet } from '../src/lib/app-patch.js';
+import { PATCH_VERSION, RULES, patchScript, mayHoldPet } from '../src/lib/app-patch.js';
 import { AppOpener } from '../src/lib/app-opener.js';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -28,7 +28,7 @@ function Hd(){const e=Pt.value;if(e===null)return;const t=Pr+Ln,o=Tr+Bn;(Math.ab
 const syncs=[];const{syncMainHitRegion:Me,scheduleHitRegionAfterRoomCatsDomUpdate:on,scheduleSyncHitRegionAfterPaint:mn}={syncMainHitRegion:()=>syncs.push('sync'),scheduleHitRegionAfterRoomCatsDomUpdate:()=>syncs.push('dom'),scheduleSyncHitRegionAfterPaint:()=>syncs.push('paint')};
 function make(){const C=W(100),F=W(200),N=W(true),U=W(true),ae=0;function st(){}
 async function Ge(){if(!N.value){st();return}const J=U.value,ve=ae;N.value=false}
-function Jt(){}return{dockLeft:C,dockTop:F,movedDuringDrag:U,onWindowResize:Jt,finishDockPointerGesture:Ge}}
+function Jt(){}return{dockLeft:C,dockTop:F,draggingDock:N,movedDuringDrag:U,onWindowResize:Jt,finishDockPointerGesture:Ge}}
 const api={make,Hd,Pt,Mt,de,vt,en,Li,W,syncs};
 window.__test=api;
 `;
@@ -51,6 +51,8 @@ test('the four things are added to a script of the shape the app has, and it sti
   assert.equal(window.__wuwaApp.pet, undefined, 'the pet is not handed out before the app makes it');
   const own = t.make();
   assert.equal(window.__wuwaApp.pet.left, own.dockLeft);
+  assert.equal(window.__wuwaApp.pet.held, own.draggingDock, 'whether it is held');
+  assert.equal(window.__wuwaApp.pet.moved, own.movedDuringDrag, 'and whether it has moved while held');
   window.__wuwaApp.pet.left.value = 321;
   assert.equal(own.dockLeft.value, 321, 'they are the app\'s own refs');
 
@@ -67,6 +69,10 @@ test('the four things are added to a script of the shape the app has, and it sti
   assert.equal(members.place(99, 1, 1), false, 'nor one that is not there');
   assert.deepEqual(members.clamp(5000, 5000), { left: 1000, top: 500 }, 'the app\'s own clamping');
   assert.deepEqual(members.list().map(m => m.id), [7, 8]);
+  assert.equal(members.held(), null, 'no pet of a player is held');
+  t.Pt.value = 8;
+  assert.equal(members.held(), 8, 'and which one is, when one is');
+  t.Pt.value = null;
 
   // the window is cut to where the pets are: the native side can be told again
   window.__wuwaApp.hit.afterPaint();
@@ -138,10 +144,10 @@ for (const [version, dir] of real) {
 // --- holding and answering the script in a window ---------------------------------------------------------------
 
 // A window as the opener sees it: it sends commands and hears events; the page answers what is evaluated.
-function fakeSession({ scripts = {}, open = false, patchedByReload = true, applied = RULES.map(rule => rule.name) } = {}) {
+function fakeSession({ scripts = {}, open = false, patchedByReload = true, applied = RULES.map(rule => rule.name), version = PATCH_VERSION } = {}) {
   const sent = [];
   const listeners = new Set();
-  const page = { open, patch: open ? { applied, missing: [] } : null, readyState: 'complete' };
+  const page = { open, patch: open ? { applied, missing: [], version } : null, readyState: 'complete' };
   const session = {
     closed: false,
     sent,
@@ -209,6 +215,14 @@ test('a window that has it already is not loaded again', async () => {
   const state = await opener.open();
   assert.equal(state.open, true);
   assert.equal(sent.some(s => s.method === 'Page.reload'), false);
+});
+
+test('a page patched by an older version of the rules (the same pieces, different content) is loaded again once', async () => {
+  const { session, sent } = fakeSession({ open: true, version: PATCH_VERSION - 1, scripts: { main: SCRIPT + withText } });
+  const opener = new AppOpener({ session });
+  const state = await opener.open();
+  assert.equal(sent.filter(s => s.method === 'Page.reload').length, 1);
+  assert.equal(state.patch.version, PATCH_VERSION);
 });
 
 test('a page that an older loader patched with fewer pieces is loaded again once', async () => {

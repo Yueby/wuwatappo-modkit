@@ -8,7 +8,7 @@
 //
 // WebView2 does not run `Page.addScriptToEvaluateOnNewDocument`, but it does hold and answer requests.
 
-import { RULES, mayHoldPet, patchScript } from './app-patch.js';
+import { PATCH_VERSION, RULES, mayHoldPet, patchScript } from './app-patch.js';
 
 const SCRIPTS = { urlPattern: '*/assets/*.js', requestStage: 'Response' };
 const LOADED_MS = 15_000;
@@ -53,7 +53,7 @@ export class AppOpener {
       this.last = { applied, missing, ambiguous };
       this.#log(`main script: ${applied.length ? `opened ${applied.join(', ')}` : 'nothing could be opened'}${missing.length ? `; not found: ${missing.filter(name => !ambiguous.includes(name)).join(', ') || '-'}` : ''}${ambiguous.length ? `; found more than once, left alone: ${ambiguous.join(', ')}` : ''}`);
       if (!applied.length) return await session.send('Fetch.continueRequest', { requestId });
-      const marker = `window.__wuwaAppPatch=${JSON.stringify({ applied, missing, ambiguous })};`;
+      const marker = `window.__wuwaAppPatch=${JSON.stringify({ applied, missing, ambiguous, version: PATCH_VERSION })};`;
       const headers = (params.responseHeaders ?? []).filter(h => !/^content-(length|encoding)$/i.test(h.name));
       await session.send('Fetch.fulfillRequest', {
         requestId,
@@ -79,7 +79,7 @@ export class AppOpener {
     await this.#hold();
     let state = await this.state();
     // A page that was patched by an older loader (fewer pieces than there are now) is loaded again too, once.
-    const complete = state.open && !!state.patch && RULES.every(rule => state.patch.applied.includes(rule.name) || state.patch.missing.includes(rule.name));
+    const complete = state.open && !!state.patch && state.patch.version === PATCH_VERSION && RULES.every(rule => state.patch.applied.includes(rule.name) || state.patch.missing.includes(rule.name));
     if (complete || this.#reloaded) return state;
     this.#reloaded = true;
     this.#log('main: loading the page again to open the app\'s state');
