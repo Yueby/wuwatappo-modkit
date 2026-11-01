@@ -15,8 +15,8 @@ The plugins live in their own repository, [wuwatappo-mods](https://github.com/Yu
 | **自动点击** (Auto click) | Clicks the pet at the interval set, raising the click count. In a room, the people in the room see every click | off |
 | **自动开箱子** (Auto chest) | Opens a chest when it is ready (opening costs clicks). The upper and the lower chest are switched separately | off |
 | **房间历史** (Room history) | Records who comes into and leaves a room, with the room number, the time and how long each person stayed. Kept on this computer only; shown on the 联机 page, from where a room can be entered again | on |
-| **桌宠手感** (Pet feel) | Springy motion for pressing, dragging, letting go and clicking a pet, and throwing: let go while dragging and the pet flies off and bounces off the edges of the screen. For the person's own pet and for the other players' pets | on |
-| **记住桌宠位置** (Pet position) | Remembers where your pet, and each other player's pet in the room, was last dragged to; when a restart or a room moves them, sets them back | on |
+| **桌宠手感** (Pet feel) | Elastic motion for pressing, dragging, releasing, clicking and throwing a pet, with gravity; the same for every pet | on |
+| **记住桌宠位置** (Pet position) | Records the positions of the person's own pet and the other players' pets, and restores them after a restart or on entering a room | on |
 
 Plugins that act on the account (auto click, auto chest) are **off** after they are installed; they are switched on on the MOD page.
 
@@ -71,13 +71,26 @@ Every time the window opens, the launcher looks for a newer version of itself; i
 
 **Room history**: while it is on, it writes down who comes in, who leaves and who drops out of the room, with the room number, the time and how long they stayed. The records are shown right on the **联机** page of the app's settings panel, under the list of the people in the room, one row for each room: **展开** shows what happened in a room, **复制** copies the room number, and when the person is not in a room **进入** puts the number into the page's room box and joins that room. The plugin's own **设置** has the same list, with **清空** to delete all the records, and **最多保留** is how many records are kept (300 by default). Records stay on this computer. When the app is started again, or its page loaded again, and it comes back to the same room, that is the same stay and not a new one; leaving the room and coming in again is two. If the plugin is switched on when people are already in the room, the ones already there are only read while the settings panel is open; enter the room again for a complete record.
 
-**Pet feel**: it works as soon as it is installed. Pressing a pet squashes its body down a little; dragging picks it up by the head, with a shadow under it, and it swings the way it is pulled, a little too far and back; letting go drops it with a few bounces; and pressing and letting go quickly (a click) makes it jump and land. Let go **fast** while dragging and the pet is thrown: it flies off with that speed, falling and slowing down, is squashed against the edges of the screen and bounces back, and lands on the top of the taskbar, bouncing a few times before it rests; that is its new place (which the Pet position plugin keeps). Let go slowly and it is only put down where it is, so to put a pet in the middle of the screen, put it down slowly. The same for the other players' pets, on this computer only. Every motion has its switch in the settings: **按下时压扁** (squash when pressed), **拖动时拎起并摆动** (picked up and swung when dragged), **松手时回弹** (bounce when put down), **点一下时跳起** (jump on a click), **快速松手时甩出去** (thrown when let go fast), **甩出去时有重力** (gravity for a thrown pet; off, it glides on and stops where it stops), **其他玩家的桌宠也一样** (the same for the other players' pets), and **动效强度** (0.5 to 2, 1 is the default). Pressing the pet while it flies stops it at once in the hand. It needs the permission to "read and change the app's own state" (to know whether the pet is held and whether it is moving).
+**Pet feel**: elastic motion for what is done to a pet. The person's own pet and the other players' pets in the room behave the same.
 
-**Pet position**: it works as soon as it is installed, with nothing to set up. Drag your pet where it should be and the plugin remembers it; the same for the other players' pets in the room, kept for each player (the plugin's **设置** shows the remembered places and its state). After that, when a restart, or the app moving the pets for a room (the app puts the other players' pets back in its default slots every time a room is entered), puts them somewhere else, the plugin sets them back to the remembered places, in under a second. With **位置被挤动后放回去** off it only keeps the place the app saves (which matters at the next start) and never moves a pet while the app runs. With **也记住其他玩家的桌宠** off it only looks after your own pet. **记下现在的位置** takes the places all the pets are at now as the ones to keep. Some things to know:
-- The plugin needs the permission to "read and change the app's own state" (listed when it is installed): the pets' places are variables inside the app, and nothing else can set them. The loader loads the main window once more each time the app starts (a second or two); in return nothing pretends to be the mouse any more, so it does not matter whether the mouse is moving, no click is counted, and nothing is sent to the room.
-- Changing where the pet goes (the corner) or its size in the app's own settings lets the old place go; a new one is taken afterwards. The same when the screen's resolution changes.
-- The places of the other players are kept for each player, up to 60; past that the ones set longest ago are forgotten. They stay on this computer and are not sent to the room.
-- When a room holds the place and the app will not let a pet stay there, it tries again after longer and longer waits, and does not fight the app.
+- 按压形变 (press squash): the body is squashed down while the pet is held.
+- 拖拽摆动 (drag swing): while dragged the pet is lifted and swings with the direction of the drag.
+- 松手回弹 (release bounce): after release the pet lands and bounces.
+- 点击弹跳 (click hop): the pet hops on a quick click (pressed and released at once).
+- 抛掷 (throw): release quickly during a drag and the pet flies off at the speed of the release and rebounds off the edges of the screen. With gravity on it falls and finally lands on the top of the taskbar; with gravity off it glides on until it stops. A slow release only puts it down.
+- Pressing the pet again while it flies stops it at once. The place it ends in is kept by the Pet position plugin.
+
+Each effect has its own switch in the plugin's settings, and there is a strength setting (0.5 to 2, 1 by default). It needs the permission to read and change the app's own state, to know whether a pet is held and whether it is moving.
+
+**Pet position**: records the positions of the person's own pet and of the other players' pets in the room (the last place each was dragged to), and restores them after a restart or on entering a room.
+
+- Positions are kept per player, up to 60; past that the earliest set are dropped. They stay on this computer and are not sent to the room.
+- After a restart or on entering a room the app puts the pets back in its default places, and the plugin restores them to the recorded places in under a second.
+- 自动还原位置 (restore automatically): a setting that can be turned off. Off, positions are only saved and no pet is moved while the app runs.
+- 记录当前位置 (record current position): a button in the settings that records the positions of all pets as they are now.
+- Changing the corner or the size of the pet in the app's own settings discards the old position, and a new one is recorded afterwards. The same when the screen resolution changes.
+- When a place is occupied and the app does not let a pet stay there, the plugin retries at increasing intervals and does not contend with the app.
+- It needs the permission to read and change the app's own state, to set a pet's position directly. It does not simulate the mouse, does not add clicks and sends nothing to the room.
 
 ## What it does to the computer
 
