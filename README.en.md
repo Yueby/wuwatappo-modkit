@@ -39,6 +39,7 @@ Open the settings panel with the pet's settings button. The last tab on the left
 
 - One row per plugin: its name and description, a **设置** (settings) button and a **switch**. The switch is the master switch: off means the plugin does not run at all. Settings can be changed while it is off.
 - Two buttons at the top right: **日志** (log: what the plugins wrote, the place to look when something goes wrong) and **安装** (the plugin list).
+- At the bottom right: the framework's version and **检查更新** (check for updates). When a new version exists, the MOD tab gets a small dot and the list gets a row at the top; **更新** shows a progress bar while it downloads, then checks, installs, patches again and restarts the app. A development copy run from the source only says so (use `git pull`).
 
 ### Installing, updating and removing plugins
 
@@ -100,7 +101,7 @@ For anyone who wants to know before installing:
 - **The registry**: a value named `WuwaTappo.exe` under `HKCU\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments`, set to `--remote-debugging-port=9222`. It applies to this app only, and makes it open a debugging port when it starts: that is how plugins are loaded. The port can only be reached from this computer (127.0.0.1). Writing it needs administrator rights, so installing and removing each ask for UAC once.
 - **Startup**: a small script with no window in the Windows Startup folder, which waits in the background for the app to start after logon.
 - **Folders**: in the app's install folder, `mods` (plugins), `moddata` (what plugins save) and `moddata\.modkit` (a copy of the loader, and its log).
-- **The network**: only the launcher's check for updates and the plugin list go out, to GitHub. The loader itself does not read or send login information. Whether a plugin uses the network or files is declared in the plugin list and shown before installing; none of the plugins above uses the network.
+- **The network**: only the checks for updates (launcher, MOD page) and the plugin list go out, to GitHub. The loader itself does not read or send login information. Whether a plugin uses the network or files is declared in the plugin list and shown before installing; none of the plugins above uses the network.
 
 ### Removing it
 
@@ -164,7 +165,7 @@ When writing a plugin, two steps work well: `lab` (patch the app and start it wi
 | `setup` / `setup status` / `uninstall` | One-time install: the app opens its debug port on every start, the loader starts at logon; `uninstall` takes it away |
 | `start` | Start the app with the debug port if it is not running, then stay resident (`--no-launch`, `--log-file`) |
 | `window` | The launcher window with the install / uninstall buttons (what a double-click on the exe opens) |
-| `update` | Look on GitHub for a newer launcher and take it (`--check` only asks) |
+| `update` | Look on GitHub for a newer launcher and take it (`--check` only asks); the MOD page in the app has the same **检查更新** at its bottom right |
 | `dev [on <folder>\|off]` | Dev mode: use a folder's plugin in place, loaded as it is saved |
 | `mods browse` / `get <name>` | What the registry lists / install one (it shows what the plugin declares and asks first) |
 | `mods list` / `install <source>` / `update [id]` / `remove <id>` | Manage installed plugins; a source is a folder, `.zip`/`.tgz`, git URL, npm package or `.js` file |

@@ -50,6 +50,31 @@ a release cannot be used to move people back.
 4. Run the new exe's `setup`, then its `window`; the old window closes (exit code 10 from `update --reopen`).
 5. `modkit.exe.old` cannot be deleted while the old window's program runs (measured); the next window opening deletes it.
 
+## Updating from the MOD page
+
+The same update, started from inside the app: the MOD page shows the version at its bottom right with **检查更新**, and
+when there is a newer one a dot on the MOD tab, a row at the top of the list, and **更新** (src/lib/updater.js, asked for
+by the page through src/lib/manager.js: `self-check` and `self-update`; only the panel window is believed). The loader does
+what `update` does, except that it is the loader and not the exe in the app folder that runs:
+
+1. The check is made when the panel opens and every half hour after (the loader remembers an answer for ten minutes), and
+   says nothing if it fails. A failed check the person asked for is said in words.
+2. **更新**: the download goes to `moddata.modkitmodkit-update.exe`, and the page draws a bar from `progress <received>
+   <total>` events (about five a second), then the steps 校验 and 安装. The same SHA-256 check and `--version` check as above.
+3. The exe the person opens (where `setup` last saw it, `moddata.modkitlauncher.json`, or `modkit.exe` in the app folder)
+   is replaced by rename, as above.
+4. The page is told it is restarting, and a second later the new program's `setup --restart-app` is started apart from the
+   loader (detached, its output going to the loader's log). Setup stops the old loader (this process), patches, puts a copy
+   of the new program where the loader runs from, starts the new loader, and starts the app again whether or not it needed
+   it. The window is closed with the app, so nothing is said after "restarting".
+5. A loader that is too old to know `self-check` does not answer; the page says to press 安装 in the launcher once.
+
+Run from the repository (`node src/cli.js start`), it checks and says there is a newer version, and does not take it.
+
+What the tests cover: the order of the steps, what the page is told, what is left behind when a step fails (tests/updater.test.js,
+with GitHub, the download and setup stood in for). Measured by hand: a process started detached from the loader goes on
+when the loader is killed. Not measured: a packaged exe replacing itself through this path on a real install.
+
 ## What this trusts
 
 The checksum says the file is the one that was uploaded, nothing more: whoever can change the release can change both

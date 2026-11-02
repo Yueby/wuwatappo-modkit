@@ -52,6 +52,8 @@ export const DEV_FILE = path.join(LOADER_DIR, 'dev.json');
 
 // What the loader runs from when the program is packaged (see installLoaderCopy in layout.js).
 export const LOADER_EXE = path.join(LOADER_DIR, 'modkit-loader.exe');
+// Where the exe the person opens is, as setup last saw it: the loader replaces that one when it updates (updater.js).
+export const LAUNCHER_FILE = path.join(LOADER_DIR, 'launcher.json');
 
 // --- this repository -----------------------------------------------------------
 

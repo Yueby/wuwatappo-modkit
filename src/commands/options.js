@@ -27,6 +27,7 @@ const OPTIONS = {
   '--json': ['json', false],
   '--registry': ['registry', false],
   '--keep-exe': ['keepExe', false],
+  '--restart-app': ['restartApp', false],
 };
 
 export function parseOptions(argv) {
@@ -49,6 +50,7 @@ export function parseOptions(argv) {
     json: false,
     registry: false,
     keepExe: false,
+    restartApp: false,
     positional: [],
   };
 

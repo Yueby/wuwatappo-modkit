@@ -45,6 +45,7 @@ const ICON_CLASS = 'tab-btn__icon--mod';
 // right: 0; bottom: 0", and .common-btn is 135px wide). The second sits one button and a gap from the edge.
 const INSTALL_BUTTON_RIGHT = 147;
 const STYLE_ID = 'modkit-style';
+const FOOT_ID = 'modkit-foot';
 
 function installStyle() {
   if (document.getElementById(STYLE_ID)) return;
@@ -64,7 +65,30 @@ function installStyle() {
     }
     /* Nothing here: the page is built entirely from the app's own classes, so fonts,
        sizes and colours all come from the app (its palette has no red or green, and its
-       settings page has no section headings, so neither is invented here). */`;
+       settings page has no section headings, so neither is invented here). The version line at the
+       foot and its bar are the one thing the app has no class for in this window: they take the app's
+       own update dialog's colours (.app-update-overlay__progress, which this window does not load). */
+    #${FOOT_ID} {
+      flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 14px;
+      padding: 8px 27px 14px; font-size: 14px; color: #8e7b6a; min-height: 28px;
+    }
+    #${FOOT_ID} .modkit-foot-text { max-width: 460px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* .setting-btn is the app's, scoped to its rows (.setting-item .setting-btn): the same look, here */
+    #${FOOT_ID} .setting-btn {
+      display: block; min-width: 72px; height: 26px; padding: 0 18px; background: #fed291; border: 1px solid #E7B77C;
+      border-radius: 20px; font-size: 16px; color: #8e5e43; text-align: center; line-height: 26px; cursor: pointer;
+      filter: drop-shadow(0 2px 0 #E7B77C);
+    }
+    #${FOOT_ID} .setting-btn:disabled { opacity: .5; cursor: default; }
+    .modkit-bar { width: 220px; height: 8px; border-radius: 4px; background: #ebce9b; overflow: hidden; flex: none; }
+    .modkit-bar > div { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #c88865, #995e3f); transition: width .2s ease; }
+    .modkit-bar > div.modkit-bar--wait { width: 40% !important; animation: modkit-bar-wait 1.2s ease-in-out infinite; }
+    @keyframes modkit-bar-wait { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+    /* A new version is waiting: a dot on the tab, where the app puts its own marks (the corner of the icon). */
+    #${TAB_ID}[data-update]::after {
+      content: ''; position: absolute; top: 9px; left: 46px; width: 14px; height: 14px; box-sizing: border-box;
+      border-radius: 50%; background: #ff9f3a; border: 2px solid #fff6dc; pointer-events: none;
+    }`;
   document.head.appendChild(style);
 }
 
@@ -118,6 +142,10 @@ function buildView() {
   const scroller = el('div', 'panel-content');
   scroller.id = BODY_ID;
   view.appendChild(scroller);
+  const foot = el('div');
+  foot.id = FOOT_ID;
+  foot.addEventListener('mousedown', event => event.stopPropagation());     // as in row(): the panel would drag the window
+  view.appendChild(foot);
   return view;
 }
 
@@ -241,6 +269,153 @@ function renderHeader(body, mods) {
   // The room page puts 28px between this header and its list (.room-members margin-top).
   head.style.marginBottom = '28px';
   body.appendChild(head);
+  const notice = selfNotice();
+  if (notice) body.appendChild(notice);
+}
+
+// --- this program: its version, and a newer one --------------------------------------------
+//
+// The loader (src/lib/updater.js) knows the version and asks GitHub; this page shows both. Where it shows:
+//   the foot of the page   the version, and 检查更新 / 更新 (and, while it is taken, the bar and the step)
+//   the top of the list    a row that says a new version is there, with 更新, while there is one
+//   the MOD tab            a dot, so that it is seen without opening the page
+// A check is made by itself when the panel opens (and every half hour while it stays), without a word if it fails.
+// Taking the update downloads it, checks it, puts it in place, patches again and starts the app again: the loader
+// says each step (`progress` events), and the last one is the end of this window, which is closed with the app.
+
+const SELF_RECHECK_MS = 30 * 60_000;
+// phase: 'idle' (not asked yet) | 'checking' | 'current' | 'newer' | 'updating' | 'restarting' | 'error'
+const self = { phase: 'idle', current: null, latest: null, canUpdate: true, stage: '', received: 0, total: 0, message: '', at: 0, tried: 0 };
+
+const selfBusy = () => ['checking', 'updating', 'restarting'].includes(self.phase);
+const selfMarked = () => ['newer', 'updating', 'restarting'].includes(self.phase);
+const megabytes = bytes => (bytes / 1024 / 1024).toFixed(1);
+
+// What the person is told while it goes on.
+function selfProgressText() {
+  if (self.phase === 'restarting' || self.stage === 'restart') return '正在重新打补丁并重启应用…';
+  if (self.stage === 'verify') return '正在校验…';
+  if (self.stage === 'install') return '正在安装…';
+  const of = self.total ? ` / ${megabytes(self.total)} MB（${Math.floor((self.received * 100) / self.total)}%）` : ' MB';
+  return `正在下载 v${self.latest}　${megabytes(self.received)}${of}`;
+}
+
+function selfBar() {
+  const bar = el('div', 'modkit-bar');
+  const fill = el('div');
+  const known = self.phase === 'updating' && self.stage === 'download' && self.total > 0;
+  if (known) fill.style.width = `${Math.min(100, (self.received * 100) / self.total)}%`;
+  else fill.className = 'modkit-bar--wait';
+  bar.appendChild(fill);
+  return bar;
+}
+
+// The row at the top of the list.
+function selfNotice() {
+  if (!selfMarked()) return null;
+  const waiting = self.phase === 'newer';
+  return row({
+    title: `框架有新版本 v${self.latest}`,
+    description: waiting
+      ? (self.canUpdate ? `当前 v${self.current}。更新会重新打补丁并重启应用。` : `当前 v${self.current}。这是从源码运行的开发版，请在仓库里 git pull。`)
+      : selfProgressText(),
+    control: waiting ? controls.button({ label: '更新', onClick: updateSelf, disabled: !self.canUpdate }) : null,
+  });
+}
+
+function renderFoot() {
+  const foot = document.getElementById(FOOT_ID);
+  if (!foot) return;
+  const next = document.createElement('div');
+  const version = self.current ? `框架 v${self.current}${self.canUpdate ? '' : '（开发版）'}` : '框架';
+  const text = (value, title) => {
+    const node = el('span', 'modkit-foot-text', value);
+    if (title) node.title = title;
+    next.appendChild(node);
+  };
+  const check = (label = '检查更新') => next.appendChild(controls.button({ label, onClick: () => checkSelf({ force: true }), disabled: selfBusy() }));
+
+  switch (self.phase) {
+    case 'checking':
+      text(`${version}　正在检查更新…`);
+      check();
+      break;
+    case 'current':
+      text(`${version}　已是最新`);
+      check();
+      break;
+    case 'newer':
+      text(`${version}　新版本 v${self.latest}`);
+      next.appendChild(controls.button({ label: '更新', onClick: updateSelf, disabled: !self.canUpdate }));
+      break;
+    case 'updating':
+    case 'restarting':
+      text(selfProgressText());
+      next.appendChild(selfBar());
+      break;
+    case 'error':
+      text(`${version}　${self.message}`, self.message);
+      check('重试');
+      break;
+    default:
+      text(version);
+      check();
+  }
+  if (foot.innerHTML === next.innerHTML) return;
+  foot.textContent = '';
+  foot.append(...next.childNodes);
+}
+
+function renderSelf() {
+  document.getElementById(TAB_ID)?.toggleAttribute('data-update', selfMarked());
+  renderFoot();
+  renderView();
+}
+
+// `quiet`: nobody asked (the panel opened): nothing is said, whatever comes of it.
+function checkSelf({ force = false, quiet = false } = {}) {
+  if (selfBusy()) return;
+  const before = self.phase;
+  self.tried = Date.now();
+  if (!quiet) {
+    self.phase = 'checking';
+    renderSelf();
+  }
+  kit.manage('self-check', { force }).done.then(result => {
+    self.current = result.current;
+    self.latest = result.latest;
+    self.canUpdate = result.canUpdate !== false;
+    self.at = Date.now();
+    self.phase = result.newer ? 'newer' : 'current';
+    renderSelf();
+  }, err => {
+    self.phase = quiet ? before : 'error';
+    if (!quiet) self.message = `检查更新失败：${err.message}`;
+    renderSelf();
+  });
+}
+
+function autoCheckSelf() {
+  if (selfBusy() || Date.now() - self.tried < SELF_RECHECK_MS) return;
+  checkSelf({ quiet: true });
+}
+
+function updateSelf() {
+  if (self.phase !== 'newer' || !self.canUpdate) return;
+  Object.assign(self, { phase: 'updating', stage: 'download', received: 0, total: 0, message: '' });
+  renderSelf();
+  kit.manage('self-update', {}, {
+    onProgress: event => {
+      self.stage = event.stage;
+      if (event.stage === 'download') Object.assign(self, { received: Number(event.received) || 0, total: Number(event.total) || 0 });
+      if (event.stage === 'restart') self.phase = 'restarting';
+      renderSelf();
+    },
+  }).done.then(() => {}, err => {
+    if (self.phase === 'restarting') return;               // the app is being closed: nothing more is heard
+    Object.assign(self, { phase: 'error', message: `更新失败：${err.message}` });
+    renderSelf();
+  });
 }
 
 // The page is a list: one row per mod — name, what it does (or the error), a 设置 button when
@@ -869,6 +1044,7 @@ function renderView() {
     renderHeader(next, mods);
     for (const [id, manifest] of mods) renderMod(next, id, manifest);
   });
+  renderFoot();
 }
 
 // A mod that changes many rows at once (a hundred added, a hundred taken away) says "changed" for each of them. The
@@ -916,6 +1092,7 @@ function showModView() {
   // replace that layout. Dropping the inline value lets the app's own rule apply.
   view.style.removeProperty('display');
   renderView();
+  autoCheckSelf();
   kit.hello();   // the windows running the mods answer with their state, which redraws
 }
 
@@ -1084,6 +1261,8 @@ function ensureTab() {
     if (modOpen) tab.classList.add('tab-btn--active');
     // Re-seat on every pass: Vue may have moved the strip around.
     if (tab.nextElementSibling !== collapse) bar.insertBefore(tab, collapse);
+    tab.toggleAttribute('data-update', selfMarked());
+    autoCheckSelf();
     if (modOpen) keepModView();
   } finally {
     planting = false;

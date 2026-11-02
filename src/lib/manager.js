@@ -1,9 +1,10 @@
-// What the MOD page asks of the loader: show the registry's plugins, install one, update one, remove one.
+// What the MOD page asks of the loader: show the registry's plugins, install one, update one, remove one, and
+// whether this program has a newer version, and take it (updater.js).
 //
 // The page cannot touch the disk or the network, so it sends { t: 'manage', id, action, ... } through the
 // binding a mod's page uses to reach its Node part, and the loader does it with registry.js and install.js,
 // the same code the command line runs. Answers go back into the panel window as
-// window.modkit.manageReply(id, event); an event is { type: 'ack' | 'result' | 'error' | 'confirm', ... }.
+// window.modkit.manageReply(id, event); an event is { type: 'ack' | 'result' | 'error' | 'confirm' | 'progress', ... }.
 //
 // Two rules keep this from being a way in:
 //   * only the panel window is believed. Mods run in the other windows, and a mod there must not be able to
@@ -20,6 +21,7 @@ import path from 'node:path';
 import { developing } from './devmode.js';
 import { InstallDeclined, listMods, removeMod } from './install.js';
 import { MOD_DATA_DIR } from './paths.js';
+import { SelfUpdater } from './updater.js';
 import { REGISTRY_REPO, browse, fetchIndex, getFromRegistry, updateFromRegistry } from './registry.js';
 
 const WINDOW = 'panel';
@@ -50,10 +52,34 @@ const REASONS = [
   [/there is no mod called/, '没有找到这个插件。'],
 ];
 
-function explain(err) {
+// The same for this program's own update, where the words about a plugin and the registry would be wrong.
+const SELF_REASONS = [
+  [/only the packaged exe/, '这是从源码运行的开发版，不能自动更新，请在仓库里 git pull。'],
+  [/could not ask GitHub|GitHub answered|not found on GitHub|fetch failed/, '连不上 GitHub，请检查网络后再试。'],
+  [/already the latest/, '已经是最新版本了。'],
+  [/the download says it is version/, '下载的程序版本与发布的对不上，已丢弃，没有更新。'],
+  [/the download does not start/, '下载的程序没法运行，已丢弃，没有更新。'],
+  [/does not match its checksum/, '下载的程序和发布的校验值对不上，已丢弃，没有更新。'],
+  [/stopped at d+|bytes, not the/, '下载得不完整，已丢弃，请再试一次。'],
+  [/nothing came from/, '下载中断了（很久没有收到数据），请再试一次。'],
+  [/answered d+/, '下载失败，服务器返回了错误，请稍后再试。'],
+  [/could not put the new program in place/, '没能替换启动器程序（它可能被占用），没有更新。请关掉启动器窗口后再试。'],
+];
+
+// An error whose message is already the words for the person.
+class Said extends Error {}
+
+const explainSelf = err => new Said(explainWith(SELF_REASONS, err));
+
+function explainWith(reasons, err) {
   const text = String(err?.message ?? err);
-  for (const [pattern, reason] of REASONS) if (pattern.test(text)) return reason;
+  for (const [pattern, reason] of reasons) if (pattern.test(text)) return reason;
   return `原因：${short(text)}`;
+}
+
+function explain(err) {
+  if (err instanceof Said) return err.message;
+  return explainWith(REASONS, err);
 }
 
 const short = text => (String(text).length > MAX_MESSAGE ? `${String(text).slice(0, MAX_MESSAGE)}…` : String(text));
@@ -67,11 +93,13 @@ export class ModManager {
   #repo;
   #tools;
   #devFile;
+  #updater;
+  #pause;
   #busy = false;
   #asks = new Map();      // request id -> answer(boolean): a confirmation being waited for
 
   // `app` carries answers to the panel: { evaluate(window, js) }. The injector is one.
-  constructor({ modsDir, app, dataDir = MOD_DATA_DIR, log = () => {}, fetch = globalThis.fetch, repo = REGISTRY_REPO, tools, devFile } = {}) {
+  constructor({ modsDir, app, dataDir = MOD_DATA_DIR, log = () => {}, fetch = globalThis.fetch, repo = REGISTRY_REPO, tools, devFile, updater = new SelfUpdater(), pause = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
     this.#modsDir = modsDir;
     this.#dataDir = dataDir;
     this.#app = app;
@@ -80,6 +108,8 @@ export class ModManager {
     this.#repo = repo;
     this.#tools = tools;
     this.#devFile = devFile;
+    this.#updater = updater;
+    this.#pause = pause;
   }
 
   // True when the message was one of ours (whoever sent it), so nobody else need look at it.
@@ -110,6 +140,12 @@ export class ModManager {
       return this.#reply(id, { type: 'result', mods: entries, problems });
     }
 
+    if (action === 'self-check') {
+      const answer = await this.#updater.check({ force: message.force === true }).catch(err => { throw explainSelf(err); });
+      return this.#reply(id, { type: 'result', ...answer });
+    }
+    if (action === 'self-update') return this.#selfUpdate(id).catch(err => { throw err instanceof Said ? err : explainSelf(err); });
+
     if (!['get', 'update', 'remove'].includes(action)) throw new Error(`unknown request "${action}"`);
     if (this.#busy) throw new Error('另一项操作还没做完，请稍等一下。');
     this.#busy = true;
@@ -120,6 +156,26 @@ export class ModManager {
       // The list as it is now, so that the page can draw it again. Not worth failing for: it was done.
       const fresh = await this.#plugins(index).catch(() => null);
       this.#reply(id, { type: 'result', ...result, mods: fresh?.entries ?? null, problems: fresh?.problems ?? [] });
+    } finally {
+      this.#busy = false;
+    }
+  }
+
+  // Take the newest version of this program. The page is told how far it is (`progress` events: the download's bytes, then
+  // the step), and, when everything is in place, that the program is restarting; then the new program's setup is started,
+  // which ends this process, so there is nothing after that to say.
+  async #selfUpdate(id) {
+    if (this.#busy) throw new Error('另一项操作还没做完，请稍等一下。');
+    this.#busy = true;
+    try {
+      const done = await this.#updater.update({
+        onProgress: (received, total) => this.#reply(id, { type: 'progress', stage: 'download', received, total }),
+        onStage: stage => this.#reply(id, { type: 'progress', stage }),
+      });
+      this.#log(`self-update: ${done.version} is in place, restarting`);
+      await this.#reply(id, { type: 'progress', stage: 'restart', version: done.version });
+      await this.#pause(1200);              // the page draws it, before setup closes the app
+      done.start();
     } finally {
       this.#busy = false;
     }

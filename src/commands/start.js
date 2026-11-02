@@ -13,6 +13,7 @@ import { acquireLock } from '../lib/lock.js';
 import { ensurePatched } from '../lib/patch.js';
 import { LOG_FILE } from '../lib/paths.js';
 import { field, log, style, teeToFile } from '../lib/output.js';
+import { removeUpdateLeftovers } from '../lib/updater.js';
 import { parseOptions } from './options.js';
 import { resident } from './watch.js';
 
@@ -27,6 +28,8 @@ export default async function start(argv) {
     lock.release();
     process.exit(1);
   });
+
+  removeUpdateLeftovers().catch(() => {});          // the download of an update, once setup has what it needs from it
 
   log(`${style.bold('start')}  pid ${process.pid}${options.logFile ? `  log ${LOG_FILE}` : ''}`);
 

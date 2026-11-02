@@ -386,12 +386,13 @@ kit.hostReply = (callId, ok, value) => {
 //
 // The MOD page asks the loader (src/lib/manager.js, which only believes the panel window). One request is
 // one promise, `done`; an install or an update stops half way to say what the package declares
-// (`onConfirm(info)`), and nothing is put in place until `kit.manageAnswer(id, true)`.
+// (`onConfirm(info)`), and nothing is put in place until `kit.manageAnswer(id, true)`. A long one says how far it is
+// (`onProgress(event)`) before it ends.
 const MANAGE_TIMEOUT_MS = 5 * 60_000;
 const MANAGE_ACK_MS = 4_000;       // a loader that has this feature answers at once; an older one never does
 const manageCalls = new Map();
 
-kit.manage = (action, args = {}, { onConfirm } = {}) => {
+kit.manage = (action, args = {}, { onConfirm, onProgress } = {}) => {
   const id = `m${Date.now().toString(36)}-${++kit.callSeq}`;
   const done = new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -404,7 +405,7 @@ kit.manage = (action, args = {}, { onConfirm } = {}) => {
       clearTimeout(timer);
       reject(new Error('加载器没有回应。它可能是旧版本，请在启动器里点一次“安装”，把它换成新的。'));
     }, MANAGE_ACK_MS);
-    manageCalls.set(id, { resolve, reject, onConfirm, timer, ackTimer });
+    manageCalls.set(id, { resolve, reject, onConfirm, onProgress, timer, ackTimer });
     if (!kit.hostAlive() || !kit.toHost({ t: 'manage', id, action, ...args })) {
       clearTimeout(timer);
       clearTimeout(ackTimer);
@@ -425,6 +426,10 @@ kit.manageReply = (id, event) => {
   if (event.type === 'ack') return;
   if (event.type === 'confirm') {
     try { call.onConfirm?.(event.info); } catch (err) { console.warn('[modkit] onConfirm threw', err); }
+    return;
+  }
+  if (event.type === 'progress') {
+    try { call.onProgress?.(event); } catch (err) { console.warn('[modkit] onProgress threw', err); }
     return;
   }
   manageCalls.delete(id);

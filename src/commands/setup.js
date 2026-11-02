@@ -9,6 +9,7 @@
 //   3. the loader is started at every logon (a script in the Startup folder), waiting for the app
 //   4. the loader is started now, if it is not already running
 //   5. an app that is running is closed first and started again at the end, so that it has the port
+//      (--restart-app: whether or not it needed that, as after an update from the MOD page)
 //
 
 // Everything is in the current user's own areas (the app folder, HKCU, the Startup folder): no
@@ -21,7 +22,7 @@ import { appState, startAppByItself } from '../lib/app.js';
 import * as autostart from '../lib/autostart.js';
 import { launcher } from '../lib/autostart.js';
 import { readDev } from '../lib/devmode.js';
-import { ensureFolders, installLoaderCopy, removeLoaderCopy } from '../lib/layout.js';
+import { ensureFolders, installLoaderCopy, rememberLauncher, removeLoaderCopy } from '../lib/layout.js';
 import { runningLoader } from '../lib/lock.js';
 import { ensurePatched, forgetPatch, isPatched, restoreOriginal } from '../lib/patch.js';
 import { APP_EXE, APP_EXE_BACKUP, LOG_FILE, MODS_DIR, MOD_DATA_DIR } from '../lib/paths.js';
@@ -36,10 +37,11 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // What setup does about an app that is running. It has to be closed and started again when it has no
 // DevTools port (it was started before this, so it never will), or when its exe is not patched yet (the
-// file cannot be written while it runs). One that is patched and already answers on the port is left alone.
-export function setupAppPlan({ state, patched }) {
+// file cannot be written while it runs). One that is patched and already answers on the port is left alone, unless
+// `restart` says it is to be started again anyway (an update from the MOD page: the app is to come up with the new version).
+export function setupAppPlan({ state, patched, restart = false }) {
   if (state === 'stopped') return { stop: false, restart: false };
-  if (state === 'debuggable' && patched) return { stop: false, restart: false };
+  if (state === 'debuggable' && patched && !restart) return { stop: false, restart: false };
   return { stop: true, restart: true };
 }
 
@@ -71,7 +73,7 @@ export default async function setup(argv) {
 
   // 1. The exe. A running app is closed for it (and for the port), and started again at the end.
   const patched = await isPatched();
-  const plan = setupAppPlan({ state: await appState(options.port), patched });
+  const plan = setupAppPlan({ state: await appState(options.port), patched, restart: options.restartApp });
   if (plan.stop) {
     field('app', 'closing it; it is started again at the end, with the DevTools port');
     await stopApp({ say: message => field('', style.yellow(message)) });
@@ -111,7 +113,10 @@ export default async function setup(argv) {
 
   // 4. The loader at logon. Packaged, it runs from a copy of this program, so that this one, in the app
   // folder, is never in use and a new version can simply be put over it.
-  if (isPackaged()) await installLoaderCopy();
+  if (isPackaged()) {
+    await installLoaderCopy();
+    await rememberLauncher();
+  }
   field('at logon', autostart.install());
 
   // 5. And now.
