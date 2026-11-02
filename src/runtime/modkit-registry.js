@@ -884,18 +884,74 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
           if (trackers.size) frame = requestAnimationFrame(pump);
         };
         const track = tick => {
+          startPointer();
           trackers.add(tick);
           if (!frame) frame = requestAnimationFrame(pump);
           const remove = () => trackers.delete(tick);
           onDispose(remove);
           return remove;
         };
+        // The pointer: where it is and how fast it goes, from the app's own native mouse events (the hook the app drags with, about a
+        // thousand a second, whatever the pointer is over). The speed of a pet that is let go is the speed of the hand: a pet's own
+        // place is only known once a frame, and moves in steps (several mouse events, then none), so the speed taken from two frames
+        // is a matter of luck, and the luck is worst for a player's pet, which is moved by style and not by the app's own state.
+        // One listener for the window (the newest copy of this script; an older one goes quiet), started when someone asks.
+        const POINTER_KEEP_MS = 400;
+        const pointer = (kit.pointer ??= { samples: [], build: null, started: false });
+        const startPointer = () => {
+          if (pointer.started && pointer.build === BUILD) return;
+          pointer.started = true;
+          pointer.build = BUILD;
+          pointer.samples = [];
+          T.invoke('plugin:event|listen', {
+            event: 'mouse-move',
+            target: { kind: 'Any' },
+            handler: T.transformCallback(event => {
+              if (pointer.build !== BUILD) return;
+              const p = event?.payload;
+              if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
+              const t = performance.now();
+              const scale = window.devicePixelRatio || 1;
+              pointer.samples.push({ t, x: p.x / scale, y: p.y / scale });
+              while (pointer.samples.length && t - pointer.samples[0].t > POINTER_KEEP_MS) pointer.samples.shift();
+            }),
+          }).catch(err => { pointer.started = false; console.warn(`[${id}] could not listen to the pointer`, err); });
+        };
+        // The speed (px a second) of points { t, x, y } over the last `windowMs` before `now`: the slope of a straight line fitted
+        // through them. Null when there are too few to say; zero when the last one is old (it has stopped).
+        const speedOf = (points, now, windowMs) => {
+          const recent = points.filter(p => now - p.t <= windowMs);
+          if (recent.length < 3) return null;
+          if (now - recent[recent.length - 1].t > 60) return { vx: 0, vy: 0 };
+          const t0 = recent[0].t;
+          if (recent[recent.length - 1].t - t0 < 12) return null;
+          const n = recent.length;
+          const ts = recent.map(p => (p.t - t0) / 1000);
+          const mean = ts.reduce((a, b) => a + b, 0) / n;
+          const spread = ts.reduce((a, t) => a + (t - mean) ** 2, 0);
+          if (spread < 1e-9) return null;
+          const slope = key => recent.reduce((a, p, i) => a + (ts[i] - mean) * p[key], 0) / spread;
+          return { vx: slope('x'), vy: slope('y') };
+        };
+        const SPEED_WINDOW_MS = 70;
         // One gesture at a time: `read()` says { held, moved, left, top } of what is watched, or null when it is not there.
+        // The speed in drag and release is the pointer's (a straight line through its last 70 ms), and only on an axis where the pet
+        // does not follow it (it is against the edge of what is free) the pet's own.
         const gesture = (read, send) => {
           let down = false;
           let moved = false;
           let since = 0;
-          let last = null;
+          let path = [];
+          const velocity = now => {
+            const mine = speedOf(path, now, SPEED_WINDOW_MS);
+            const hand = speedOf(pointer.samples, now, SPEED_WINDOW_MS);
+            if (!hand) return mine ?? { vx: 0, vy: 0 };
+            if (!mine) return hand;
+            return {
+              vx: Math.abs(mine.vx) < 0.25 * Math.abs(hand.vx) ? mine.vx : hand.vx,
+              vy: Math.abs(mine.vy) < 0.25 * Math.abs(hand.vy) ? mine.vy : hand.vy,
+            };
+          };
           return now => {
             const state = read();
             if (!state) return;
@@ -903,21 +959,19 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
               down = true;
               moved = false;
               since = now;
-              last = { left: state.left, top: state.top, t: now };
+              path = [{ t: now, x: state.left, y: state.top }];
               send({ type: 'press' });
             } else if (state.held && down) {
               if (state.moved && !moved) {
                 moved = true;
                 send({ type: 'dragstart' });
               }
-              if (moved && last && now > last.t) {
-                const seconds = (now - last.t) / 1000;
-                send({ type: 'drag', vx: (state.left - last.left) / seconds, vy: (state.top - last.top) / seconds });
-              }
-              last = { left: state.left, top: state.top, t: now };
+              path.push({ t: now, x: state.left, y: state.top });
+              while (path.length && now - path[0].t > 200) path.shift();
+              if (moved) send({ type: 'drag', ...velocity(now) });
             } else if (!state.held && down) {
               down = false;
-              send({ type: 'release', moved, heldMs: now - since });
+              send({ type: 'release', moved, heldMs: now - since, ...(moved ? velocity(now) : { vx: 0, vy: 0 }) });
               if (!moved) send({ type: 'click', heldMs: now - since });
             }
           };
@@ -926,7 +980,7 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
         // bounces off the edges of the free area (restitution, a share of the speed kept), and is put down where it
         // stops. `target` says how: { read() -> { left, top }, write(left, top), bounds() -> { minLeft, maxLeft, minTop,
         // maxTop }, held() -> the person has taken it again, commit(left, top), announce() }.
-        const glide = (target, { vx = 0, vy = 0, friction = 2.6, bounce = 0.72, gravity = 0, floorFriction = 5, minSpeed = 30, onFrame, onBump, onEnd } = {}) => {
+        const glide = (target, { vx = 0, vy = 0, friction = 2.6, bounce = 0.72, bounceY = bounce, gravity = 0, floorFriction = 5, minSpeed = 30, onFrame, onBump, onEnd } = {}) => {
           kit.gliding ??= 0;
           const bounds = target.bounds();
           let { left, top } = target.read();
@@ -957,12 +1011,13 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
               const value = axis === 'x' ? left : top;
               if (value >= low && value <= high) continue;
               const speed = Math.abs(axis === 'x' ? vx : vy);
-              if (axis === 'x') { left = value < low ? low : high; vx = -vx * bounce; } else { top = value < low ? low : high; vy = -vy * bounce; }
+              if (axis === 'x') { left = value < low ? low : high; vx = -vx * bounce; } else { top = value < low ? low : high; vy = -vy * bounceY; }
               if (speed > 120) { try { onBump?.({ axis, speed, side: value < low ? 'min' : 'max' }); } catch (err) { console.error(`[${id}] glide bump failed`, err); } }
             }
-            if (gravity > 0 && top >= bounds.maxTop - 0.5) vx *= Math.exp(-floorFriction * dt);        // on the floor it also rubs
+            const floor = gravity > 0 && top >= bounds.maxTop - 0.5;
+            if (floor) vx *= Math.exp(-floorFriction * dt);        // on the floor it also rubs
             target.write(left, top);
-            try { onFrame?.({ vx, vy, left, top }); } catch (err) { console.error(`[${id}] glide frame failed`, err); }
+            try { onFrame?.({ vx, vy, left, top, floor, dt }); } catch (err) { console.error(`[${id}] glide frame failed`, err); }
             slow = Math.hypot(vx, vy) < minSpeed ? slow + dt : 0;
             if (slow > 0.12) finish('rest');
           };
@@ -989,7 +1044,8 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
             busy: () => (kit.gliding ?? 0) > 0,
             // Let go of the pet with a speed (px a second): it goes on, slows down, bounces off the edges of the free area, and
             // is put down where it stops (the app saves the place, and `onDragged` is told, as after a drag).
-            //   { vx, vy, friction = 2.6, bounce = 0.72, gravity = 0 (px a second, each second; down), floorFriction = 5, onFrame({ vx, vy, left, top }), onBump({ axis, speed, side }), onEnd({ why }) }
+            //   { vx, vy, friction = 2.6, bounce = 0.72, bounceY = bounce (what is kept of the speed off the floor and the ceiling), gravity = 0 (px a second, each second; down),
+            //     floorFriction = 5, onFrame({ vx, vy, left, top, floor, dt }), onBump({ axis, speed, side }), onEnd({ why }) }
             // returns { stop() }; it also stops when the person takes the pet again.
             glide(options) {
               const pet = internals()?.pet;
@@ -1042,6 +1098,12 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
               return true;
             },
             onDragged: fn => listen('wuwa-pet-dragged', () => fn()),
+          },
+          // where the pointer is and how fast it goes (px a second, a straight line through the last `ms`, 70 by default)
+          pointer: {
+            start: () => startPointer(),
+            velocity: (ms = SPEED_WINDOW_MS) => speedOf(pointer.samples, performance.now(), ms) ?? { vx: 0, vy: 0 },
+            position: () => { const p = pointer.samples[pointer.samples.length - 1]; return p ? { x: p.x, y: p.y } : null; },
           },
           store: {
             available: () => !!pinia()?._s,

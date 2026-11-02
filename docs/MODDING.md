@@ -71,7 +71,7 @@ the window-to-file map is `modkit.windows`).
 | `modkit.defaultEnabled` | whether the master switch starts on; default `true` |
 | `modkit.windows` | which file runs in which window: `{ "main": "main.js", "panel": "ui.js" }`, or `"*"` for all of them. Default: `index.js` in every window, or none when there is a Node part |
 | `modkit.host` | the mod's Node part, an ES module in the folder: `"host.js"` (see [The Node part](#the-node-part)) |
-| `modkit.api` | the version of modkit's interface the mod was written for; default `1`; `2` has `mod.app` (below), `3` has `mod.app.store` and `mod.app.action`, `4` has `mod.page` and the pets' elements, `5` has `mod.app.assetName`, `6` has `mod.app.pet.onInteraction` and `mod.app.members.onInteraction`, `7` has `mod.app.pet.glide`, `mod.app.members.glide` and `mod.app.pet.busy`, `8` has `gravity` for them. A mod that says more than this modkit has is listed as broken ("update modkit") instead of failing in ways nobody can read |
+| `modkit.api` | the version of modkit's interface the mod was written for; default `1`; `2` has `mod.app` (below), `3` has `mod.app.store` and `mod.app.action`, `4` has `mod.page` and the pets' elements, `5` has `mod.app.assetName`, `6` has `mod.app.pet.onInteraction` and `mod.app.members.onInteraction`, `7` has `mod.app.pet.glide`, `mod.app.members.glide` and `mod.app.pet.busy`, `8` has `gravity` for them, `9` has the hand's speed in `drag` and `release`, `mod.app.pointer`, and `bounceY` and `floor` for `glide`. A mod that says more than this modkit has is listed as broken ("update modkit") instead of failing in ways nobody can read |
 | `modkit.requires` | other mods it needs, with the versions that will do: `{ "other-mod": "^1.2.0" }` (see [Mods using each other](#mods-using-each-other)) |
 | `modkit.permissions` | what it will do beyond showing a page, for whoever installs it to read: `["network", "files"]`. Declared, **not enforced** |
 | `engines.node` | the standard field: the Node versions it works with, e.g. `">=22"`. A mod needing a newer Node than runs the loader is listed as broken |
@@ -509,15 +509,18 @@ mod.app.pet.element()               // .pet-dock       (the whole dock)
 mod.app.pet.content()               // .pet-dock-content (the pet's body)
 mod.app.pet.onElement(fn)           // fn(el) when the body appears (and again if the app draws it anew)
 mod.app.pet.onInteraction(fn)       // what the person does to the pet, as the app says it (needs "app-internals", API 6):
-                                    //   { type: 'press' }  { type: 'dragstart' }  { type: 'drag', vx, vy }  (vx, vy: px a second)
-                                    //   { type: 'release', moved, heldMs }  and, when it was let go without moving, { type: 'click', heldMs }
+                                    //   { type: 'press' }  { type: 'dragstart' }  { type: 'drag', vx, vy }  (vx, vy: px a second, API 9: the pointer's, a line through its last 70 ms)
+                                    //   { type: 'release', moved, heldMs, vx, vy }  (the same speed, at the moment of letting go: the same for every pet) and, when it was let go without moving, { type: 'click', heldMs }
+                                    //   (before API 9 the speed was the change in the pet's place from one frame to the next, which is a matter of luck: the place moves in steps)
 mod.app.pet.css(text)               // a stylesheet nested under the pet's body: mod.app.pet.css('.cat-mainbox { filter: drop-shadow(0 0 10px gold) }')
 mod.app.members.element(id)         // a player's pet as an element
+mod.app.pointer.velocity(ms = 70)   // API 9: { vx, vy } px a second of the pointer, from the app's own native mouse events (about a thousand a second);
+                                    //   mod.app.pointer.position() is { x, y } (in the page's pixels), mod.app.pointer.start() begins listening (an onInteraction does it)
 mod.app.pet.glide(opts)             // let go of the pet with a speed (needs "app-internals", API 7): it goes on, slows down, bounces off the
                                     // edges of the free area (the screen without the taskbar) and is put down where it stops, where the app
-                                    // saves it and `onDragged` is told. opts: { vx, vy (px a second), friction = 2.6, bounce = 0.72, gravity = 0 (px a second every second, down: it falls and
+                                    // saves it and `onDragged` is told. opts: { vx, vy (px a second), friction = 2.6, bounce = 0.72, bounceY = bounce (the share kept off the floor and the ceiling), gravity = 0 (px a second every second, down: it falls and
                                     // lands on the floor, the top of the taskbar), floorFriction = 5,
-                                    // onFrame({ vx, vy, left, top }), onBump({ axis, speed, side }), onEnd({ why: 'rest' | 'grabbed' | 'stopped' }) }.
+                                    // onFrame({ vx, vy, left, top, floor, dt }), onBump({ axis, speed, side }), onEnd({ why: 'rest' | 'grabbed' | 'stopped' }) }.
                                     // Returns { stop() }, or null; it ends by itself when the person takes the pet again
 mod.app.pet.busy()                  // true while a mod is gliding a pet: what puts a pet back in its place waits
 mod.app.members.glide(id, opts)     // the same for a player's pet (in the room's free area)

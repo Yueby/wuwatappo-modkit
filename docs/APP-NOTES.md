@@ -508,3 +508,19 @@ The main window listens for `cat-panel-action` (the panel's way of telling it th
 `clear-local-clicks` sets the count). `mod.app.action` sends any of them.
 Official keys that other tools keep away from: F7 (closes game mode), F8 (next display), F9 (hide or show the pets),
 Ctrl+Alt+P (mouse passes through), Ctrl+Alt+1..5 (the equipped emotes).
+
+## The speed of a pet that is let go (measured, 0.11.0)
+
+Taken from a pet's own place, once a frame, the speed at the release is a matter of luck. Measured on a real hand
+flicking a pet at 3000 to 6000 px/s (the pointer's own speed, from the native `mouse-move` events, a thousand a second):
+what the plugin worked out from two frames was 11 to 170 px/s for a good many of the releases, and so the pet was not thrown.
+
+- The mouse events come at about a thousand a second, the window is drawn at about two hundred, and a pet's place moves in
+  steps (several events, then none): many frames show it not moving, and the speed of the last frame before the release is
+  often zero. A player's pet moves by style (`--room-cat-drag-x/y`), the person's own by the app's state; both are the same
+  in this, and the person's own only got the luck more often.
+- A player's pet follows the pointer as the person's own does (70 ms before the release: 5029 px/s the pet, 5217 the
+  pointer; 3188 and 3063; 6333 and 6132), so the pointer's speed is the pet's.
+- `mouse-move` carries `{ x, y, memberId }` in the screen's pixels (divide by the scale, `devicePixelRatio`, for the
+  page's); its receipt times are even (median 1 ms apart, 99 % within 13 ms), so a straight line through the last 70 ms is a
+  good speed. That is what `drag` and `release` say since API 9.

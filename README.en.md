@@ -15,7 +15,8 @@ The plugins live in their own repository, [wuwatappo-mods](https://github.com/Yu
 | **自动点击** (Auto click) | Clicks the pet at the interval set, raising the click count. In a room, the people in the room see every click | off |
 | **自动开箱子** (Auto chest) | Opens a chest when it is ready (opening costs clicks). The upper and the lower chest are switched separately | off |
 | **房间历史** (Room history) | Records who comes into and leaves a room, with the room number, the time and how long each person stayed. Kept on this computer only; shown on the 联机 page, from where a room can be entered again | on |
-| **桌宠手感** (Pet feel) | Elastic motion for pressing, dragging, releasing, clicking and throwing a pet, with gravity; the same for every pet | on |
+| **桌宠手感** (Pet feel) | Elastic motion for pressing, dragging, releasing, clicking and throwing a pet, with gravity, turning and rolling; the same for every pet | on |
+| **气泡弹跳** (Bubble pop) | The emote bubbles a pet sends out are springy: they swell and spring back as they come out, and sway as they float up | on |
 | **记住桌宠位置** (Pet position) | Records the positions of the person's own pet and the other players' pets, and restores them after a restart or on entering a room | on |
 
 Plugins that act on the account (auto click, auto chest) are **off** after they are installed; they are switched on on the MOD page.
@@ -78,10 +79,13 @@ Every time the window opens, the launcher looks for a newer version of itself; i
 - 拖拽摆动 (drag swing): while dragged the pet is lifted and swings with the direction of the drag.
 - 松手回弹 (release bounce): after release the pet lands and bounces.
 - 点击弹跳 (click hop): the pet hops on a quick click (pressed and released at once).
-- 抛掷 (throw): release quickly during a drag and the pet flies off at the speed of the release and rebounds off the edges of the screen. With gravity on it falls and finally lands on the top of the taskbar; with gravity off it glides on until it stops. A slow release only puts it down.
+- 抛掷 (throw): release quickly during a drag and the pet flies off at the speed of the hand and rebounds off the edges of the screen. The speed is taken from the pointer's path over the last 70 ms before the release, the same for the person's own pet and for another player's, so a light flick throws. With gravity on it falls and finally lands on the top of the taskbar; with gravity off it glides on until it stops. A slow release only puts it down.
+- 旋转滚动 (turn and roll): a thrown pet turns, is turned faster by what it scrapes along, rolls like a wheel on the floor, and rights itself, with a little wobble, when it has slowed down. Off, it only leans the way it goes.
 - Pressing the pet again while it flies stops it at once. The place it ends in is kept by the Pet position plugin.
 
 Each effect has its own switch in the plugin's settings, and there is a strength setting (0.5 to 2, 1 by default). It needs the permission to read and change the app's own state, to know whether a pet is held and whether it is moving.
+
+**Bubble pop**: the emote bubbles a pet sends out (the person's own and the other players') are springy. A bubble is still the app's one second, and rises and ends where it did; it comes out small, swells past its size and springs back, and sways a little as it floats. It only changes styles, and does not touch the account or the emotes themselves. The settings have a strength (0.5 to 2, 1 by default).
 
 **Pet position**: records the positions of the person's own pet and of the other players' pets in the room (the last place each was dragged to), and restores them after a restart or on entering a room.
 

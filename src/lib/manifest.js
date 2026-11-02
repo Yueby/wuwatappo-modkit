@@ -36,7 +36,9 @@ import { validRange } from './semver.js';
 // 6: `mod.app.pet.onInteraction` and `mod.app.members.onInteraction` (press, drag, release, click on a pet).
 // 7: `mod.app.pet.glide` and `mod.app.members.glide` (a pet let go with a speed goes on and bounces off the edges), `pet.busy`.
 // 8: `gravity` and `floorFriction` for `glide`.
-export const LOADER_API = 8;
+// 9: the speed in `drag` and `release` is the pointer's (a line through its last 70 ms: it is the same for every pet, and not a matter of
+//    luck), `mod.app.pointer`, and `bounceY` and `floor` for `glide`.
+export const LOADER_API = 9;
 
 export const WINDOWS = ['main', 'panel', 'login', 'update', 'toast', 'about', 'oss-notice'];
 
