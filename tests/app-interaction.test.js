@@ -46,6 +46,9 @@ async function open(modSource) {
       querySelectorAll: () => [],
     },
     __events: [],
+    CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
+    Event: class { constructor(type) { this.type = type; } },
+    dispatchEvent() {},
   };
   sandbox.window = sandbox;
   sandbox.__wuwaApp = {
@@ -59,7 +62,7 @@ async function open(modSource) {
   const report = await vm.runInContext(compileMod(unitFor(mod, 'main'), 'main'), page);
   assert.equal(report.status === 'error', false, report.error);
   return {
-    held, boxes, page, mod, core, app: sandbox.__wuwaApp,
+    held, boxes, page, mod, core, root, app: sandbox.__wuwaApp,
     events: () => JSON.parse(JSON.stringify(sandbox.__events)),
     // the pointer moved to (x, y), as the app's native event says it, at the clock's time
     pointer: (x, y) => { for (const fn of pointerHandlers) fn({ payload: { x, y } }); },
@@ -340,4 +343,35 @@ test('the pointer is listened to once, and what comes is kept', async () => {
   } finally {
     await w.close();
   }
+});
+
+// --- gliding on the floor ---------------------------------------------------------------------------------------------
+
+// A player's pet on the floor, let go with a sideways speed: how far it goes before it stops.
+async function distanceRolled(options, { seconds = 12 } = {}) {
+  const place = { left: 500, top: 1000 };
+  const w = await open('');
+  w.app.members.list = () => [{ id: 7 }];
+  w.app.members.where = () => ({ ...place });
+  w.app.members.draggable = () => true;
+  w.app.members.place = (id, left, top) => { place.left = left; place.top = top; return true; };
+  w.app.members.clamp = (left, top) => ({ left: Math.min(Math.max(left, 0), 5000), top: Math.min(Math.max(top, 0), 1000) });
+  await fs.writeFile(path.join(w.root, 'mods', 'watcher', 'main.js'), `window.__glide = mod.app.members.glide(7, ${JSON.stringify(options)});`);
+  const [mod] = await discoverMods(path.join(w.root, 'mods'));
+  await vm.runInContext(compileMod({ ...unitFor(mod, 'main'), version: 'glide-' + Math.random() }, 'main'), w.page);
+  const start = place.left;
+  for (let i = 0; i < (seconds * 1000) / 16; i += 1) w.frame(16);
+  const ended = place.left;
+  await w.close();
+  return ended - start;
+}
+
+test('on the floor a push that does not depend on the speed stops it: a fast one goes far, a slow one little', async () => {
+  const base = { vx: 600, vy: 0, gravity: 2600, friction: 0, floorFriction: 0, floorDecel: 300 };
+  const far = await distanceRolled(base);
+  assert.ok(Math.abs(far - 600) < 60, `600 px a second against 300 px a second each second goes 600 px: it went ${far.toFixed(0)}`);
+  const fast = await distanceRolled({ ...base, vx: 1200 });
+  assert.ok(Math.abs(fast / far - 4) < 0.4, `twice the speed is four times as far (the square): ${(fast / far).toFixed(2)}`);
+  const none = await distanceRolled({ ...base, floorDecel: 0, floorFriction: 0 });
+  assert.ok(none > 2000, `with nothing on the floor it goes on to the wall: ${none.toFixed(0)}`);
 });

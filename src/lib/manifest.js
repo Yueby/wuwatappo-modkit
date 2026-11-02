@@ -38,7 +38,8 @@ import { validRange } from './semver.js';
 // 8: `gravity` and `floorFriction` for `glide`.
 // 9: the speed in `drag` and `release` is the pointer's (a line through its last 70 ms: it is the same for every pet, and not a matter of
 //    luck), `mod.app.pointer`, and `bounceY` and `floor` for `glide`.
-export const LOADER_API = 9;
+// 10: `floorDecel` for `glide` (on the floor it is slowed by a push that does not depend on its speed, so it rolls as far as its speed says).
+export const LOADER_API = 10;
 
 export const WINDOWS = ['main', 'panel', 'login', 'update', 'toast', 'about', 'oss-notice'];
 

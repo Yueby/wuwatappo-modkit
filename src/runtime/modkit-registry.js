@@ -980,7 +980,7 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
         // bounces off the edges of the free area (restitution, a share of the speed kept), and is put down where it
         // stops. `target` says how: { read() -> { left, top }, write(left, top), bounds() -> { minLeft, maxLeft, minTop,
         // maxTop }, held() -> the person has taken it again, commit(left, top), announce() }.
-        const glide = (target, { vx = 0, vy = 0, friction = 2.6, bounce = 0.72, bounceY = bounce, gravity = 0, floorFriction = 5, minSpeed = 30, onFrame, onBump, onEnd } = {}) => {
+        const glide = (target, { vx = 0, vy = 0, friction = 2.6, bounce = 0.72, bounceY = bounce, gravity = 0, floorFriction = 5, floorDecel = 0, minSpeed = 30, onFrame, onBump, onEnd } = {}) => {
           kit.gliding ??= 0;
           const bounds = target.bounds();
           let { left, top } = target.read();
@@ -1015,7 +1015,13 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
               if (speed > 120) { try { onBump?.({ axis, speed, side: value < low ? 'min' : 'max' }); } catch (err) { console.error(`[${id}] glide bump failed`, err); } }
             }
             const floor = gravity > 0 && top >= bounds.maxTop - 0.5;
-            if (floor) vx *= Math.exp(-floorFriction * dt);        // on the floor it also rubs
+            if (floor) {
+              // on the floor it also rubs: a share of the speed a second, and (a rolling thing is slowed by about the same push whatever its
+              // speed is) a speed a second every second, which stops it for good, and carries a fast one far
+              vx *= Math.exp(-floorFriction * dt);
+              const pull = floorDecel * dt;
+              vx = Math.abs(vx) <= pull ? 0 : vx - Math.sign(vx) * pull;
+            }
             target.write(left, top);
             try { onFrame?.({ vx, vy, left, top, floor, dt }); } catch (err) { console.error(`[${id}] glide frame failed`, err); }
             slow = Math.hypot(vx, vy) < minSpeed ? slow + dt : 0;
@@ -1045,7 +1051,7 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
             // Let go of the pet with a speed (px a second): it goes on, slows down, bounces off the edges of the free area, and
             // is put down where it stops (the app saves the place, and `onDragged` is told, as after a drag).
             //   { vx, vy, friction = 2.6, bounce = 0.72, bounceY = bounce (what is kept of the speed off the floor and the ceiling), gravity = 0 (px a second, each second; down),
-            //     floorFriction = 5, onFrame({ vx, vy, left, top, floor, dt }), onBump({ axis, speed, side }), onEnd({ why }) }
+            //     floorFriction = 5, floorDecel = 0 (px a second, each second, on the floor), onFrame({ vx, vy, left, top, floor, dt }), onBump({ axis, speed, side }), onEnd({ why }) }
             // returns { stop() }; it also stops when the person takes the pet again.
             glide(options) {
               const pet = internals()?.pet;

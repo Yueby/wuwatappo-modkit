@@ -80,7 +80,7 @@ Every time the window opens, the launcher looks for a newer version of itself; i
 - 松手回弹 (release bounce): after release the pet lands and bounces.
 - 点击弹跳 (click hop): the pet hops on a quick click (pressed and released at once).
 - 抛掷 (throw): release quickly during a drag and the pet flies off at the speed of the hand and rebounds off the edges of the screen. The speed is taken from the pointer's path over the last 70 ms before the release, the same for the person's own pet and for another player's, so a light flick throws. With gravity on it falls and finally lands on the top of the taskbar; with gravity off it glides on until it stops. A slow release only puts it down.
-- 旋转滚动 (turn and roll): a thrown pet turns, is turned faster by what it scrapes along, rolls like a wheel on the floor, and rights itself, with a little wobble, when it has slowed down. Off, it only leans the way it goes.
+- 旋转滚动 (turn and roll): a thrown pet turns, is turned faster by what it scrapes along, rolls like a wheel on the floor, for as far as the speed it lands with says (a light throw rolls a short way, a hard one across most of the screen, and it rebounds off an edge and goes on), always turning as fast as it moves, and rights itself, with a little wobble, before it stops. Off, it only leans the way it goes.
 - Pressing the pet again while it flies stops it at once. The place it ends in is kept by the Pet position plugin.
 
 Each effect has its own switch in the plugin's settings, and there is a strength setting (0.5 to 2, 1 by default). It needs the permission to read and change the app's own state, to know whether a pet is held and whether it is moving.
