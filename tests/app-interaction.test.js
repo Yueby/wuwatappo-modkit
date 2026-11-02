@@ -58,7 +58,7 @@ async function open(modSource) {
   const report = await vm.runInContext(compileMod(unitFor(mod, 'main'), 'main'), page);
   assert.equal(report.status === 'error', false, report.error);
   return {
-    held, boxes,
+    held, boxes, page, mod, core,
     events: () => JSON.parse(JSON.stringify(sandbox.__events)),
     // one animation frame, `ms` later
     frame(ms = 16) {
@@ -174,6 +174,27 @@ test("the person's own pet is told the same way", async () => {
     w.held.moved = false;
     w.frame();
     assert.deepEqual(w.events().map(e => e.type), ['press', 'dragstart', 'drag', 'release']);
+  } finally {
+    await w.close();
+  }
+});
+
+test('a mod that has not changed is run again when the framework is a new copy, so it has the new API', async () => {
+  const w = await open('window.__runs = (window.__runs ?? 0) + 1;');
+  try {
+    const run = code => vm.runInContext(code, w.page);
+    const install = () => run(compileMod(unitFor(w.mod, 'main'), 'main'));
+    assert.equal(run('window.__runs'), 1);
+    assert.equal((await install()).status, 'already-installed', 'the same framework leaves it alone');
+    assert.equal(run('window.__runs'), 1);
+
+    // The framework is evaluated again, with a change (so the loader sees another version of it)
+    const next = { ...w.core, code: `${w.core.code}\n// changed`, version: `${w.core.version}-next` };
+    assert.equal((await run(compileCore(next))).status, 'ok');
+    assert.notEqual((await install()).status, 'already-installed', 'a mod built by the old copy is not kept');
+    assert.equal(run('window.__runs'), 2);
+    assert.equal((await install()).status, 'already-installed', 'and then it is left alone again');
+    assert.equal(run('window.__runs'), 2);
   } finally {
     await w.close();
   }

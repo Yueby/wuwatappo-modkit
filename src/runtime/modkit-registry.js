@@ -32,6 +32,8 @@
 // through a captured reference, so a reloaded script's versions are the ones that run.
 
 const kit = (window.modkit ??= {});
+// What tells this evaluation of the framework from an earlier one in the same window (a mod keeps the API it was given).
+const BUILD = {};
 kit.entries ??= [];
 kit.entrySerial ??= 0;       // gives every added row an identity (the page compares them)
 kit.mods ??= new Map();       // id -> manifest, for every user mod installed in this window
@@ -478,14 +480,15 @@ kit.hostHello = () => {
 kit.install = async ({ id, manifest, version, label, run, loadError }) => {
   const registry = (window.__wuwaMods ??= {});
   const previous = registry[id];
-  if (previous && previous.version === version) {
-    // Same source: keep whatever the installed copy did, do not run it twice.
+  if (previous && previous.version === version && previous.build === BUILD) {
+    // Same source, and built by this very copy of the framework: keep whatever the installed copy did, do not run it
+    // twice. (A copy made by an older framework has the mod API from that one, so it is run again.)
     return { status: previous.status === 'error' ? 'error' : 'already-installed' };
   }
   // Source changed while the window was live: tear the old copy down first.
   try { previous?.dispose?.(); } catch (err) { console.warn('dispose failed', err); }
 
-  const record = { status: 'idle', error: null, version, dispose: null };
+  const record = { status: 'idle', error: null, version, build: BUILD, dispose: null };
   const unit = { live: new Map(), apply, announce, tellHost };
   let session = null;   // the running copy: { disposers, dead }, or null while not running
 
