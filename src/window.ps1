@@ -282,9 +282,59 @@ $devFolder.Add_Click({
   if ($dir) { Set-Dev ('dev on ' + (ConvertTo-Argument $dir)) "正在打开开发模式…" }
 })
 
-# What happens when the window opens, and on 刷新: where dev mode stands, the status, then the check.
-function Start-Up {
+# --- where the program is -------------------------------------------------------------------------------
+
+# This program has to be in the app's own folder, beside WuwaTappo.exe: it makes the mods folder, the data and its
+# own files there, and patches the app there. In any other folder (the Downloads folder, or the Start menu folder
+# of the app's shortcuts, which is what opening a shortcut's location can show) it finds no app. `placement --json`
+# says whether it is, and where the app is if not; nothing that changes anything is offered until it is.
+$placementBlocked = @($install, $uninstall, $folder, $pluginsButton, $devFolder, $devBox)
+
+function Get-MisplacedText($Placement) {
+  $lines = @('这里没有 WuwaTappo.exe，modkit.exe 放的位置不对。', '', 'modkit.exe 现在在：', "  $($Placement.dir)")
+  if ($Placement.startMenu) { $lines += '这是软件快捷方式所在的开始菜单文件夹，不是软件本身所在的文件夹。' }
+  $lines += ''
+  $lines += 'modkit.exe 必须放在软件的根目录，也就是和 WuwaTappo.exe 在同一个文件夹里。'
+  $where = @($Placement.found)
+  $lines += ''
+  if ($where.Count) {
+    $lines += '软件在这里：'
+    foreach ($entry in $where) { $lines += "  $($entry.dir)" }
+    $lines += ''
+    $lines += '把 modkit.exe 移到那个文件夹，关掉这个窗口，再从那里打开它。'
+  } else {
+    $lines += '没有找到软件的位置。可以右键 WuwaTappo 的快捷方式，选“打开文件所在的位置”；如果打开的是开始菜单里的文件夹，就到软件实际安装的文件夹里找 WuwaTappo.exe。'
+    $lines += '找到后把 modkit.exe 移到那里，关掉这个窗口，再从那里打开它。'
+  }
+  return ($lines -join "`r`n")
+}
+
+function Show-Misplaced($Placement) {
+  $text = Get-MisplacedText $Placement
+  $box.Text = $text
+  $box.SelectionStart = 0
+  Show-Version '（位置不对）'
+  foreach ($button in $placementBlocked) { $button.Enabled = $false }
+  $where = @($Placement.found)
+  if ($where.Count) {
+    if (Confirm-Action ($text + "`r`n`r`n要现在打开软件所在的文件夹吗？")) { Start-Process explorer.exe -ArgumentList ('"' + $where[0].dir + '"') }
+  } else {
+    [void][System.Windows.Forms.MessageBox]::Show($text, 'Wuwa Tappo Mod', 'OK', 'Warning')
+  }
+}
+
+# `placement --json` printed one line: { ok, dir, startMenu, found: [{ how, dir }] }. What cannot be read is not a reason to
+# stop the person: the commands say it themselves if the program really is in the wrong place.
+function Read-Placement {
+  $line = ($script:resultText -split "`r?`n" | Where-Object { $_ -like '{*' } | Select-Object -Last 1)
+  try { $answer = $line | ConvertFrom-Json } catch { $answer = $null }
+  if ($answer -and -not $answer.ok) { Show-Misplaced $answer; return }
   Read-Dev { Apply-Dev; Show-Status { Check-Update } }
+}
+
+# What happens when the window opens, and on 刷新: where the program is, where dev mode stands, the status, then the check.
+function Start-Up {
+  Start-Command 'placement --json' '' { Read-Placement } $null -Quiet
 }
 
 $install.Add_Click({ Start-Command 'setup' "正在安装…`r`n过程中会弹出一次管理员确认。软件正在运行的话，会先关闭，装好后自动重新打开。" { Show-Status } })

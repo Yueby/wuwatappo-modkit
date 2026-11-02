@@ -29,6 +29,7 @@ import { APP_EXE, APP_EXE_BACKUP, LOG_FILE, MODS_DIR, MOD_DATA_DIR } from '../li
 import { countInstances, startThroughShell, stopApp } from '../lib/ps.js';
 import { POLICY_KEY, APP_NAME, portOf, readArguments, removeArguments, setArguments } from '../lib/webview-policy.js';
 import { isPackaged } from '../lib/bundle.js';
+import { checkPlacement, placementMessage } from '../lib/placement.js';
 import { listMods } from '../lib/install.js';
 import { field, log, section, style } from '../lib/output.js';
 import { parseOptions } from './options.js';
@@ -57,11 +58,8 @@ export default async function setup(argv) {
   const options = parseOptions(argv);
   if (options.positional[0] === 'status') return status(options);
 
-  try {
-    await fs.access(APP_EXE);
-  } catch {
-    throw new Error(`the app is not at ${APP_EXE} (set WUWA_INSTALL_DIR, or put this program in the app's folder)`);
-  }
+  const placement = await checkPlacement();
+  if (!placement.ok) throw new Error(placementMessage(placement));
 
   section('Setting up');
 

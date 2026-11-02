@@ -23,7 +23,7 @@ Plugins that act on the account (auto click, auto chest) are **off** after they 
 ## Installing
 
 1. Download `modkit.exe` from the [Releases page](https://github.com/Yueby/wuwatappo-modkit/releases/latest) (about 90 MB: it carries its own runtime). `modkit.exe.sha256` on the same page is its checksum, for anyone who wants to compare.
-2. Put `modkit.exe` in Wuwa Tappo's install folder, the one that has `WuwaTappo.exe` in it.
+2. Put `modkit.exe` in Wuwa Tappo's install folder (the app's root), in the same folder as `WuwaTappo.exe`. **Not the folder of the shortcuts in the Start menu**: it has shortcuts and no `WuwaTappo.exe`. If it is in the wrong place the window says so when it opens, and says which folder the app is in.
 3. Double-click `modkit.exe` and press **安装** (install) in the window. Windows asks for administrator rights **once** (UAC): answer yes.
 4. If the app is running it is closed first and opened again when the install is done.
 
@@ -115,6 +115,8 @@ Press **卸载** in the launcher window: the background loader is stopped, the s
 - When a chest is ready and what it gives are decided by the server. The loader and the plugins cannot change that, and do not try to.
 
 ## Questions
+
+**Opening modkit.exe says its place is wrong (位置不对).** `modkit.exe` has to be in the same folder as `WuwaTappo.exe`. The usual mistakes are the Start menu folder of the shortcuts and the Downloads folder. The message names the folder the app is in (found from a shortcut, the running app and the install record): move `modkit.exe` there, close the window and open it from there. `modkit.exe placement` checks it from the command line.
 
 **There is no MOD tab after starting the app.** Make sure it was installed with the launcher's 安装, and that the app was restarted afterwards (installing does that by itself). Opening the launcher window and pressing 刷新 shows the current state. If the app has been updated, press 安装 once more.
 

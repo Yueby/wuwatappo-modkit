@@ -4,6 +4,7 @@ import autostart from './autostart.js';
 import dev from './dev.js';
 import lab from './lab.js';
 import mods from './mods.js';
+import placement from './placement.js';
 import run from './run.js';
 import selftest from './selftest.js';
 import setup, { uninstall } from './setup.js';
@@ -20,6 +21,7 @@ import backendCommands from './backend-commands.js';
 export const COMMANDS = {
   selftest,
   window,
+  placement,
   update,
   setup,
   uninstall,

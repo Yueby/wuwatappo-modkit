@@ -13,6 +13,7 @@ import { acquireLock } from '../lib/lock.js';
 import { ensurePatched } from '../lib/patch.js';
 import { LOG_FILE } from '../lib/paths.js';
 import { field, log, style, teeToFile } from '../lib/output.js';
+import { checkPlacement, placementMessage } from '../lib/placement.js';
 import { removeUpdateLeftovers } from '../lib/updater.js';
 import { parseOptions } from './options.js';
 import { resident } from './watch.js';
@@ -20,6 +21,9 @@ import { resident } from './watch.js';
 export default async function start(argv) {
   const options = parseOptions(argv);
   if (options.logFile) teeToFile(LOG_FILE);
+
+  const placement = await checkPlacement();
+  if (!placement.ok) throw new Error(placementMessage(placement));
 
   // First of all, before the app is touched: a second loader must not launch anything.
   const lock = acquireLock();

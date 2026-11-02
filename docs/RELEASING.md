@@ -50,6 +50,17 @@ a release cannot be used to move people back.
 4. Run the new exe's `setup`, then its `window`; the old window closes (exit code 10 from `update --reopen`).
 5. `modkit.exe.old` cannot be deleted while the old window's program runs (measured); the next window opening deletes it.
 
+## Where the program has to be
+
+In the app's own folder, beside `WuwaTappo.exe` (src/lib/placement.js): that folder is taken to be the app's (paths.js), and the
+mods, the data, the patch and the loader's files all go there. Put anywhere else (the Start menu folder of the app's shortcuts,
+which is what opening a shortcut's location can lead to, or Downloads), `setup` and `start` stop with a message, and the window,
+which asks `placement --json` when it opens, says so in a dialog, keeps 安装 and the rest off, and offers to open the folder the app
+is in. That folder is found from a shortcut next to the program, the running app, and the uninstall entry the app's installer
+writes (`HKCU...UninstallWuwaTappo`, whose InstallLocation has quotes in the value itself), and each is checked for a
+`WuwaTappo.exe`. The program that runs from `moddata.modkit` (the loader's copy, an update waiting there) is not misplaced:
+its app folder is two up.
+
 ## Updating from the MOD page
 
 The same update, started from inside the app: the MOD page shows the version at its bottom right with **检查更新**, and

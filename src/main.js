@@ -15,6 +15,7 @@ ${style.bold('Usage')}
 
 ${style.bold('Commands')}
   window              Open the window with the install / uninstall buttons (what a double-click on the exe does)
+  placement           Say whether this program is in the app's own folder, beside WuwaTappo.exe (--json)
   update              Look on GitHub for a newer version and take it (--check only asks, --json)
   setup [status]      One-time install: after it, just run WuwaTappo.exe and the mods start with it
   uninstall           Take setup away again and put the original exe back (--keep-exe leaves it patched)
