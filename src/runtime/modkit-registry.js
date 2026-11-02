@@ -1119,9 +1119,10 @@ kit.install = async ({ id, manifest, version, label, run, loadError }) => {
             onInteraction(fn) {
               const gestures = new Map();
               const held = new Map();
+              let open = null;                       // who is held now: read again at every tick, by the gestures too
               return track(now => {
                 const id = internals()?.members?.held?.();
-                const open = id === null || id === undefined ? null : String(id);
+                open = id === null || id === undefined ? null : String(id);
                 for (const key of new Set([...gestures.keys(), ...(open ? [open] : [])])) {
                   if (!gestures.has(key)) {
                     held.set(key, null);
