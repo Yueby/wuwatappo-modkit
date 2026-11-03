@@ -73,13 +73,6 @@ function installStyle() {
       padding: 8px 27px 14px; font-size: 14px; color: #8e7b6a; min-height: 28px;
     }
     #${FOOT_ID} .modkit-foot-text { max-width: 460px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    /* .setting-btn is the app's, scoped to its rows (.setting-item .setting-btn): the same look, here */
-    #${FOOT_ID} .setting-btn {
-      display: block; min-width: 72px; height: 26px; padding: 0 18px; background: #fed291; border: 1px solid #E7B77C;
-      border-radius: 20px; font-size: 16px; color: #8e5e43; text-align: center; line-height: 26px; cursor: pointer;
-      filter: drop-shadow(0 2px 0 #E7B77C);
-    }
-    #${FOOT_ID} .setting-btn:disabled { opacity: .5; cursor: default; }
     .modkit-bar { width: 220px; height: 8px; border-radius: 4px; background: #ebce9b; overflow: hidden; flex: none; }
     .modkit-bar > div { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #c88865, #995e3f); transition: width .2s ease; }
     .modkit-bar > div.modkit-bar--wait { width: 40% !important; animation: modkit-bar-wait 1.2s ease-in-out infinite; }
@@ -120,6 +113,7 @@ function installStyle() {
     .modkit-btn {
       display: block; box-sizing: border-box; min-width: 72px; height: 28px; margin: 0; padding: 0 18px; border: 1px solid #e7b77c; border-radius: 20px;
       font: inherit; font-size: 16px; line-height: 26px; text-align: center; color: #8e5e43; background: #fed291; cursor: pointer; filter: drop-shadow(0 2px 0 #e7b77c);
+      transition: transform .09s ease-out, filter .09s ease-out;
     }
     .modkit-btn--wide { flex: 1; }
     .modkit-btn--quiet { background: #f0d9b3; border-color: #e6cba0; color: #a89580; filter: none; cursor: default; }
@@ -133,9 +127,9 @@ function installStyle() {
     .modkit-card .setting-switch input { opacity: 0; width: 0; height: 0; display: none; }
     .modkit-card .setting-switch .setting-slider {
       position: relative; width: 36px; height: 14px; padding: 2px; background: #fed291; border: 2px solid #E7B77C; border-radius: 20px;
-      filter: drop-shadow(0 2px 0 #E7B77C); cursor: pointer; transition: .3s; display: flex; align-items: center; justify-content: flex-start;
+      filter: drop-shadow(0 2px 0 #E7B77C); cursor: pointer; transition: .3s; transition-delay: var(--tdelay, 0ms); display: flex; align-items: center; justify-content: flex-start;
     }
-    .modkit-card .setting-switch .setting-slider:before { position: relative; display: block; content: ""; height: 14px; width: 14px; background: #fff3dd; border-radius: 50%; transition: .3s; }
+    .modkit-card .setting-switch .setting-slider:before { position: relative; display: block; content: ""; height: 14px; width: 14px; background: #fff3dd; border-radius: 50%; transition: .3s; transition-delay: var(--tdelay, 0ms); }
     .modkit-card .setting-switch input:checked + .setting-slider { background: #c88865; border-color: #995e3f; filter: drop-shadow(0 2px 0 #995E3F); }
     .modkit-card .setting-switch input:checked + .setting-slider:before { transform: translate(22px); }
     .modkit-power { display: flex; align-items: center; gap: 10px; margin: 0; cursor: pointer; }
@@ -257,7 +251,7 @@ const controls = {
   },
   // { button: { label, onClick, disabled? } }
   button({ label, onClick, disabled }) {
-    const b = el('button', 'setting-btn', resolve(label));
+    const b = el('button', 'modkit-btn', resolve(label));
     b.type = 'button';
     b.disabled = !!resolve(disabled);
     b.addEventListener('click', () => onClick?.());
@@ -315,7 +309,7 @@ function loadedMods() {
 // 0, bottom 0" inside .room-info). The empty space beside a title is used, not a row of the list.
 // `beside`: how far from the right edge, in px, when another button already has the corner.
 function headerButton(label, onClick, beside = 0) {
-  const button = el('button', 'common-btn leave-room-btn', label);
+  const button = el('button', 'modkit-btn leave-room-btn', label);
   button.type = 'button';
   if (beside) button.style.right = `${beside}px`;
   button.addEventListener('click', onClick);
@@ -625,6 +619,38 @@ function tabBar(mods) {
 // Words for where a plugin stands: said in words, because the app's palette has no red or green to say it with.
 const STATUS_TEXT = { ok: '正常', idle: '正常', error: '出错', off: '已关闭', waiting: '等待中', loading: '启动中' };
 
+// The page is drawn again at every change, and a card with it, so the switch that was pressed is gone as it starts to move and the new
+// one would be born at the end of its way. What each was last drawn as is kept, and a switch that is drawn anew is drawn where the
+// one before it was, and set to its new place a frame later: it goes the same way as the app's own (the settings dialog's, which is
+// never drawn anew). When it is drawn anew again while it is on its way (a plugin that starts says "starting", then "running"), it
+// goes on from where it had got to: a transition that has a negative delay begins that far in.
+const powerDrawn = new Map();       // plugin -> { shown, from, at }
+const POWER_MS = 300;               // the app's switch takes .3 s
+
+function powerSwitch(id, enabled) {
+  const sw = controls.toggle({ value: enabled, onChange: on => kit.setEnabled(id, on) });
+  const input = sw.querySelector('input');
+  const now = performance.now();
+  const before = powerDrawn.get(id);
+  let start = enabled;
+  let elapsed = 0;
+  if (!before) {
+    powerDrawn.set(id, { shown: enabled, from: enabled, at: -1e9 });
+  } else if (before.shown !== enabled) {
+    powerDrawn.set(id, { shown: enabled, from: before.shown, at: now });
+    start = before.shown;
+  } else if (now - before.at < POWER_MS) {
+    start = before.from;
+    elapsed = now - before.at;
+  }
+  if (start !== enabled) {
+    input.checked = start;
+    sw.style.setProperty('--tdelay', `-${Math.round(elapsed)}ms`);
+    requestAnimationFrame(() => requestAnimationFrame(() => { input.checked = enabled; }));
+  }
+  return sw;
+}
+
 function installedCard(id, manifest) {
   const state = kit.stateOf(id);
   const enabled = kit.isEnabled(id);
@@ -658,7 +684,7 @@ function installedCard(id, manifest) {
   const actions = el('div', 'modkit-card-actions');
   // The master switch is a switch, the app's own: off means the plugin does not run at all.
   const power = el('label', 'modkit-power');
-  power.append(controls.toggle({ value: enabled, onChange: on => kit.setEnabled(id, on) }), el('span', 'modkit-switch-text', enabled ? '已启用' : '已关闭'));
+  power.append(powerSwitch(id, enabled), el('span', 'modkit-switch-text', enabled ? '已启用' : '已关闭'));
   actions.appendChild(power);
   const right = el('div', 'modkit-card-actions-end');
   if (hasSettings(id, manifest)) right.appendChild(button('设置', () => openSettings(id)));
@@ -979,9 +1005,10 @@ function promptFor(op) {
   };
 }
 
-// The words of a prompt, set as the About dialog sets its own: the title big, bold and in the middle, and
-// under it, smaller, in the plain face and the paler brown, set from the left. (The app's own confirm
-// dialog has one short line, which is why .role-switch-emote-overlay__message is one size and centred.)
+// The words of a prompt: the title bold and in the middle, and under it, smaller, in the plain face and the paler brown, set
+// from the left, as the About dialog sets its own, but in the sizes of this page (its cards are 14 to 18 px; the About dialog's
+// 30 and 20 px are for a dialog that has nothing else on it, and a question about a plugin is asked over a page of small
+// print). A wait ("正在获取…") has no body, and is a small card.
 const TITLE_FONT = '"975MaruSC-Bold", "975MaruSC", "Microsoft YaHei", sans-serif';
 const BOLD_BROWN = 'rgb(142, 94, 67)';
 const BODY_BROWN = 'rgb(142, 123, 106)';
@@ -989,14 +1016,15 @@ const BODY_BROWN = 'rgb(142, 123, 106)';
 function promptText({ title, body }) {
   const text = el('div', 'modkit-prompt');
   const heading = el('h2', null, title);
+  const wait = body.length === 0;
   Object.assign(heading.style, {
-    margin: '0 0 20px', fontFamily: TITLE_FONT, fontSize: '30px', lineHeight: '38px',
+    margin: wait ? '0' : '0 0 14px', fontFamily: TITLE_FONT, fontSize: wait ? '18px' : '22px', lineHeight: wait ? '26px' : '30px',
     fontWeight: '700', color: BOLD_BROWN, textAlign: 'center',
   });
   text.appendChild(heading);
   for (const item of body) {
     const paragraph = el('p');
-    Object.assign(paragraph.style, { margin: '0 0 12px', fontSize: '20px', lineHeight: '32px', color: BODY_BROWN, textAlign: 'left' });
+    Object.assign(paragraph.style, { margin: '0 0 8px', fontSize: '15px', lineHeight: '24px', color: BODY_BROWN, textAlign: 'left' });
     if (Array.isArray(item)) {
       const label = el('span', null, `${item[0]}：`);
       Object.assign(label.style, { fontFamily: TITLE_FONT, fontWeight: '700', color: BOLD_BROWN });
@@ -1006,7 +1034,7 @@ function promptText({ title, body }) {
     }
     text.appendChild(paragraph);
   }
-  text.lastElementChild.style.marginBottom = '24px';   // room before the buttons or the box
+  if (!wait) text.lastElementChild.style.marginBottom = '18px';   // room before the buttons or the box
   return text;
 }
 
@@ -1026,6 +1054,11 @@ function syncOverlay() {
   const prompt = promptFor(op);
   const { layer, panel: card } = frame({ id: OVERLAY_ID });
   layer.dataset.key = key;
+  if (!prompt.body.length) {                          // a wait: a small card, not a dialog
+    Object.assign(card.style, { width: 'auto', minWidth: '260px', maxWidth: '420px', height: 'auto', padding: '20px 36px' });
+  } else {                                            // a question: narrower than the app's own, which has one short line in it
+    Object.assign(card.style, { width: 'min(500px, 100%)', padding: '26px 32px 28px' });
+  }
   card.appendChild(promptText(prompt));
 
   if (prompt.checkbox) {
