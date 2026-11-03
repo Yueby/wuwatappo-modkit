@@ -107,7 +107,7 @@ function installStyle() {
       padding: 14px 18px 16px; border-radius: 12px; background: #fbedd5;
     }
     .modkit-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
-    .modkit-card-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; color: #8e5e43; }
+    .modkit-card-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; color: #8e5e43; }
     .modkit-chip { flex: none; padding: 0 9px; border-radius: 10px; line-height: 20px; font-size: 13px; color: #8e5e43; background: #f3dcb5; }
     .modkit-chip--ok { background: #fed291; }
     .modkit-chip--warn { background: #e3b59f; }
@@ -121,10 +121,32 @@ function installStyle() {
       display: block; box-sizing: border-box; min-width: 72px; height: 28px; margin: 0; padding: 0 18px; border: 1px solid #e7b77c; border-radius: 20px;
       font: inherit; font-size: 16px; line-height: 26px; text-align: center; color: #8e5e43; background: #fed291; cursor: pointer; filter: drop-shadow(0 2px 0 #e7b77c);
     }
-    .modkit-btn--off { background: transparent; color: #a89580; filter: none; }
     .modkit-btn--wide { flex: 1; }
-    .modkit-btn--ghost { background: #fbedd5; filter: none; }
-    .modkit-btn:disabled { opacity: .55; cursor: default; filter: none; }
+    .modkit-btn--quiet { background: #f0d9b3; border-color: #e6cba0; color: #a89580; filter: none; cursor: default; }
+    .modkit-btn:disabled { cursor: default; filter: none; }
+    .modkit-btn:not(.modkit-btn--quiet):not(.modkit-new):active { transform: translateY(1px); filter: none; }
+    /* the page does not scroll: the title and the tabs stay, and the cards of a tab scroll under them, with the app's thin scrollbar */
+    #${BODY_ID} { display: flex; flex-direction: column; overflow: hidden !important; }
+    #${BODY_ID} .modkit-scroll { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; margin-right: -10px; padding-right: 10px; }
+    /* the switch is the app's (.setting-item .setting-switch), whose rules stop at a settings row: the same, here */
+    .modkit-card .setting-switch { position: relative; display: inline-block; }
+    .modkit-card .setting-switch input { opacity: 0; width: 0; height: 0; display: none; }
+    .modkit-card .setting-switch .setting-slider {
+      position: relative; width: 36px; height: 14px; padding: 2px; background: #fed291; border: 2px solid #E7B77C; border-radius: 20px;
+      filter: drop-shadow(0 2px 0 #E7B77C); cursor: pointer; transition: .3s; display: flex; align-items: center; justify-content: flex-start;
+    }
+    .modkit-card .setting-switch .setting-slider:before { position: relative; display: block; content: ""; height: 14px; width: 14px; background: #fff3dd; border-radius: 50%; transition: .3s; }
+    .modkit-card .setting-switch input:checked + .setting-slider { background: #c88865; border-color: #995e3f; filter: drop-shadow(0 2px 0 #995E3F); }
+    .modkit-card .setting-switch input:checked + .setting-slider:before { transform: translate(22px); }
+    .modkit-power { display: flex; align-items: center; gap: 10px; margin: 0; cursor: pointer; }
+    .modkit-switch-text { font-size: 15px; color: #8e7b6a; }
+    .modkit-card-badges { display: flex; align-items: center; gap: 6px; margin-left: auto; flex: none; }
+    .modkit-card-actions-end { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+    .modkit-btn.modkit-new {
+      min-width: 0; height: 20px; padding: 0 10px; border: 0; border-radius: 10px; font-size: 13px; line-height: 20px; color: #fff6dc; background: #ff9f3a;
+      filter: none; flex: none;
+    }
+    .modkit-btn.modkit-new:hover { background: #f08a1f; }
     .modkit-menu {
       position: absolute; right: 14px; bottom: 52px; z-index: 5; min-width: 150px; padding: 6px; border: 1px solid #e7b77c; border-radius: 12px;
       background: #fff6e4; box-shadow: 0 4px 14px rgba(90, 50, 20, .2);
@@ -542,6 +564,7 @@ function setTab(name) {
   ui.tab = name;
   ui.menu = null;
   renderView();
+  document.querySelector('#' + VIEW_ID + ' .modkit-scroll')?.scrollTo(0, 0);
   if (name === 'market' && (market.phase !== 'list' || Date.now() - market.loadedAt > MARKET_STALE_MS)) loadMarket();
 }
 
@@ -593,7 +616,7 @@ function tabBar(mods) {
   bar.append(make('installed', '已安装', mods.length), make('market', '插件市场', found.list.length ? `有 ${found.list.length} 个可更新` : 0));
   if (ui.tab === 'market') {
     const end = el('div', 'modkit-tabs-end');
-    end.appendChild(button('刷新', loadMarket, 'modkit-btn--ghost'));
+    end.appendChild(button('刷新', loadMarket));
     bar.appendChild(end);
   }
   return bar;
@@ -607,32 +630,42 @@ function installedCard(id, manifest) {
   const enabled = kit.isEnabled(id);
   const known = market.plugins.find(p => p.id === id);
   const update = found.list.find(u => u.id === id);
+  const plugin = { id, name: manifest.name };
 
   const card = el('div', 'modkit-card');
   const head = el('div', 'modkit-card-head');
   const title = el('div', 'modkit-card-title', manifest.name);
   title.title = manifest.name;
   head.appendChild(title);
-  if (manifest.version) head.appendChild(chip(`v${manifest.version}`));
-  head.appendChild(chip(STATUS_TEXT[state.status] ?? state.status, state.status === 'error' ? 'warn' : state.status === 'off' ? '' : 'ok'));
+  // A newer version is a badge right beside the name, and it is the way to take it: pressing it updates the plugin.
+  if (update) {
+    const badge = button(`新版本 ${update.to}`, () => pluginRequest('update', plugin), 'modkit-new');
+    badge.title = `${update.from ? `${update.from} → ` : ''}${update.to}，点击更新`;
+    head.appendChild(badge);
+  }
+  const rest = el('div', 'modkit-card-badges');
+  if (manifest.version) rest.appendChild(chip(`v${manifest.version}`));
+  rest.appendChild(chip(STATUS_TEXT[state.status] ?? state.status, state.status === 'error' ? 'warn' : state.status === 'off' ? '' : 'ok'));
+  head.appendChild(rest);
   card.appendChild(head);
 
   card.appendChild(el('div', 'modkit-card-desc',
     state.status === 'error' ? `出错：${state.error}`
       : state.status === 'waiting' ? state.error
-        : [manifest.dev ? '开发中' : null, update ? `有新版本 ${update.to}` : null, manifest.description].filter(Boolean).join(' · ')));
+        : [manifest.dev ? '开发中' : null, manifest.description].filter(Boolean).join(' · ')));
   if (known?.author) card.appendChild(el('div', 'modkit-card-author', `作者：${known.author}`));
 
   const actions = el('div', 'modkit-card-actions');
-  actions.appendChild(button(enabled ? '已启用' : '已关闭', () => kit.setEnabled(id, !enabled), enabled ? '' : 'modkit-btn--off'));
-  if (hasSettings(id, manifest)) actions.appendChild(button('设置', () => openSettings(id), 'modkit-btn--ghost'));
-  if (update) actions.appendChild(button('更新', () => pluginRequest('update', { id, name: manifest.name })));
+  // The master switch is a switch, the app's own: off means the plugin does not run at all.
+  const power = el('label', 'modkit-power');
+  power.append(controls.toggle({ value: enabled, onChange: on => kit.setEnabled(id, on) }), el('span', 'modkit-switch-text', enabled ? '已启用' : '已关闭'));
+  actions.appendChild(power);
+  const right = el('div', 'modkit-card-actions-end');
+  if (hasSettings(id, manifest)) right.appendChild(button('设置', () => openSettings(id)));
 
   // 更多: only for what came from the registry, which is what can be checked and taken away from here
   if (known?.fromRegistry && !known.dev) {
-    const more = button('更多', () => { ui.menu = ui.menu === id ? null : id; renderView(); }, 'modkit-btn--ghost');
-    more.style.marginLeft = 'auto';
-    actions.appendChild(more);
+    right.appendChild(button('更多', () => { ui.menu = ui.menu === id ? null : id; renderView(); }));
     if (ui.menu === id) {
       const menu = el('div', 'modkit-menu');
       const item = (label, onClick) => {
@@ -642,13 +675,14 @@ function installedCard(id, manifest) {
         return entry;
       };
       menu.append(
-        item('检查更新', () => pluginRequest('update', { id, name: manifest.name })),
+        item('检查更新', () => pluginRequest('update', plugin)),
         el('hr'),
-        item('卸载', () => setOp(market, { type: 'confirm-remove', plugin: { id, name: manifest.name }, purge: false })),
+        item('卸载', () => setOp(market, { type: 'confirm-remove', plugin, purge: false })),
       );
       card.appendChild(menu);
     }
   }
+  actions.appendChild(right);
   card.appendChild(actions);
   return card;
 }
@@ -670,16 +704,17 @@ function marketCard(plugin) {
 
   const actions = el('div', 'modkit-card-actions');
   let main;
-  if (plugin.dev || (plugin.installed && !plugin.fromRegistry)) main = button(plugin.dev ? '开发中' : '已有同名插件', () => {}, 'modkit-btn--wide modkit-btn--ghost');
+  if (plugin.dev || (plugin.installed && !plugin.fromRegistry)) main = button(plugin.dev ? '开发中' : '已有同名插件', () => {}, 'modkit-btn--wide modkit-btn--quiet');
   else if (!plugin.installed) main = button('安装', () => pluginRequest('get', plugin), 'modkit-btn--wide');
   else if (plugin.update) main = button(`更新到 v${plugin.version}`, () => pluginRequest('update', plugin), 'modkit-btn--wide');
-  else main = button('已安装', () => {}, 'modkit-btn--wide modkit-btn--ghost');
+  else main = button('已安装', () => {}, 'modkit-btn--wide modkit-btn--quiet');
   if (plugin.dev || plugin.installed && !plugin.fromRegistry || (plugin.installed && !plugin.update)) main.disabled = true;
   actions.appendChild(main);
   card.appendChild(actions);
   return card;
 }
 
+// The bottom of the cards is not cut by the foot: the foot is under the scrolling part, not over it.
 function renderInstalled(body, mods) {
   const plugins = pluginNotice();
   if (plugins) body.appendChild(plugins);
@@ -1206,9 +1241,12 @@ function redraw(body, build) {
   }
 
   const scrolled = body.scrollTop;
+  const inner = body.querySelector('.modkit-scroll')?.scrollTop ?? 0;
   body.textContent = '';
   body.append(...next.childNodes);
   body.scrollTop = scrolled;
+  const again = body.querySelector('.modkit-scroll');
+  if (again) again.scrollTop = inner;
 }
 
 function entryRow(entry) {
@@ -1239,8 +1277,10 @@ function renderView() {
   redraw(body, next => {
     renderHeader(next, mods);
     next.appendChild(tabBar(mods));
-    if (ui.tab === 'market') renderMarket(next);
-    else renderInstalled(next, mods);
+    const scroll = el('div', 'modkit-scroll common-scrollbar2');
+    if (ui.tab === 'market') renderMarket(scroll);
+    else renderInstalled(scroll, mods);
+    next.appendChild(scroll);
   });
   renderFoot();
 }
