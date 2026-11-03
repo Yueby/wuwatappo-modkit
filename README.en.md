@@ -38,17 +38,18 @@ Requires Windows. Developed and tested with Wuwa Tappo 1.0.2.
 
 Open the settings panel with the pet's settings button. The last tab on the left is **MOD**.
 
-- One row per plugin: its name and description, a **设置** (settings) button and a **switch**. The switch is the master switch: off means the plugin does not run at all. Settings can be changed while it is off.
-- Two buttons at the top right: **日志** (log: what the plugins wrote, the place to look when something goes wrong) and **安装** (the plugin list).
+- The page has two tabs, **已安装** (installed) and **插件市场** (the plugin market), and the plugins are cards, two to a line.
+- An installed card: the name, the version and how it is doing (正常, 出错, 已关闭), then what it does and who wrote it; its buttons are **已启用 / 已关闭** (the master switch: off means the plugin does not run at all), **设置** (settings, which can be changed while it is off), and **更多** (more), which has **检查更新** (check for an update) and **卸载** (remove).
+- **日志** at the top right is what the plugins wrote, the place to look when something goes wrong.
 - At the bottom right: the framework's version and **检查更新** (check for updates). When a new version exists, the MOD tab gets a small dot and the list gets a row at the top; **更新** shows a progress bar while it downloads, then checks, installs, patches again and restarts the app. A development copy run from the source only says so (use `git pull`).
-- Installed plugins with a newer version are shown the same way: checked when the settings panel opens and every half hour after (needs the internet; a failure is not said). The MOD tab gets the small dot, the list gets a row at the top ("有 N 个插件可以更新"), the plugin's own row says "有新版本 x.y.z", and **查看** opens the plugin list, where each is updated with **更新** (what it declares is still shown first, for the person to confirm).
+- Installed plugins with a newer version are shown the same way: checked when the settings panel opens and every half hour after (needs the internet; a failure is not said). The MOD tab gets the small dot, the list gets a row at the top ("有 N 个插件可以更新"), the plugin's own row says "有新版本 x.y.z", and **查看** goes to the plugin market, where each is updated with **更新** (what it declares is still shown first, for the person to confirm).
 
 ### Installing, updating and removing plugins
 
-On the MOD page press **安装**, or in the launcher window press **插件…**, to open the plugin list (needs the internet):
+On the MOD page go to the **插件市场** tab (needs the internet), or in the launcher window press **插件…**, to see the plugins in the registry:
 
-- Select a plugin: its description is shown, and **what it declares it does**: reading and writing files, using the network, using the clipboard, whether it has a background program of its own. Read it, then press **安装**. It takes effect at once; the app does not need to be restarted.
-- When an installed plugin has a newer version the button reads **更新**.
+- Press **安装** on a card: its description is shown first, and **what it declares it does**: reading and writing files, using the network, using the clipboard, whether it has a background program of its own. Read it, then confirm. It takes effect at once; the app does not need to be restarted. An installed one reads **已安装**; one with a newer version comes first, with **更新到 vx.y.z**. **刷新** reads the registry again.
+- For an installed plugin, **更多 → 检查更新** on its card in the **已安装** tab: if there is a newer one you are asked before it is updated.
 - **卸载** deletes the plugin's folder. Only with “同时删除它保存的数据” ticked is its saved data deleted as well; otherwise its settings are still there if it is installed again.
 
 A plugin can also be installed by hand: put its folder in the `mods` folder of the app's install folder (the **打开插件文件夹** button of the launcher window opens it).

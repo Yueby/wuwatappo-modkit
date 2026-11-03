@@ -88,7 +88,51 @@ function installStyle() {
     #${TAB_ID}[data-update]::after {
       content: ''; position: absolute; top: 9px; left: 46px; width: 14px; height: 14px; box-sizing: border-box;
       border-radius: 50%; background: #ff9f3a; border: 2px solid #fff6dc; pointer-events: none;
-    }`;
+    }
+    /* The page of plugins: two tabs (the installed ones, and the registry's), and cards two to a line, with the app's colours. */
+    .modkit-tabs { display: flex; align-items: center; gap: 28px; margin: 0 0 16px; border-bottom: 2px solid rgba(142, 94, 67, .16); }
+    .modkit-tabs .modkit-tab {
+      position: relative; margin: 0; padding: 6px 2px 10px; border: 0; background: none; cursor: pointer;
+      font: inherit; font-size: 20px; color: #a89580;
+    }
+    .modkit-tabs .modkit-tab[aria-selected="true"] { color: #8e5e43; }
+    .modkit-tabs .modkit-tab[aria-selected="true"]::after {
+      content: ''; position: absolute; left: 0; right: 0; bottom: -2px; height: 3px; border-radius: 2px; background: #c88865;
+    }
+    .modkit-tabs .modkit-tab .modkit-count { margin-left: 6px; font-size: 14px; color: #a89580; }
+    .modkit-tabs .modkit-tabs-end { margin: 0 0 6px auto; display: flex; align-items: center; gap: 10px; }
+    .modkit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: stretch; margin: 0 0 14px; }
+    .modkit-card {
+      position: relative; display: flex; flex-direction: column; gap: 6px; min-height: 148px; box-sizing: border-box;
+      padding: 14px 18px 16px; border-radius: 12px; background: #fbedd5;
+    }
+    .modkit-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .modkit-card-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; color: #8e5e43; }
+    .modkit-chip { flex: none; padding: 0 9px; border-radius: 10px; line-height: 20px; font-size: 13px; color: #8e5e43; background: #f3dcb5; }
+    .modkit-chip--ok { background: #fed291; }
+    .modkit-chip--warn { background: #e3b59f; }
+    .modkit-card-desc {
+      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; min-height: 44px;
+      font-size: 14px; line-height: 22px; color: #8e7b6a;
+    }
+    .modkit-card-author { font-size: 13px; line-height: 20px; color: #a89580; }
+    .modkit-card-actions { display: flex; align-items: center; gap: 10px; margin-top: auto; padding-top: 8px; }
+    .modkit-btn {
+      display: block; box-sizing: border-box; min-width: 72px; height: 28px; margin: 0; padding: 0 18px; border: 1px solid #e7b77c; border-radius: 20px;
+      font: inherit; font-size: 16px; line-height: 26px; text-align: center; color: #8e5e43; background: #fed291; cursor: pointer; filter: drop-shadow(0 2px 0 #e7b77c);
+    }
+    .modkit-btn--off { background: transparent; color: #a89580; filter: none; }
+    .modkit-btn--wide { flex: 1; }
+    .modkit-btn--ghost { background: #fbedd5; filter: none; }
+    .modkit-btn:disabled { opacity: .55; cursor: default; filter: none; }
+    .modkit-menu {
+      position: absolute; right: 14px; bottom: 52px; z-index: 5; min-width: 150px; padding: 6px; border: 1px solid #e7b77c; border-radius: 12px;
+      background: #fff6e4; box-shadow: 0 4px 14px rgba(90, 50, 20, .2);
+    }
+    .modkit-menu button { display: block; width: 100%; margin: 0; padding: 8px 12px; border: 0; border-radius: 8px; background: none; text-align: left; font: inherit; font-size: 16px; color: #8e5e43; cursor: pointer; }
+    .modkit-menu button:hover { background: #fbedd5; }
+    .modkit-menu hr { margin: 4px 8px; border: 0; border-top: 1px solid rgba(142, 94, 67, .18); }
+    .modkit-note { margin: 0 0 14px; font-size: 14px; line-height: 22px; color: #a89580; }`;
   document.head.appendChild(style);
 }
 
@@ -259,20 +303,16 @@ function headerButton(label, onClick, beside = 0) {
 function renderHeader(body, mods) {
   const failed = mods.filter(([id]) => kit.stateOf(id).status === 'error').length;
   const head = el('div', 'room-info');
-  head.appendChild(el('div', 'room-qty', `MOD（${mods.length}）`));
+  head.appendChild(el('div', 'room-qty', 'MOD（' + mods.length + '）'));
   head.appendChild(el('div', 'room-number',
-    !mods.length ? '还没有插件，点“安装”获取'
-      : failed ? `${failed} 个出错`
+    !mods.length ? '还没有插件，到“插件市场”获取'
+      : failed ? failed + ' 个出错'
         : '全部正常'));
   head.appendChild(headerButton('日志', openLog));
-  head.appendChild(headerButton('安装', openPlugins, INSTALL_BUTTON_RIGHT));
-  // The room page puts 28px between this header and its list (.room-members margin-top).
-  head.style.marginBottom = '28px';
+  head.style.marginBottom = '20px';
   body.appendChild(head);
   const notice = selfNotice();
   if (notice) body.appendChild(notice);
-  const plugins = pluginNotice();
-  if (plugins) body.appendChild(plugins);
 }
 
 // --- this program: its version, and a newer one --------------------------------------------
@@ -450,9 +490,9 @@ function updateSelf() {
 //
 // The registry's list says, for each plugin installed from it, whether there is a newer one (the loader works it out:
 // `browse`). It is asked when the panel opens and every half hour, without a word if it fails; what it finds is shown the same
-// ways as a newer framework is: the dot on the tab, a row at the top of the list (with 查看, which opens the list of plugins, where
-// each one is updated after the person has seen what it declares), and a line on the plugin's own row. The list is also
-// taken from the plugins dialog whenever that has it, so it is right after an update.
+// ways as a newer framework is: the dot on the tab, a row at the top of the list (with 查看, which goes to the plugin market, where
+// each one is updated after the person has seen what it declares), and a line on the plugin's own card. The list is also
+// taken from the market whenever that is read, so it is right after an update.
 
 const found = { list: [], tried: 0 };       // [{ id, name, from, to }]
 
@@ -460,6 +500,9 @@ const updatesOf = entries => (entries ?? []).filter(p => p.update && !p.dev && p
   .map(p => ({ id: p.id, name: p.name, from: p.installedVersion, to: p.version }));
 
 function noteUpdates(entries) {
+  market.plugins = entries ?? [];
+  market.phase = 'list';
+  market.loadedAt = Date.now();
   found.list = updatesOf(entries);
   found.tried = Date.now();
   renderSelf();
@@ -471,14 +514,14 @@ function pluginNotice() {
   return row({
     title: `有 ${found.list.length} 个插件可以更新`,
     description: names.join('、'),
-    control: controls.button({ label: '查看', onClick: openPlugins }),
+    control: controls.button({ label: '查看', onClick: () => openPlugins() }),
   });
 }
 
 function autoCheckPlugins() {
   if (Date.now() - found.tried < SELF_RECHECK_MS) return;
   found.tried = Date.now();
-  kit.manage('browse').done.then(result => noteUpdates(result.mods), () => { /* nothing to say: the list is asked for again when it is opened */ });
+  kit.manage('browse').done.then(result => { market.problems = result.problems ?? []; noteUpdates(result.mods); }, () => { /* nothing to say: the list is asked for again when it is opened */ });
 }
 
 // The page is a list: one row per mod — name, what it does (or the error), a 设置 button when
@@ -486,25 +529,189 @@ function autoCheckPlugins() {
 // dialog (below), so the list stays one line per mod however many settings there are.
 // A failure replaces the subtitle with its message; it is said in words, not colour,
 // because the app's palette has no red or green to borrow.
-function renderMod(body, id, manifest) {
-  const state = kit.stateOf(id);
-  const controlsOfRow = [];
+// What the page is showing: the tab ('installed' or 'market') and the card whose menu (更多) is open.
+const ui = { tab: 'installed', menu: null };
 
-  if (hasSettings(id, manifest)) {
-    const open = el('button', 'setting-btn', '设置');
-    open.type = 'button';
-    open.addEventListener('click', () => openSettings(id));
-    controlsOfRow.push(open);
+// The registry's list, kept here and not in a dialog: it is read when the panel opens (to know what has a newer version) and
+// shown in the other tab. `op` is what is being asked or waited for (see the prompt below), or null.
+const market = { phase: 'idle', plugins: [], problems: [], message: '', loadedAt: 0, loading: false, op: null, requestId: null, cancelled: false };
+
+const MARKET_STALE_MS = 5 * 60_000;
+
+function setTab(name) {
+  ui.tab = name;
+  ui.menu = null;
+  renderView();
+  if (name === 'market' && (market.phase !== 'list' || Date.now() - market.loadedAt > MARKET_STALE_MS)) loadMarket();
+}
+
+const openPlugins = () => setTab('market');
+
+function loadMarket() {
+  if (market.loading) return;
+  market.loading = true;
+  if (!market.plugins.length) market.phase = 'loading';
+  renderView();
+  kit.manage('browse').done.then(result => {
+    market.problems = result.problems ?? [];
+    noteUpdates(result.mods);
+  }, err => {
+    if (market.plugins.length) notify(`没能刷新插件列表：${err.message}`);
+    else Object.assign(market, { phase: 'error', message: err.message });
+  }).finally(() => {
+    market.loading = false;
+    renderView();
+  });
+}
+
+// --- the tabs and the cards -------------------------------------------------------------------------------
+
+const chip = (text, kind) => el('span', `modkit-chip${kind ? ` modkit-chip--${kind}` : ''}`, text);
+
+function button(label, onClick, kind = '') {
+  const node = el('button', `modkit-btn ${kind}`.trim(), label);
+  node.type = 'button';
+  node.addEventListener('click', event => {
+    event.stopPropagation();                  // a click anywhere else closes the menu of a card
+    onClick(event);
+  });
+  return node;
+}
+
+function tabBar(mods) {
+  const bar = el('div', 'modkit-tabs');
+  bar.setAttribute('role', 'tablist');
+  const make = (name, label, count) => {
+    const tab = el('button', 'modkit-tab', label);
+    tab.type = 'button';
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-selected', String(ui.tab === name));
+    if (count) tab.appendChild(el('span', 'modkit-count', String(count)));
+    tab.addEventListener('click', () => setTab(name));
+    return tab;
+  };
+  bar.append(make('installed', '已安装', mods.length), make('market', '插件市场', found.list.length ? `有 ${found.list.length} 个可更新` : 0));
+  if (ui.tab === 'market') {
+    const end = el('div', 'modkit-tabs-end');
+    end.appendChild(button('刷新', loadMarket, 'modkit-btn--ghost'));
+    bar.appendChild(end);
   }
-  controlsOfRow.push(controls.toggle({ value: kit.isEnabled(id), onChange: on => kit.setEnabled(id, on) }));
+  return bar;
+}
 
-  body.appendChild(row({
-    title: manifest.name,
-    description: state.status === 'error' ? `出错：${state.error}`
+// Words for where a plugin stands: said in words, because the app's palette has no red or green to say it with.
+const STATUS_TEXT = { ok: '正常', idle: '正常', error: '出错', off: '已关闭', waiting: '等待中', loading: '启动中' };
+
+function installedCard(id, manifest) {
+  const state = kit.stateOf(id);
+  const enabled = kit.isEnabled(id);
+  const known = market.plugins.find(p => p.id === id);
+  const update = found.list.find(u => u.id === id);
+
+  const card = el('div', 'modkit-card');
+  const head = el('div', 'modkit-card-head');
+  const title = el('div', 'modkit-card-title', manifest.name);
+  title.title = manifest.name;
+  head.appendChild(title);
+  if (manifest.version) head.appendChild(chip(`v${manifest.version}`));
+  head.appendChild(chip(STATUS_TEXT[state.status] ?? state.status, state.status === 'error' ? 'warn' : state.status === 'off' ? '' : 'ok'));
+  card.appendChild(head);
+
+  card.appendChild(el('div', 'modkit-card-desc',
+    state.status === 'error' ? `出错：${state.error}`
       : state.status === 'waiting' ? state.error
-        : [manifest.dev ? '开发中' : null, found.list.find(u => u.id === id) ? `有新版本 ${found.list.find(u => u.id === id).to}` : null, manifest.description].filter(Boolean).join(' · '),
-    control: controlsOfRow,
-  }));
+        : [manifest.dev ? '开发中' : null, update ? `有新版本 ${update.to}` : null, manifest.description].filter(Boolean).join(' · ')));
+  if (known?.author) card.appendChild(el('div', 'modkit-card-author', `作者：${known.author}`));
+
+  const actions = el('div', 'modkit-card-actions');
+  actions.appendChild(button(enabled ? '已启用' : '已关闭', () => kit.setEnabled(id, !enabled), enabled ? '' : 'modkit-btn--off'));
+  if (hasSettings(id, manifest)) actions.appendChild(button('设置', () => openSettings(id), 'modkit-btn--ghost'));
+  if (update) actions.appendChild(button('更新', () => pluginRequest('update', { id, name: manifest.name })));
+
+  // 更多: only for what came from the registry, which is what can be checked and taken away from here
+  if (known?.fromRegistry && !known.dev) {
+    const more = button('更多', () => { ui.menu = ui.menu === id ? null : id; renderView(); }, 'modkit-btn--ghost');
+    more.style.marginLeft = 'auto';
+    actions.appendChild(more);
+    if (ui.menu === id) {
+      const menu = el('div', 'modkit-menu');
+      const item = (label, onClick) => {
+        const entry = el('button', null, label);
+        entry.type = 'button';
+        entry.addEventListener('click', event => { event.stopPropagation(); ui.menu = null; onClick(); });
+        return entry;
+      };
+      menu.append(
+        item('检查更新', () => pluginRequest('update', { id, name: manifest.name })),
+        el('hr'),
+        item('卸载', () => setOp(market, { type: 'confirm-remove', plugin: { id, name: manifest.name }, purge: false })),
+      );
+      card.appendChild(menu);
+    }
+  }
+  card.appendChild(actions);
+  return card;
+}
+
+function marketCard(plugin) {
+  const card = el('div', 'modkit-card');
+  const head = el('div', 'modkit-card-head');
+  const title = el('div', 'modkit-card-title', plugin.name);
+  title.title = plugin.name;
+  head.appendChild(title);
+  head.appendChild(chip(`v${plugin.version}`));
+  card.appendChild(head);
+
+  const note = plugin.dev ? '开发中：用的是本地文件夹'
+    : plugin.installed && !plugin.fromRegistry ? '已有同名插件（不是从这里安装的）'
+      : null;
+  card.appendChild(el('div', 'modkit-card-desc', [plugin.description, plugin.nodePart ? '带后台程序' : null, note].filter(Boolean).join(' · ')));
+  if (plugin.author) card.appendChild(el('div', 'modkit-card-author', `作者：${plugin.author}`));
+
+  const actions = el('div', 'modkit-card-actions');
+  let main;
+  if (plugin.dev || (plugin.installed && !plugin.fromRegistry)) main = button(plugin.dev ? '开发中' : '已有同名插件', () => {}, 'modkit-btn--wide modkit-btn--ghost');
+  else if (!plugin.installed) main = button('安装', () => pluginRequest('get', plugin), 'modkit-btn--wide');
+  else if (plugin.update) main = button(`更新到 v${plugin.version}`, () => pluginRequest('update', plugin), 'modkit-btn--wide');
+  else main = button('已安装', () => {}, 'modkit-btn--wide modkit-btn--ghost');
+  if (plugin.dev || plugin.installed && !plugin.fromRegistry || (plugin.installed && !plugin.update)) main.disabled = true;
+  actions.appendChild(main);
+  card.appendChild(actions);
+  return card;
+}
+
+function renderInstalled(body, mods) {
+  const plugins = pluginNotice();
+  if (plugins) body.appendChild(plugins);
+  if (!mods.length) {
+    body.appendChild(row({ title: '还没有插件', description: '到“插件市场”获取。', control: controls.button({ label: '去插件市场', onClick: openPlugins }) }));
+    return;
+  }
+  const grid = el('div', 'modkit-grid');
+  for (const [id, manifest] of mods) grid.appendChild(installedCard(id, manifest));
+  body.appendChild(grid);
+}
+
+function renderMarket(body) {
+  if (market.phase === 'loading' || (market.phase === 'idle' && !market.plugins.length)) {
+    body.appendChild(el('p', 'modkit-note', '正在读取插件列表…'));
+    return;
+  }
+  if (market.phase === 'error') {
+    body.appendChild(row({ title: '没能读取插件列表', description: market.message, control: controls.button({ label: '重试', onClick: loadMarket }) }));
+    return;
+  }
+  if (!market.plugins.length) {
+    body.appendChild(el('p', 'modkit-note', '仓库里还没有插件'));
+    return;
+  }
+  // what has a newer version first, then what is not installed, then the rest, each in the registry's order
+  const rank = p => (p.update ? 0 : !p.installed ? 1 : 2);
+  const sorted = market.plugins.map((p, order) => ({ p, order })).sort((a, b) => rank(a.p) - rank(b.p) || a.order - b.order).map(x => x.p);
+  const grid = el('div', 'modkit-grid');
+  for (const plugin of sorted) grid.appendChild(marketCard(plugin));
+  body.appendChild(grid);
+  if (market.problems.length) body.appendChild(el('p', 'modkit-note', `有 ${market.problems.length} 个条目格式不对，已跳过：${market.problems.join('；')}`));
 }
 
 // --- the dialog ----------------------------------------------------------------
@@ -523,7 +730,7 @@ const POPUP_BODY_ID = 'modkit-popup-body';
 const FADE_MS = 200;
 
 // What the dialog is showing: { kind: 'settings', id } for one mod's settings, { kind: 'log' } for the log,
-// { kind: 'plugins' } for the registry's list, or null while it is closed.
+// or null while it is closed. (The plugins are a page, not a dialog.)
 let dialog = null;
 
 const entriesOf = id => kit.entries.filter(e => e.owner === id);
@@ -597,7 +804,7 @@ function buildPopup() {
 }
 
 function onDialogKey(event) {
-  if (event.key === 'Escape' && !cancelPrompt()) closeDialog();
+  if (event.key === 'Escape') closeDialog();
 }
 
 function openDialog(next) {
@@ -619,16 +826,8 @@ function openDialog(next) {
 
 const openSettings = id => openDialog({ kind: 'settings', id });
 const openLog = () => openDialog({ kind: 'log' });
-const openPlugins = () => {
-  openDialog({ kind: 'plugins', phase: 'loading', plugins: [], problems: [], op: null });
-  loadPlugins();
-};
-
 function closeDialog() {
-  // An install waiting for its yes is a no, not something left hanging in the loader.
-  if (dialog?.kind === 'plugins' && dialog.op?.type === 'confirm') kit.manageAnswer(dialog.requestId, false);
   dialog = null;
-  disappear(document.getElementById(OVERLAY_ID));
   disappear(document.getElementById(POPUP_ID));
   document.removeEventListener('keydown', onDialogKey);
 }
@@ -636,7 +835,6 @@ function closeDialog() {
 function renderPopup() {
   if (dialog?.kind === 'log') renderLogDialog();
   else if (dialog?.kind === 'settings') renderSettingsDialog();
-  else if (dialog?.kind === 'plugins') renderPluginsDialog();
 }
 
 // Same header as the MOD page (name, and what it does under it), then the rows.
@@ -664,16 +862,13 @@ function renderSettingsDialog() {
 // download against the registry's index. What this page adds is the order of things: an install fetches the
 // plugin, then stops to say what it declares, and nothing is put in place until the person says yes here.
 //
-// The dialog is the same layer and card as the settings dialog, and it is the list of plugins and stays that.
 // What happens to a plugin is not another page of it: a question, a wait, a failure is a prompt laid over the
-// list (the app's own confirm dialog, .role-switch-emote-overlay), and "installed" / "removed" is a bubble
-// (the app's own toast, .toast-wrapper) that goes by itself. So the list never jumps.
-
-const infoRow = (title, text, description) => row({ title, description, control: controls.value(text) });
+// page (the app's own confirm dialog, .role-switch-emote-overlay), and "installed" / "removed" is a bubble
+// (the app's own toast, .toast-wrapper) that goes by itself. So the cards never jump.
 
 // --- the prompt over the list --------------------------------------------------------------------------
 //
-// dialog.op is what is being asked or waited for, or null:
+// market.op is what is being asked or waited for, or null:
 //   { type: 'busy', text }                          waiting for the loader; nothing to press
 //   { type: 'confirm', info }                       an install or an update, with what the package declares
 //   { type: 'confirm-remove', plugin, purge }       a removal
@@ -711,7 +906,7 @@ function promptFor(op) {
   if (op.type === 'busy') return { title: op.text, body: [], buttons: [] };
 
   if (op.type === 'error') {
-    return { title: `${op.verb}没有成功`, body: [op.message], buttons: [{ label: '好', kind: 'confirm', onClick: () => setOp(dialog, null) }] };
+    return { title: `${op.verb}没有成功`, body: [op.message], buttons: [{ label: '好', kind: 'confirm', onClick: () => setOp(market, null) }] };
   }
 
   if (op.type === 'confirm-remove') {
@@ -720,7 +915,7 @@ function promptFor(op) {
       body: ['会删除它的文件夹。它在软件里保存的设置会保留，以后再装回来还能用。'],
       checkbox: { label: '同时删除它保存的数据', checked: op.purge, onChange: on => { op.purge = on; } },
       buttons: [
-        { label: '取消', kind: 'cancel', onClick: () => setOp(dialog, null) },
+        { label: '取消', kind: 'cancel', onClick: () => setOp(market, null) },
         { label: '卸载', kind: 'confirm', onClick: () => pluginRequest('remove', op.plugin, { purge: op.purge }) },
       ],
     };
@@ -780,10 +975,10 @@ function promptText({ title, body }) {
   return text;
 }
 
-// Put the prompt for dialog.op on screen, or take it away. Built again only when what it says changes, so
+// Put the prompt for market.op on screen, or take it away. Built again only when what it says changes, so
 // that a box the person has ticked is not unticked by a redraw of the list.
 function syncOverlay() {
-  const op = dialog?.kind === 'plugins' ? dialog.op : null;
+  const op = market.op;
   const existing = document.getElementById(OVERLAY_ID);
   if (!op) {
     disappear(existing);
@@ -826,19 +1021,31 @@ function syncOverlay() {
 // Set what is being asked, and draw it.
 function setOp(state, op) {
   state.op = op;
-  if (dialog === state) {
-    syncOverlay();
-    renderPopup();
-  }
+  syncOverlay();
+  renderPopup();
+  renderView();
 }
 
-// Escape: the prompt first, when there is one that can be said no to; the dialog after.
+// Escape: the prompt first, when there is one that can be said no to; the dialog after (it hears the key later).
 function cancelPrompt() {
-  const op = dialog?.kind === 'plugins' ? dialog.op : null;
+  const op = market.op;
   if (!op || op.type === 'busy') return false;
   if (op.type === 'confirm') answerPlugin(false);
-  else setOp(dialog, null);
+  else setOp(market, null);
   return true;
+}
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && market.op && cancelPrompt()) event.stopImmediatePropagation();
+}, true);
+
+// What was being asked when the page is left is a no, and not something left hanging in the loader.
+function cancelMarketOp() {
+  if (market.op?.type === 'confirm') {
+    market.cancelled = true;
+    kit.manageAnswer(market.requestId, false);
+  }
+  if (market.op && market.op.type !== 'busy') setOp(market, null);
 }
 
 // --- one request to the loader -----------------------------------------------------------------------------
@@ -852,39 +1059,32 @@ const DONE_TEXT = {
 
 const VERB = { get: '安装', update: '更新', remove: '卸载' };
 
-// The dialog is the one that was open when the request was made: if it has been closed since, a plugin
-// waiting for its yes gets a no, and what comes of the rest is only said in a bubble.
+// One request about a plugin. A plugin waiting for its yes gets a no if the page is left meanwhile.
 function pluginRequest(action, plugin, args = {}) {
-  const mine = dialog;
+  const mine = market;
   mine.cancelled = false;
   // Before the question it is only fetching; "installing" starts once the person has said yes.
-  setOp(mine, { type: 'busy', text: action === 'remove' ? `正在卸载「${plugin.name}」…` : `正在获取「${plugin.name}」…` });
+  setOp(mine, { type: 'busy', text: action === 'remove' ? '正在卸载「' + plugin.name + '」…' : '正在获取「' + plugin.name + '」…' });
   const { id, done } = kit.manage(action, { mod: plugin.id, ...args }, {
-    onConfirm: info => {
-      if (dialog !== mine) return void kit.manageAnswer(id, false);
-      setOp(mine, { type: 'confirm', info });
-    },
+    onConfirm: info => setOp(mine, { type: 'confirm', info }),
   });
   mine.requestId = id;
   done.then(result => {
     const said = DONE_TEXT[result.done]?.(result, plugin.name);
     if (said) notify(said);
-    if (dialog !== mine) return;
     if (result.mods) {
-      mine.plugins = result.mods;
       mine.problems = result.problems ?? [];
       noteUpdates(result.mods);
     }
     setOp(mine, null);
   }, err => {
-    if (dialog !== mine) return notify(`${VERB[action]}没有成功：${err.message}`);
     if (mine.cancelled) return;
     setOp(mine, { type: 'error', verb: VERB[action], message: err.message });
   });
 }
 
 function answerPlugin(ok) {
-  const state = dialog;
+  const state = market;
   kit.manageAnswer(state.requestId, ok);
   if (!ok) {
     state.cancelled = true;
@@ -892,76 +1092,7 @@ function answerPlugin(ok) {
     return;
   }
   const { info } = state.op;
-  setOp(state, { type: 'busy', text: `正在${info.before ? '更新' : '安装'}「${info.name ?? info.id}」…` });   // until the loader says it is done
-}
-
-function loadPlugins() {
-  const mine = dialog;
-  mine.phase = 'loading';
-  renderPopup();
-  kit.manage('browse').done.then(result => {
-    if (dialog !== mine) return;
-    mine.plugins = result.mods;
-    mine.problems = result.problems ?? [];
-    noteUpdates(result.mods);
-    mine.phase = 'list';
-    renderPopup();
-  }, err => {
-    if (dialog !== mine) return;
-    mine.phase = 'error';
-    mine.message = err.message;
-    renderPopup();
-  });
-}
-
-// What a plugin's row says about where it stands, and the buttons that go with it.
-function pluginRow(plugin) {
-  // Version and author are in the title, and whether it is installed is what the buttons say: the
-  // description is what it does, and what could surprise (a background program), and why there are no buttons.
-  const note = plugin.dev ? '开发中：用的是本地文件夹'
-    : plugin.installed && !plugin.fromRegistry ? '已有同名插件（不是从这里安装的）'
-      : null;
-  const description = [plugin.description, plugin.nodePart ? '带后台程序' : null, note].filter(Boolean).join(' · ');
-
-  const buttons = [];
-  if (plugin.dev) {
-    // its files are in a folder of the person's own: nothing to install, update or remove here
-  } else if (!plugin.installed) {
-    buttons.push(controls.button({ label: '安装', onClick: () => pluginRequest('get', plugin) }));
-  } else if (plugin.fromRegistry) {
-    if (plugin.update) buttons.push(controls.button({ label: '更新', onClick: () => pluginRequest('update', plugin) }));
-    buttons.push(controls.button({ label: '卸载', onClick: () => setOp(dialog, { type: 'confirm-remove', plugin, purge: false }) }));
-  }
-  return row({ title: `${plugin.name}  ${plugin.version}${plugin.author ? ` · ${plugin.author}` : ''}`, description, control: buttons });
-}
-
-function renderPluginsDialog() {
-  const body = document.getElementById(POPUP_BODY_ID);
-  if (!body) return;
-  const state = dialog;
-
-  redraw(body, next => {
-    const head = el('div', 'room-info');
-    head.appendChild(el('div', 'room-qty', '插件'));
-    head.appendChild(el('div', 'room-number', '来自插件仓库'));
-    if (state.phase === 'list') head.appendChild(headerButton('刷新', loadPlugins));
-    head.style.marginBottom = '28px';
-    next.appendChild(head);
-
-    if (state.phase === 'loading') {
-      next.appendChild(infoRow('正在读取插件列表…', ''));
-    } else if (state.phase === 'list') {
-      if (!state.plugins.length) next.appendChild(infoRow('仓库里还没有插件', ''));
-      for (const plugin of state.plugins) next.appendChild(pluginRow(plugin));
-      if (state.problems.length) next.appendChild(infoRow(`有 ${state.problems.length} 个条目格式不对，已跳过`, '', state.problems.join('；')));
-    } else if (state.phase === 'error') {
-      next.appendChild(row({
-        title: '没能读取插件列表',
-        description: state.message,
-        control: controls.button({ label: '重试', onClick: loadPlugins }),
-      }));
-    }
-  });
+  setOp(state, { type: 'busy', text: '正在' + (info.before ? '更新' : '安装') + '「' + (info.name ?? info.id) + '」…' });   // until the loader says it is done
 }
 
 // --- the log ---------------------------------------------------------------------
@@ -1107,7 +1238,9 @@ function renderView() {
   const mods = loadedMods();
   redraw(body, next => {
     renderHeader(next, mods);
-    for (const [id, manifest] of mods) renderMod(next, id, manifest);
+    next.appendChild(tabBar(mods));
+    if (ui.tab === 'market') renderMarket(next);
+    else renderInstalled(next, mods);
   });
   renderFoot();
 }
@@ -1115,6 +1248,12 @@ function renderView() {
 // A mod that changes many rows at once (a hundred added, a hundred taken away) says "changed" for each of them. The
 // page is drawn once for all of them, when that run of calls is over, and not once for each: drawn at every
 // call, the cost grows with the square of the number of rows.
+document.addEventListener('click', () => {
+  if (!ui.menu) return;
+  ui.menu = null;
+  renderView();
+});
+
 let drawQueued = false;
 kit.onChange = () => {
   if (drawQueued) return;
@@ -1164,6 +1303,8 @@ function showModView() {
 
 function hideModView() {
   closeDialog();
+  cancelMarketOp();
+  ui.menu = null;
   document.getElementById(VIEW_ID)?.style.setProperty('display', 'none');
 
   const host = moduleHost();
