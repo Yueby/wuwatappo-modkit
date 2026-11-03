@@ -319,7 +319,7 @@ function selfNotice() {
     description: waiting
       ? (self.canUpdate ? `当前 v${self.current}。更新会重新打补丁并重启应用。` : `当前 v${self.current}。这是从源码运行的开发版，请在仓库里 git pull。`)
       : selfProgressText(),
-    control: waiting ? controls.button({ label: '更新', onClick: updateSelf, disabled: !self.canUpdate }) : null,
+    control: waiting && self.canUpdate ? controls.button({ label: '更新', onClick: updateSelf }) : null,
   });
 }
 
@@ -345,8 +345,11 @@ function renderFoot() {
       check();
       break;
     case 'newer':
-      text(`${version}　新版本 v${self.latest}`);
-      next.appendChild(controls.button({ label: '更新', onClick: updateSelf, disabled: !self.canUpdate }));
+      // A copy run from the repository cannot take it: it says so, and has no button that does nothing. A check stays, either
+      // way: the loader may have been replaced since, and the page would otherwise keep saying what it was told before.
+      text(self.canUpdate ? `${version}　新版本 v${self.latest}` : `${version}　新版本 v${self.latest}，开发版请用 git pull 更新`);
+      check();
+      if (self.canUpdate) next.appendChild(controls.button({ label: '更新', onClick: updateSelf }));
       break;
     case 'updating':
     case 'restarting':
