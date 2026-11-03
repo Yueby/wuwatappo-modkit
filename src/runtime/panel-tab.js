@@ -390,12 +390,34 @@ function checkSelf({ force = false, quiet = false } = {}) {
     self.canUpdate = result.canUpdate !== false;
     self.at = Date.now();
     self.phase = result.newer ? 'newer' : 'current';
+    if (result.updating) followUpdate(result.updating);
     renderSelf();
   }, err => {
     self.phase = quiet ? before : 'error';
     if (!quiet) self.message = `检查更新失败：${err.message}`;
     renderSelf();
   });
+}
+
+// The update was started by a page that is gone (the panel was closed and opened again, or the page was loaded again) and the
+// loader is still at it: this page shows how far it is, asking once a second, until it is over.
+let following = 0;
+function followUpdate(progress) {
+  Object.assign(self, { phase: progress.stage === 'restart' ? 'restarting' : 'updating', stage: progress.stage, received: Number(progress.received) || 0, total: Number(progress.total) || 0 });
+  self.latest = progress.version ?? self.latest;
+  if (following) return;
+  following = setInterval(() => {
+    kit.manage('self-check').done.then(result => {
+      if (result.updating) {
+        Object.assign(self, { phase: result.updating.stage === 'restart' ? 'restarting' : 'updating', stage: result.updating.stage, received: Number(result.updating.received) || 0, total: Number(result.updating.total) || 0 });
+      } else {
+        clearInterval(following);
+        following = 0;
+        self.phase = result.newer ? 'newer' : 'current';
+      }
+      renderSelf();
+    }, () => { /* the loader is being replaced: the app is restarted, and this page with it */ });
+  }, 1000);
 }
 
 function autoCheckSelf() {

@@ -126,7 +126,7 @@ async function download(url, file, { expected, size, fetch, onProgress, signal, 
 // Get the release's exe into `file`, and only keep it if it matches its checksum. Resolves with the hash.
 export async function downloadRelease(tag, file, { repo = REPO, fetch = globalThis.fetch, onProgress = null } = {}) {
   const url = `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}/${ASSET}`;
-  const response = await fetch(`${url}.sha256`, { headers: { 'user-agent': USER_AGENT } });
+  const response = await fetch(`${url}.sha256`, { headers: { 'user-agent': USER_AGENT }, signal: AbortSignal.timeout(30_000) });
   if (!response.ok) throw new Error(`${url}.sha256 answered ${response.status}`);
   return downloadVerified(url, file, { expected: parseChecksum(await response.text()), fetch, onProgress });
 }

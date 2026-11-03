@@ -95,7 +95,8 @@ export class ModManager {
   #devFile;
   #updater;
   #pause;
-  #busy = false;
+  #busy = null;           // what is being done: 'plugin' (get, update, remove) or 'self' (this program's own update)
+  #progress = null;       // while this program is being updated: { stage, received, total, version }, for a page that was opened since
   #asks = new Map();      // request id -> answer(boolean): a confirmation being waited for
 
   // `app` carries answers to the panel: { evaluate(window, js) }. The injector is one.
@@ -142,13 +143,15 @@ export class ModManager {
 
     if (action === 'self-check') {
       const answer = await this.#updater.check({ force: message.force === true }).catch(err => { throw explainSelf(err); });
-      return this.#reply(id, { type: 'result', ...answer });
+      // `updating` is for a page that was opened while the update goes on: it shows how far it is, and the bar goes on
+      return this.#reply(id, { type: 'result', ...answer, updating: this.#progress });
     }
     if (action === 'self-update') return this.#selfUpdate(id).catch(err => { throw err instanceof Said ? err : explainSelf(err); });
 
     if (!['get', 'update', 'remove'].includes(action)) throw new Error(`unknown request "${action}"`);
-    if (this.#busy) throw new Error('另一项操作还没做完，请稍等一下。');
-    this.#busy = true;
+    if (this.#busy === 'self') throw new Said('正在更新框架，请等它完成后再操作插件。');
+    if (this.#busy) throw new Said('另一项操作还没做完，请稍等一下。');
+    this.#busy = 'plugin';
     try {
       const index = await fetchIndex({ repo: this.#repo, fetch: this.#fetch });
       const result = await this.#run(id, message, index);
@@ -157,7 +160,7 @@ export class ModManager {
       const fresh = await this.#plugins(index).catch(() => null);
       this.#reply(id, { type: 'result', ...result, mods: fresh?.entries ?? null, problems: fresh?.problems ?? [] });
     } finally {
-      this.#busy = false;
+      this.#busy = null;
     }
   }
 
@@ -165,19 +168,29 @@ export class ModManager {
   // the step), and, when everything is in place, that the program is restarting; then the new program's setup is started,
   // which ends this process, so there is nothing after that to say.
   async #selfUpdate(id) {
-    if (this.#busy) throw new Error('另一项操作还没做完，请稍等一下。');
-    this.#busy = true;
+    if (this.#busy === 'self') throw new Said('正在更新，进度在页面右下角。');
+    if (this.#busy) throw new Said('插件的安装或卸载还没做完（可能在等确认），请先完成或取消它，再更新。');
+    this.#busy = 'self';
+    this.#progress = { stage: 'download', received: 0, total: 0, version: null };
     try {
       const done = await this.#updater.update({
-        onProgress: (received, total) => this.#reply(id, { type: 'progress', stage: 'download', received, total }),
-        onStage: stage => this.#reply(id, { type: 'progress', stage }),
+        onProgress: (received, total) => {
+          this.#progress = { ...this.#progress, stage: 'download', received, total };
+          this.#reply(id, { type: 'progress', stage: 'download', received, total });
+        },
+        onStage: stage => {
+          this.#progress = { ...this.#progress, stage };
+          this.#reply(id, { type: 'progress', stage });
+        },
       });
+      this.#progress = { ...this.#progress, stage: 'restart', version: done.version };
       this.#log(`self-update: ${done.version} is in place, restarting`);
       await this.#reply(id, { type: 'progress', stage: 'restart', version: done.version });
       await this.#pause(1200);              // the page draws it, before setup closes the app
       done.start();
     } finally {
-      this.#busy = false;
+      this.#busy = null;
+      this.#progress = null;
     }
   }
 

@@ -176,6 +176,14 @@ test('two at once: the second is told to wait, and the first is not disturbed', 
   const refused = await finished('r2');
   assert.equal(refused.type, 'error');
   assert.match(refused.message, /还没做完/);
+  assert.ok(!refused.message.startsWith('原因'), 'a sentence that is already in words is not given a reason in front of it');
+
+  // this program's own update is refused while a plugin waits for an answer, and says why
+  send({ id: 'r3', action: 'self-update' });
+  const early = await finished('r3');
+  assert.equal(early.type, 'error');
+  assert.match(early.message, /插件的安装或卸载还没做完.*先完成或取消/);
+  assert.ok(!early.message.startsWith('原因'));
   send({ id: 'r1', action: 'answer', ok: true });
   assert.equal((await finished('r1')).done, 'installed');
 });

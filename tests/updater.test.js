@@ -202,7 +202,7 @@ test('the page asks whether there is a newer version and is told what is running
   send({ id: 'c1', action: 'self-check' });
   const result = await finished('c1');
   assert.deepEqual(events('c1')[0], { type: 'ack' });
-  assert.deepEqual({ ...result }, { type: 'result', current: '0.9.2', latest: '0.9.3', tag: 'v0.9.3', newer: true, canUpdate: true });
+  assert.deepEqual({ ...result }, { type: 'result', current: '0.9.2', latest: '0.9.3', tag: 'v0.9.3', newer: true, canUpdate: true, updating: null });
 });
 
 test('a check that cannot reach GitHub is an error in words', async () => {
@@ -239,6 +239,62 @@ test('an update that fails is an error, setup is not started, and another can be
   send({ id: 'f2', action: 'self-update' });
   assert.equal((await finished('f2')).type, 'error', 'the second one was run, not refused as busy');
   assert.ok(events('f2').some(e => e.type === 'progress'));
+});
+
+test('while an update goes on, a page that is opened later is told how far it is, and a second update or a plugin operation is turned away in words', async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const slow = new SelfUpdater({
+    version: '0.9.2', packaged: true, dir: await folder(),
+    latest: async () => ({ tag: 'v0.9.3', version: '0.9.3' }),
+    download: async (tag, file, { onProgress }) => { onProgress(30, 100); await gate; await fs.writeFile(file, 'new program'); },
+    versionOf: async () => '0.9.3',
+    replace: async () => {},
+    setup: () => {},
+    launcher: async () => null,
+  });
+  const sent = [];
+  const app = { evaluate: async (window, js) => { const prefix = 'window.modkit?.manageReply?.('; const [id, event] = JSON.parse(`[${js.slice(prefix.length, -1)}]`); sent.push({ id, event }); } };
+  const manager = new ModManager({ modsDir: await folder(), dataDir: await folder(), app, updater: slow, pause: async () => {} });
+  const send = message => manager.onPageMessage('panel', JSON.stringify({ t: 'manage', ...message }));
+  const result = id => until(`${id} answered`, () => sent.find(s => s.id === id && (s.event.type === 'result' || s.event.type === 'error'))?.event, 8000);
+
+  send({ id: 'first', action: 'self-update' });
+  await until('downloading', () => sent.some(s => s.id === 'first' && s.event.received === 30), 8000);
+
+  send({ id: 'again', action: 'self-update' });
+  const again = await result('again');
+  assert.equal(again.type, 'error');
+  assert.match(again.message, /正在更新/);
+  assert.ok(!again.message.startsWith('原因'));
+
+  send({ id: 'plugin', action: 'get', mod: 'x' });
+  const plugin = await result('plugin');
+  assert.match(plugin.message, /正在更新框架/);
+
+  send({ id: 'look', action: 'self-check' });
+  const look = await result('look');
+  assert.deepEqual(look.updating, { stage: 'download', received: 30, total: 100, version: null }, 'a page that was opened since is told how far it is');
+
+  release();
+  await until('over', () => sent.some(s => s.id === 'first' && s.event.stage === 'restart'), 8000);
+  let after;
+  for (let i = 0; i < 20 && after?.updating !== null; i += 1) {
+    send({ id: `after${i}`, action: 'self-check' });
+    after = await result(`after${i}`);
+  }
+  assert.equal(after.updating, null, 'and it is nobody update any more when it is over');
+  send({ id: 'next', action: 'self-update' });
+  await until('the new one is taken up', () => sent.some(s => s.id === 'next' && s.event.type === 'progress'), 8000);
+  assert.ok(!sent.some(s => s.id === 'next' && s.event.type === 'error'), 'and is not turned away as a second one');
+});
+
+test('the checksum of a release is asked for with a time limit, and does not hold the update for ever', async () => {
+  const seen = [];
+  const fetch = async (url, options) => { seen.push(options?.signal ?? null); throw new Error('stop'); };
+  const { downloadRelease } = await import('../src/lib/release.js');
+  await assert.rejects(downloadRelease('v1.0.0', path.join(await folder(), 'x.exe'), { fetch }), /stop/);
+  assert.ok(seen[0] instanceof AbortSignal, 'the request has a signal that ends it');
 });
 
 test('only the panel window can ask for an update: a mod in another window cannot restart the app', async () => {
