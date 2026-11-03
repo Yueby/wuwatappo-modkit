@@ -271,6 +271,8 @@ function renderHeader(body, mods) {
   body.appendChild(head);
   const notice = selfNotice();
   if (notice) body.appendChild(notice);
+  const plugins = pluginNotice();
+  if (plugins) body.appendChild(plugins);
 }
 
 // --- this program: its version, and a newer one --------------------------------------------
@@ -289,6 +291,7 @@ const self = { phase: 'idle', current: null, latest: null, canUpdate: true, stag
 
 const selfBusy = () => ['checking', 'updating', 'restarting'].includes(self.phase);
 const selfMarked = () => ['newer', 'updating', 'restarting'].includes(self.phase);
+const marked = () => selfMarked() || found.list.length > 0;
 const megabytes = bytes => (bytes / 1024 / 1024).toFixed(1);
 
 // What the person is told while it goes on.
@@ -370,7 +373,7 @@ function renderFoot() {
 }
 
 function renderSelf() {
-  document.getElementById(TAB_ID)?.toggleAttribute('data-update', selfMarked());
+  document.getElementById(TAB_ID)?.toggleAttribute('data-update', marked());
   renderFoot();
   renderView();
 }
@@ -443,6 +446,41 @@ function updateSelf() {
   });
 }
 
+// --- plugins with a newer version -----------------------------------------------------------------------
+//
+// The registry's list says, for each plugin installed from it, whether there is a newer one (the loader works it out:
+// `browse`). It is asked when the panel opens and every half hour, without a word if it fails; what it finds is shown the same
+// ways as a newer framework is: the dot on the tab, a row at the top of the list (with 查看, which opens the list of plugins, where
+// each one is updated after the person has seen what it declares), and a line on the plugin's own row. The list is also
+// taken from the plugins dialog whenever that has it, so it is right after an update.
+
+const found = { list: [], tried: 0 };       // [{ id, name, from, to }]
+
+const updatesOf = entries => (entries ?? []).filter(p => p.update && !p.dev && p.installed)
+  .map(p => ({ id: p.id, name: p.name, from: p.installedVersion, to: p.version }));
+
+function noteUpdates(entries) {
+  found.list = updatesOf(entries);
+  found.tried = Date.now();
+  renderSelf();
+}
+
+function pluginNotice() {
+  if (!found.list.length) return null;
+  const names = found.list.map(u => `${u.name} ${u.from ?? ''}${u.from ? ' → ' : ''}${u.to}`);
+  return row({
+    title: `有 ${found.list.length} 个插件可以更新`,
+    description: names.join('、'),
+    control: controls.button({ label: '查看', onClick: openPlugins }),
+  });
+}
+
+function autoCheckPlugins() {
+  if (Date.now() - found.tried < SELF_RECHECK_MS) return;
+  found.tried = Date.now();
+  kit.manage('browse').done.then(result => noteUpdates(result.mods), () => { /* nothing to say: the list is asked for again when it is opened */ });
+}
+
 // The page is a list: one row per mod — name, what it does (or the error), a 设置 button when
 // the mod has anything to set, and the master switch. The settings themselves open in a
 // dialog (below), so the list stays one line per mod however many settings there are.
@@ -464,7 +502,7 @@ function renderMod(body, id, manifest) {
     title: manifest.name,
     description: state.status === 'error' ? `出错：${state.error}`
       : state.status === 'waiting' ? state.error
-        : [manifest.dev ? '开发中' : null, manifest.description].filter(Boolean).join(' · '),
+        : [manifest.dev ? '开发中' : null, found.list.find(u => u.id === id) ? `有新版本 ${found.list.find(u => u.id === id).to}` : null, manifest.description].filter(Boolean).join(' · '),
     control: controlsOfRow,
   }));
 }
@@ -835,6 +873,7 @@ function pluginRequest(action, plugin, args = {}) {
     if (result.mods) {
       mine.plugins = result.mods;
       mine.problems = result.problems ?? [];
+      noteUpdates(result.mods);
     }
     setOp(mine, null);
   }, err => {
@@ -864,6 +903,7 @@ function loadPlugins() {
     if (dialog !== mine) return;
     mine.plugins = result.mods;
     mine.problems = result.problems ?? [];
+    noteUpdates(result.mods);
     mine.phase = 'list';
     renderPopup();
   }, err => {
@@ -1118,6 +1158,7 @@ function showModView() {
   view.style.removeProperty('display');
   renderView();
   autoCheckSelf();
+  autoCheckPlugins();
   kit.hello();   // the windows running the mods answer with their state, which redraws
 }
 
@@ -1286,8 +1327,9 @@ function ensureTab() {
     if (modOpen) tab.classList.add('tab-btn--active');
     // Re-seat on every pass: Vue may have moved the strip around.
     if (tab.nextElementSibling !== collapse) bar.insertBefore(tab, collapse);
-    tab.toggleAttribute('data-update', selfMarked());
+    tab.toggleAttribute('data-update', marked());
     autoCheckSelf();
+    autoCheckPlugins();
     if (modOpen) keepModView();
   } finally {
     planting = false;

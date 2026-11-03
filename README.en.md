@@ -41,6 +41,7 @@ Open the settings panel with the pet's settings button. The last tab on the left
 - One row per plugin: its name and description, a **设置** (settings) button and a **switch**. The switch is the master switch: off means the plugin does not run at all. Settings can be changed while it is off.
 - Two buttons at the top right: **日志** (log: what the plugins wrote, the place to look when something goes wrong) and **安装** (the plugin list).
 - At the bottom right: the framework's version and **检查更新** (check for updates). When a new version exists, the MOD tab gets a small dot and the list gets a row at the top; **更新** shows a progress bar while it downloads, then checks, installs, patches again and restarts the app. A development copy run from the source only says so (use `git pull`).
+- Installed plugins with a newer version are shown the same way: checked when the settings panel opens and every half hour after (needs the internet; a failure is not said). The MOD tab gets the small dot, the list gets a row at the top ("有 N 个插件可以更新"), the plugin's own row says "有新版本 x.y.z", and **查看** opens the plugin list, where each is updated with **更新** (what it declares is still shown first, for the person to confirm).
 
 ### Installing, updating and removing plugins
 
