@@ -18,6 +18,7 @@ The plugins live in their own repository, [wuwatappo-mods](https://github.com/Yu
 | **桌宠手感** (Pet feel) | Elastic motion for pressing, dragging, releasing, clicking and throwing a pet, with gravity, turning and rolling; the same for every pet | on |
 | **气泡弹跳** (Bubble pop) | The emote bubbles a pet sends out are springy: they swell and spring back as they come out, and sway as they float up | on |
 | **记住桌宠位置** (Pet position) | Records the positions of the person's own pet and the other players' pets, and restores them after a restart or on entering a room | on |
+| **保持置顶** (Keep on top) | Lifts the pet window to the front again at an interval, so that other windows do not cover it | on |
 
 Plugins that act on the account (auto click, auto chest) are **off** after they are installed; they are switched on on the MOD page.
 
@@ -98,6 +99,8 @@ Each effect has its own switch in the plugin's settings, and there is a strength
 - Changing the corner or the size of the pet in the app's own settings discards the old position, and a new one is recorded afterwards. The same when the screen resolution changes.
 - When a place is occupied and the app does not let a pet stay there, the plugin retries at increasing intervals and does not contend with the app.
 - It needs the permission to read and change the app's own state, to set a pet's position directly. It does not simulate the mouse, does not add clicks and sends nothing to the room.
+
+**Keep on top**: the pet window can keep its "on top" flag and still be covered by ordinary windows (for example after the screen is locked and unlocked, or the displays change), so that it can only be brought back from the tray menu. While this is on, the plugin lifts the pet window to the front again at an interval. **间隔（秒）** in its settings is the time between two lifts (5 to 120, 15 by default), and **状态** shows how many times it has lifted and when last. It does nothing in game mode, while the window is hidden, or while a pet is being dragged. It needs the permission to send the app a command, used only to put the pet window on top again; it does not simulate the mouse, does not add clicks and sends nothing to the room.
 
 ## What it does to the computer
 
