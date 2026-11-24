@@ -15,7 +15,7 @@ The plugins live in their own repository, [wuwatappo-mods](https://github.com/Yu
 | **自动点击** (Auto click) | Clicks the pet at the interval set, raising the click count. In a room, the people in the room see every click | off |
 | **自动开箱子** (Auto chest) | Opens a chest when it is ready (opening costs clicks). The upper and the lower chest are switched separately | off |
 | **房间历史** (Room history) | Records who comes into and leaves a room, with the room number, the time and how long each person stayed. Kept on this computer only; shown on the 联机 page, from where a room can be entered again | on |
-| **桌宠手感** (Pet feel) | Elastic motion for pressing, dragging, releasing, clicking and throwing a pet, with gravity, turning and rolling; the same for every pet | on |
+| **桌宠手感** (Pet feel) | A pet breathes a little while idle, and has elastic motion for pressing, dragging, releasing, clicking and throwing a pet, with gravity, turning and rolling; the same for every pet | on |
 | **气泡弹跳** (Bubble pop) | The emote bubbles a pet sends out are springy: they swell and spring back as they come out, and sway as they float up | on |
 | **记住桌宠位置** (Pet position) | Records the positions of the person's own pet and the other players' pets, and restores them after a restart or on entering a room | on |
 | **保持置顶** (Keep on top) | Lifts the pet window to the front again at an interval, so that other windows do not cover it | on |
@@ -85,6 +85,7 @@ Every time the window opens, the launcher looks for a newer version of itself; i
 - 抛掷 (throw): release quickly during a drag and the pet flies off at the speed of the hand and rebounds off the edges of the screen. The speed is taken from the pointer's path over the last 70 ms before the release, the same for the person's own pet and for another player's, so a light flick throws. With gravity on it falls and finally lands on the top of the taskbar; with gravity off it glides on until it stops. A slow release only puts it down.
 - 旋转滚动 (turn and roll): a thrown pet turns, is turned faster by what it scrapes along, rolls like a wheel on the floor, for as far as the speed it lands with says (a light throw rolls a short way, a hard one across most of the screen, and it rebounds off an edge and goes on), always turning as fast as it moves, and rights itself, with a little wobble, before it stops. Off, it only leans the way it goes.
 - Pressing the pet again while it flies stops it at once. The place it ends in is kept by the Pet position plugin.
+- 待机呼吸 (idle breathing): a pet that nobody is touching rises and narrows a little from its feet (about 2% taller, 3.8 seconds a breath), and the other players' pets start at different moments. It stops when any of the motions above begins. The strength setting applies to it too, and it does not breathe when the system asks for less motion.
 
 Each effect has its own switch in the plugin's settings, and there is a strength setting (0.5 to 2, 1 by default). It needs the permission to read and change the app's own state, to know whether a pet is held and whether it is moving.
 
